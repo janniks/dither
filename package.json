@@ -1,0 +1,30 @@
+{
+  "name": "dither-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Personal index for the agentic era — workspace root.",
+  "license": "MIT",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "packages/plugins/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "oxlint",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check"
+  },
+  "devDependencies": {
+    "oxfmt": "^0.45.0",
+    "oxlint": "^1.0.0",
+    "tsdown": "^0.21.0",
+    "typescript": "^6.0.0",
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

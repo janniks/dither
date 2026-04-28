@@ -1,0 +1,27 @@
+{
+  "name": "read-file",
+  "version": "0.0.1",
+  "description": "Test fixture: reads a user-supplied file path and emits its content as an entry.",
+  "license": "MIT",
+  "dither": {
+    "display_name": "Read File",
+    "tagline": "Reads a user-supplied file path.",
+    "files": [
+      {
+        "id": "SOURCE",
+        "name": "Source markdown file",
+        "kind": "file",
+        "required": true
+      }
+    ],
+    "permissions": {},
+    "collections": {
+      "writes": [
+        "read"
+      ],
+      "auto_create": [
+        "read"
+      ]
+    }
+  }
+}

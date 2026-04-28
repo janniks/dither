@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    /* Base */
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "target": "ES2022",
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "moduleDetection": "force",
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+
+    /* Strictness */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+
+    /* Not transpiling with TypeScript (tsdown handles emit) */
+    "module": "preserve",
+    "noEmit": true,
+
+    /* Not in the DOM */
+    "lib": ["ES2022"]
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "name": "echo-config",
+  "version": "0.0.1",
+  "description": "Test fixture: reads config + secrets via readInput() and echoes them.",
+  "license": "MIT",
+  "dither": {
+    "display_name": "Echo Config",
+    "tagline": "Echoes its inputs to verify the SDK round-trip.",
+    "inputs": [
+      {
+        "id": "GREETING",
+        "name": "Greeting text",
+        "kind": "string",
+        "description": "A non-secret string the plugin will echo."
+      },
+      {
+        "id": "MAX_RUNS",
+        "name": "Max runs",
+        "kind": "number",
+        "default": 3
+      },
+      {
+        "id": "API_TOKEN",
+        "name": "API token",
+        "kind": "secret",
+        "description": "A secret value the plugin will echo (so we can prove secret delivery)."
+      }
+    ],
+    "permissions": {},
+    "collections": {
+      "writes": [
+        "echoed"
+      ],
+      "auto_create": [
+        "echoed"
+      ]
+    }
+  }
+}

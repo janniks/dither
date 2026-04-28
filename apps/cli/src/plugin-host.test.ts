@@ -1,0 +1,160 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import {
+  mkdtempSync,
+  rmSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  mkdirSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+
+const FIXTURE_PATH = resolve(__dirname, "..", "test", "fixtures", "import-folder");
+
+describe("plugin host", () => {
+  let home: string;
+  let prevHome: string | undefined;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "dither-plugin-test-"));
+    prevHome = process.env.DITHER_HOME;
+    process.env.DITHER_HOME = home;
+  });
+
+  afterEach(() => {
+    if (prevHome === undefined) {
+      delete process.env.DITHER_HOME;
+    } else {
+      process.env.DITHER_HOME = prevHome;
+    }
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it("install + run a fixture plugin → entry appears in entries/<collection>/", async () => {
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+
+    await installPlugin({ source: FIXTURE_PATH });
+
+    expect(existsSync(join(home, "plugins", "import-folder", "package.json"))).toBe(true);
+    expect(existsSync(join(home, "plugins", "import-folder", "plugin.ts"))).toBe(true);
+    expect(existsSync(join(home, "grants", "import-folder.json"))).toBe(true);
+
+    const result = await runPlugin({ name: "import-folder" });
+    expect(result.promoted.length).toBeGreaterThan(0);
+
+    const importedDir = join(home, "entries", "imported");
+    const files = readdirSync(importedDir).filter((f) => f.endsWith(".md"));
+    expect(files.length).toBeGreaterThan(0);
+
+    const content = readFileSync(join(importedDir, files[0]!), "utf-8");
+    expect(content).toContain("Hello from fixture");
+    expect(content).toContain('source: "import-folder"');
+    expect(content).toContain('collection: "imported"');
+  }, 60000);
+
+  it("rejects a package.json without a 'dither' block at install time", async () => {
+    const badPluginDir = mkdtempSync(join(tmpdir(), "dither-bad-plugin-"));
+    writeFileSync(
+      join(badPluginDir, "package.json"),
+      JSON.stringify({ name: "bogus", version: "0.0.1" }),
+    );
+    writeFileSync(join(badPluginDir, "plugin.ts"), "// noop\n");
+
+    const { installPlugin } = await import("./plugin-install");
+    await expect(installPlugin({ source: badPluginDir })).rejects.toThrow(/missing 'dither' block/);
+
+    rmSync(badPluginDir, { recursive: true, force: true });
+  });
+
+  it("refuses to promote entries written to an ungranted collection", async () => {
+    const escaperDir = mkdtempSync(join(tmpdir(), "dither-escape-plugin-"));
+    writeFileSync(
+      join(escaperDir, "package.json"),
+      JSON.stringify({
+        name: "escaper",
+        version: "0.0.1",
+        dither: {
+          collections: { writes: ["allowed"], auto_create: ["allowed"] },
+        },
+      }),
+    );
+    writeFileSync(
+      join(escaperDir, "plugin.ts"),
+      `import { writeEntry } from "@dither/plugin";
+await writeEntry({
+  collection: "forbidden",
+  body: "trying to escape",
+});
+`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+
+    await installPlugin({ source: escaperDir });
+    await expect(runPlugin({ name: "escaper" })).rejects.toThrow(
+      /not granted write access to collection 'forbidden'/,
+    );
+
+    // Nothing should have been promoted to either collection.
+    expect(existsSync(join(home, "entries", "forbidden"))).toBe(false);
+    expect(
+      existsSync(join(home, "entries", "allowed")) &&
+        readdirSync(join(home, "entries", "allowed")).length > 0,
+    ).toBe(false);
+
+    rmSync(escaperDir, { recursive: true, force: true });
+  }, 30000);
+
+  it("persists plugin state across runs via readState/writeState", async () => {
+    const counterDir = mkdtempSync(join(tmpdir(), "dither-counter-plugin-"));
+    mkdirSync(counterDir, { recursive: true });
+    writeFileSync(
+      join(counterDir, "package.json"),
+      JSON.stringify({
+        name: "counter",
+        version: "0.0.1",
+        dither: {
+          collections: { writes: ["counts"], auto_create: ["counts"] },
+        },
+      }),
+    );
+    writeFileSync(
+      join(counterDir, "plugin.ts"),
+      `import { readState, writeState, writeEntry } from "@dither/plugin";
+
+interface State { runs: number }
+
+const prev = (await readState<State>()) ?? { runs: 0 };
+const next: State = { runs: prev.runs + 1 };
+await writeState(next);
+
+await writeEntry({
+  collection: "counts",
+  filename: "run-" + next.runs + ".md",
+  body: "Run number " + next.runs,
+});
+`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+
+    await installPlugin({ source: counterDir });
+    await runPlugin({ name: "counter" });
+    await runPlugin({ name: "counter" });
+    await runPlugin({ name: "counter" });
+
+    const stateRaw = readFileSync(join(home, "plugins", "counter", "state", "state.json"), "utf-8");
+    expect(JSON.parse(stateRaw)).toEqual({ runs: 3 });
+
+    const countsDir = join(home, "entries", "counts");
+    expect(existsSync(join(countsDir, "run-1.md"))).toBe(true);
+    expect(existsSync(join(countsDir, "run-3.md"))).toBe(true);
+
+    rmSync(counterDir, { recursive: true, force: true });
+  }, 60000);
+});
