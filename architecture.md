@@ -529,10 +529,9 @@ Public stuff lives together in a monorepo (npm workspaces). Private stuff stays 
 
 ```
 dither/
-├── apps/
-│   ├── cli/                  → publishes `dither` on npm; bin `dither`
-│   └── docs/                 → docs site (later phase)
+├── docs/                     → fumadocs site (Next.js)
 └── packages/
+    ├── cli/                  → publishes `dither` on npm; bin `dither`
     ├── plugin/               → publishes `@dither/plugin` (SDK)
     └── plugins/
         ├── gmail-ingest/
@@ -589,6 +588,7 @@ Public boundary = trust boundary. Sandbox and SDK code must be auditable, hence 
 - **2026-04-27** — Tooling: tsdown (build), vitest (test), oxlint (lint), oxfmt (format), npm workspaces (dev pkg mgr), Node ≥ 22 runtime. CLI framework `citty`. No logger lib in v1 — plain `console.*`. SQLite via `node:sqlite`. Validation `zod`. Frontmatter `gray-matter`. License MIT. All-Oxc story for lint+format keeps tooling fast and unified.
 - **2026-04-27** — Repo layout: separate repos, no monorepo. Public/MIT: `dither` (CLI + daemon), `dither-plugin` (SDK), `dither-plugins` (first-party plugins), `dither-docs` (later). Private: `dither-edge` (renamed from `mmry-edge`; Next.js + Postgres). Public boundary = trust boundary; private boundary = business + ops secrets.
 - **2026-04-27** — WASM SQLite rejected for v1 (we're a Node daemon; `node:sqlite` already does what's needed). WASM parked for v2 web/edge surfaces (browser-based index demo, edge search proxying) where it actually pays off. Plugin runtime stays Deno; WASI swap rejected (loses ecosystem and security primitives we want).
-- **2026-04-27** — Switched from pnpm to npm. Public stuff lives in one npm-workspace monorepo (`dither` with `apps/cli`, `packages/plugin`, `packages/plugins/*`). Private stuff (`dither-edge`, `dither-sync`) stays in separate repos.
+- **2026-04-27** — Switched from pnpm to npm. Public stuff lives in one npm-workspace monorepo (`dither` with `packages/cli`, `packages/plugin`, `packages/plugins/*`, `docs/`). Private stuff (`dither-edge`, `dither-sync`) stays in separate repos.
+- **2026-04-29** — Dropped the `apps/` directory. CLI moved to `packages/cli`. Reasoning: `apps/cli` was the only entry under `apps/`; the docs site went under `docs/` (next to `packages/`). Splitting one binary into a separate top-level dir didn't earn its keep — `packages/*` covers the published-to-npm artifacts uniformly.
 - **2026-04-27** — Formatter: `oxfmt` (not prettier). All-Oxc tooling for lint + format.
 - **2026-04-27** — Renamed product: `openindex`/`oi` → `dither`. NPM package `dither`, scope `@dither`, CLI binary `dither`, env vars `DITHER_*`, runtime dir `~/.dither/`. Repos renamed throughout (`dither`, `dither-edge`, `dither-sync`, `dither-docs`).

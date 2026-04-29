@@ -56,7 +56,7 @@ qmd depends on `better-sqlite3`, which has a native binding compiled per Node ve
 - **Plugin runs use stdio: "inherit"** — plugin stdout/stderr go straight to the user's terminal. Captured-log mode for daemon-driven runs comes later.
 - **Run dir auto-cleaned on success**. On failure, the run dir is currently still removed (the implementation always cleans up). Open: keep failed run dirs for debugging? Phase 3+ decision.
 - **DITHER_PLUGIN_NAME, DITHER_RUN_DIR, DITHER_INPUT_FILE, DITHER_STATE_FILE, DITHER_TRIGGER** are always granted via `--allow-env`. Plugin-declared `host_env` adds to that list.
-- **Manifest schema lives in `apps/cli/src/manifest.ts`** (zod). The SDK does not validate the manifest — the host does. Plugins don't need to depend on zod.
+- **Manifest schema lives in `packages/cli/src/manifest.ts`** (zod). The SDK does not validate the manifest — the host does. Plugins don't need to depend on zod.
 
 ### Inputs / files flow (added during option B)
 

@@ -1,0 +1,31 @@
+---
+title: CLI
+description: All dither subcommands at a glance.
+---
+
+The `dither` binary is the only entry point in v0. It wraps a small set of subcommands built with [citty](https://github.com/unjs/citty).
+
+```bash
+dither --help
+```
+
+## Subcommands
+
+| Command | What it does |
+| --- | --- |
+| [`dither search <query>`](/docs/cli/search) | Search across entries (hybrid by default, `--mode lex` for BM25-only). |
+| [`dither get <ref>`](/docs/cli/get) | Print the body of an entry by display path or docid. |
+| [`dither index update`](/docs/cli/index-update) | Re-scan `~/.dither/entries/` and refresh the qmd index. |
+| [`dither plugin install <path>`](/docs/cli/plugin) | Install a plugin from a local directory. |
+| [`dither plugin run <name>`](/docs/cli/plugin) | Run an installed plugin once and promote its outputs. |
+| [`dither plugin list`](/docs/cli/plugin) | List installed plugins. |
+| [`dither plugin remove <name>`](/docs/cli/plugin) | Uninstall a plugin (deletes code, state, grants). |
+| [`dither status`](/docs/cli/status) | Print where dither is installed and what it contains. |
+
+## Exit codes
+
+The CLI does not yet enforce a documented exit code contract. Today, citty surfaces a non-zero exit on any thrown error and zero on success. Don't script around specific non-zero codes.
+
+## Output format
+
+Most commands print plain tab- or space-separated lines on stdout, suited to piping through `awk`, `cut`, or `fzf`. There is no `--json` flag yet.

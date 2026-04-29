@@ -1,0 +1,334 @@
+---
+title: Authoring a plugin
+description: Build, install, and run a dither plugin end-to-end.
+---
+
+This page walks from a one-file "Hello world" plugin to one with text inputs, file inputs, secrets, and persistent state. Every snippet is copy-paste runnable.
+
+## Prerequisites
+
+- **Deno v2.x** on your `PATH`. The host spawns plugins via `spawn("deno", ...)`; there is no embedded runtime.
+- **dither** installed and on your `PATH`.
+
+## 1. Directory layout
+
+A plugin is a directory with two files:
+
+```text
+hello-world/
+  package.json
+  plugin.ts
+```
+
+That's it. No `node_modules`, no build step. Deno resolves `@dither/plugin` via an import map the host injects at run time.
+
+## 2. The minimal "Hello world"
+
+`package.json`:
+
+```json
+{
+  "name": "hello-world",
+  "version": "0.0.1",
+  "license": "MIT",
+  "dither": {
+    "display_name": "Hello World",
+    "tagline": "Writes one entry and exits.",
+    "collections": {
+      "writes": ["notes"]
+    }
+  }
+}
+```
+
+`plugin.ts`:
+
+```ts
+import { writeEntry } from "@dither/plugin";
+
+await writeEntry({
+  collection: "notes",
+  body: "# Hello\n\nFrom my first dither plugin.",
+});
+```
+
+Install and run:
+
+```bash
+dither plugin install ./hello-world
+dither plugin run hello-world
+```
+
+You'll see something like:
+
+```text
+installed hello-world@0.0.1
+  → /Users/you/.dither/plugins/hello-world
+run 5f1a…  promoted 1 entries:
+  /Users/you/.dither/entries/notes/9c2b….md
+```
+
+## 3. The `dither` block — every field
+
+Every field below is optional unless noted. The full schema lives in `packages/cli/src/manifest.ts`.
+
+### Identity
+
+| Field          | Type     | Notes                                                                  |
+| -------------- | -------- | ---------------------------------------------------------------------- |
+| `display_name` | `string` | Human label shown in `dither plugin list` and (eventually) UI.         |
+| `tagline`      | `string` | One-liner.                                                             |
+| `icon`         | `string` | Identifier or path. Schema-only in v0; nothing renders icons yet.      |
+
+### Triggers
+
+| Field      | Type                                            | Notes                                                                    |
+| ---------- | ----------------------------------------------- | ------------------------------------------------------------------------ |
+| `schedule` | `string` (cron expression)                      | Stored, not yet runtime-enforced. Manual `dither plugin run` works now.  |
+| `watch`    | `{ collections: string[]; glob?: string }`      | Stored, not yet runtime-enforced.                                        |
+
+### `inputs[]`
+
+User-supplied config and secrets. Each entry:
+
+```ts
+{
+  id: string;            // key the plugin reads (e.g. "GREETING")
+  name?: string;         // human label
+  kind: "secret" | "string" | "number" | "bool";
+  description?: string;
+  default?: unknown;     // if absent, the input is required at install time
+}
+```
+
+At install time, values you pass via `--input` are coerced to the declared `kind` (`number` → `Number(v)`, `bool` → `true` if `"true"`/`"1"`/`1`). Values without a default are **required**; install fails with `Required input '<id>' was not provided and has no default.`
+
+At run time, `kind: "secret"` inputs land in `input.secrets`; everything else lands in `input.config`.
+
+Example, lifted from the `echo-config` fixture:
+
+```json
+"inputs": [
+  { "id": "GREETING",  "name": "Greeting text", "kind": "string" },
+  { "id": "MAX_RUNS",  "name": "Max runs",      "kind": "number", "default": 3 },
+  { "id": "API_TOKEN", "name": "API token",     "kind": "secret" }
+]
+```
+
+### `files[]`
+
+User-supplied filesystem paths. Each entry:
+
+```ts
+{
+  id: string;
+  name?: string;
+  kind: "file" | "folder";
+  extensions?: string[];   // schema-only in v0; not validated
+  required?: boolean;
+}
+```
+
+At install time the path is resolved to absolute, checked to exist, and asserted against `kind` (file vs folder). At run time the absolute path is delivered as `input.files[id]`, and the path is added to Deno's `--allow-read` allowlist so the plugin can open it.
+
+### `permissions`
+
+| Field                | Type         | Effect                                                                                                    |
+| -------------------- | ------------ | --------------------------------------------------------------------------------------------------------- |
+| `host_net`           | `string[]`   | Becomes `--allow-net=<csv>`. Empty/absent → no network.                                                   |
+| `host_env`           | `string[]`   | Names appended to Deno's `--allow-env`. The `DITHER_*` vars are always included.                          |
+| `permissions.browser`| `{ hosts }`  | Schema-only in v0; the browser sidebar lands in a later phase.                                            |
+
+### `collections`
+
+| Field         | Type       | Notes                                                                                                          |
+| ------------- | ---------- | -------------------------------------------------------------------------------------------------------------- |
+| `writes`      | `string[]` | The collections this plugin may emit into. Output that targets a non-listed collection is rejected at promote. |
+| `reads`       | `string[]` | Reserved for plugins that read existing entries. Schema-only in v0.                                            |
+| `auto_create` | `string[]` | Schema-only in v0; collections are created on demand at promote time today.                                    |
+
+## 4. Writing the plugin
+
+### 4a. Just `writeEntry`
+
+The minimal case (see `import-folder` fixture). One write, no inputs:
+
+```ts
+import { writeEntry } from "@dither/plugin";
+
+await writeEntry({
+  collection: "imported",
+  frontmatter: {
+    external_id: "fixture-1",
+    title: "Hello from fixture",
+  },
+  body: "# Hello\n\nThis entry was emitted via the @dither/plugin SDK.",
+});
+```
+
+### 4b. Adding inputs
+
+Read the values the user supplied at install time. `readInput<Config, Secrets>()` is generic; provide your own types for autocomplete:
+
+```ts
+import { readInput, writeEntry } from "@dither/plugin";
+
+interface Config { GREETING: string; MAX_RUNS: number }
+interface Secrets { API_TOKEN: string }
+
+const input = await readInput<Config, Secrets>();
+
+await writeEntry({
+  collection: "echoed",
+  frontmatter: { greeting: input.config.GREETING, max_runs: input.config.MAX_RUNS },
+  body: [
+    "# Echo result",
+    "",
+    `Greeting: ${input.config.GREETING}`,
+    `Token: ${input.secrets.API_TOKEN}`,
+  ].join("\n"),
+});
+```
+
+### 4c. Adding file inputs
+
+`input.files` is keyed by the manifest's input `id`. The path is absolute and already on Deno's read allowlist:
+
+```ts
+import { readFile } from "node:fs/promises";
+import { readInput, writeEntry } from "@dither/plugin";
+
+const input = await readInput();
+const sourcePath = input.files.SOURCE;
+if (!sourcePath) throw new Error("input.files.SOURCE missing");
+
+const body = await readFile(sourcePath, "utf-8");
+
+await writeEntry({
+  collection: "read",
+  frontmatter: { source_path: sourcePath },
+  body,
+});
+```
+
+### 4d. State between runs
+
+`readState()` returns `null` on the first run; `writeState()` persists JSON to `~/.dither/plugins/<name>/state/state.json`:
+
+```ts
+import { readState, writeState, writeEntry } from "@dither/plugin";
+
+interface State { lastSeen?: string }
+
+const state = (await readState<State>()) ?? {};
+const now = new Date().toISOString();
+
+await writeEntry({
+  collection: "notes",
+  body: `Last run: ${state.lastSeen ?? "never"}\nThis run: ${now}`,
+});
+
+await writeState<State>({ lastSeen: now });
+```
+
+## 5. Installing
+
+```bash
+dither plugin install ./path/to/plugin \
+  --input "GREETING=hi,MAX_RUNS=5,API_TOKEN=sk-…" \
+  --file  "SOURCE=/abs/path/to/notes.md"
+```
+
+Both flags take **comma-separated `KEY=VALUE` pairs**. The first `=` per pair is the separator; values may contain `=` but not `,`. There is no escape syntax.
+
+What happens:
+
+- `package.json` is parsed and the `dither` block validated.
+- Inputs without a value and without a `default` cause install to fail.
+- File paths are resolved to absolute, checked to exist, and verified against `kind`.
+- The plugin source is copied to `~/.dither/plugins/<name>/`.
+- A grants file at `~/.dither/grants/<name>.json` records the manifest, the resolved inputs (including secret values, **plaintext, in v0**), and the resolved file paths.
+
+Reinstalling overwrites the previous install and grants file.
+
+## 6. Running
+
+```bash
+dither plugin run hello-world
+```
+
+The host:
+
+1. Loads the grants file.
+2. Splits `inputs` into `config` (non-secret) and `secrets` (`kind: "secret"`).
+3. Creates `~/.dither/runs/<runId>/` and writes `input.json`:
+   ```json
+   {
+     "trigger": "manual",
+     "config":  { "GREETING": "hi", "MAX_RUNS": 5 },
+     "secrets": { "API_TOKEN": "sk-…" },
+     "files":   { "SOURCE": "/abs/path/to/notes.md" },
+     "targets": []
+   }
+   ```
+4. Spawns `deno run` with permissions derived from the manifest.
+5. After the plugin exits, scans the run dir for `*.md`, validates frontmatter, promotes valid entries to `~/.dither/entries/<collection>/`, refreshes the index, and deletes the run dir.
+
+A plugin process that exits non-zero aborts the run; nothing is promoted.
+
+## 7. Inspecting outputs
+
+Promoted entries live at `~/.dither/entries/<collection>/<id>.md`.
+
+The host always overwrites three frontmatter keys, regardless of what your plugin sets:
+
+- `id` — UUID generated by the SDK (or a string `id` you supplied in `frontmatter`).
+- `source` — the plugin's `name` (from `package.json`).
+- `collection` — the value you passed to `writeEntry({ collection })`.
+
+Anything else you put in `frontmatter` is preserved verbatim. So given:
+
+```ts
+await writeEntry({
+  collection: "notes",
+  frontmatter: { title: "Hi", tags: ["demo"] },
+  body: "# Hi\n\nbody",
+});
+```
+
+The promoted file looks like:
+
+```md
+---
+title: "Hi"
+tags: ["demo"]
+id: "9c2b…"
+source: "hello-world"
+collection: "notes"
+---
+
+# Hi
+
+body
+```
+
+The SDK uses a tiny YAML emitter that JSON-encodes every value (so strings get quoted, arrays/objects come out as inline JSON). Most YAML parsers accept this. If you need richer YAML, generate the body yourself and keep `frontmatter` minimal.
+
+## 8. Permissions in practice
+
+The Deno spawn is built like this (from `packages/cli/src/plugin-run.ts`):
+
+- `--allow-read=<pluginDir>,<runDir>,<sdkPath>,<…each granted file path>`
+- `--allow-write=<stateDir>,<runDir>`
+- `--allow-env=DITHER_*,<…each entry of permissions.host_env>`
+- `--allow-net=<csv of permissions.host_net>` (only added if the list is non-empty)
+
+A plugin cannot read or write outside those paths, cannot reach hosts not on `host_net`, and cannot read env vars not on `host_env` plus the `DITHER_*` set. See [security concepts](/docs/concepts/security) for the broader picture.
+
+## 9. Sharp edges
+
+- **Secrets are plaintext.** `~/.dither/grants/<name>.json` is just JSON. Don't store credentials you wouldn't put in a home-directory JSON file. Keychain integration is parked for later.
+- **No git/registry installs.** Only local paths. Cloning your plugin yourself first is the workaround.
+- **`schedule` and `watch` don't fire anything yet.** Declare them, but trigger your plugin manually until the daemon ships.
+- **CLI flag parsing has no escape syntax.** Comma in a value will be treated as a pair separator. If you need a comma in a secret, install programmatically via the `installPlugin()` API instead.
+- **Output filename collisions overwrite.** If two `writeEntry()` calls in one run produce the same `<id>.md` (e.g. you supplied the same `frontmatter.id`), the second overwrites the first inside the run dir, and only one is promoted.

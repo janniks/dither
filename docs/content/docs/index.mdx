@@ -1,0 +1,91 @@
+---
+title: dither
+description: A personal index for the agentic era — search your own corpus from the command line.
+---
+
+`dither` is a local-first personal index. You drop markdown files into collections, run plugins to pull data in from the world, and search across everything from one CLI.
+
+This is **v0**. The pieces here all work today: a CLI, a markdown-on-disk store, a [qmd](https://github.com/tobilu/qmd)-backed hybrid search index, and a Deno-sandboxed plugin runtime. Things mentioned in the architecture sketch but not yet shipped (a daemon, MCP server, sync, browser sidebar, scheduled plugin runs) are deliberately omitted from these docs — they'll arrive in later phases.
+
+## Install
+
+`dither` is not on npm yet. Build it from source:
+
+```bash
+git clone https://github.com/janniks/openindex.git
+cd openindex
+npm install
+npm run build
+npm link  # exposes `dither` on your PATH
+```
+
+You can also skip `npm link` and invoke the binary directly:
+
+```bash
+node packages/cli/dist/cli.mjs --help
+```
+
+### Requirements
+
+- **Node 20+** to run the CLI itself.
+- **Deno on `PATH`** — the plugin runner spawns `deno` to execute plugin code in a sandbox. Plugin commands will fail without it.
+- On the first hybrid search, qmd downloads its embedding + reranker models (~1–2 GB) into its cache. Subsequent searches reuse them. If you don't want this, use `--mode lex` to stay BM25-only.
+
+### Where dither stores things
+
+By default everything lives under `~/.dither/`:
+
+```
+~/.dither/
+  entries/<collection>/**/*.md   your canonical markdown
+  plugins/<name>/                installed plugin code + state
+  grants/<name>.json             plugin manifest + resolved inputs
+  qmd-index.sqlite               derived search index
+  runs/<runId>/                  per-run scratch (cleaned up)
+```
+
+Set `DITHER_HOME` to point somewhere else:
+
+```bash
+export DITHER_HOME=/path/to/dither-home
+```
+
+## Quickstart
+
+```bash
+# Drop a markdown file into a collection.
+mkdir -p ~/.dither/entries/notes
+cat > ~/.dither/entries/notes/hello.md <<'EOF'
+---
+title: Hello
+collection: notes
+---
+
+This is my first dither entry.
+EOF
+
+# Build the index.
+dither index update
+# → index updated: 1 collection(s), 1 indexed, 0 updated
+
+# Search.
+dither search hello
+# → notes/hello.md  0.812  Hello
+
+# Read it back.
+dither get notes/hello.md
+```
+
+## Where to go next
+
+<Cards>
+  <Card title="CLI reference" href="/docs/cli">
+    Every command, every flag, with worked examples.
+  </Card>
+  <Card title="Plugin authoring" href="/docs/plugins">
+    Write a Deno plugin that ingests data into a collection.
+  </Card>
+  <Card title="Concepts" href="/docs/concepts">
+    Entries, collections, grants, the run-dir model.
+  </Card>
+</Cards>

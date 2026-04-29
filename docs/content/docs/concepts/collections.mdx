@@ -1,0 +1,93 @@
+---
+title: Collections
+description: Folders under entries/, the frontmatter spec, and how the index picks them up.
+---
+
+A **collection is a folder** under `~/.dither/entries/`. That's the whole definition. There's no registry, no schema, no `meta.json`. If a directory exists at `~/.dither/entries/notes/`, you have a `notes` collection.
+
+```
+~/.dither/entries/
+  notes/             ← collection "notes"
+  twitter/           ← collection "twitter"
+  gmail/             ← collection "gmail"
+```
+
+To create a new collection, make the directory. To delete one, remove the directory. The next `dither index update` reflects the change.
+
+## Subdirectories are yours
+
+Inside a collection, the layout is unrestricted. dither doesn't care if you bucket by date, by status, by topic, or not at all:
+
+```
+~/.dither/entries/gmail/
+  2026/04/25/<thread>.md
+  2026/04/26/<thread>.md
+```
+
+```
+~/.dither/entries/notes/
+  drafts/
+  archive/
+  pinned.md
+```
+
+The qmd index walks the whole tree under each collection (`**/*.md`), so subfolders are searchable just by existing.
+
+## Frontmatter
+
+Every entry is a markdown file with YAML frontmatter on top.
+
+### Host-stamped fields
+
+These are managed (or validated) by dither when a plugin promotes an entry. You can also set them by hand on entries you author yourself.
+
+```yaml
+---
+id: <stable-id>           # used for `dither get <id>`; survives moves
+source: gmail-ingest       # plugin name, or your own label for hand-written entries
+collection: gmail          # must match the folder the file lives under
+---
+```
+
+For plugin output, `source` and `collection` are **enforced at promote time** — a plugin's file is rejected if `source` doesn't match the plugin's name or `collection` isn't one the plugin was granted to write. See [Security](/docs/concepts/security).
+
+### Optional fields
+
+These are part of the frontmatter convention. dither doesn't require them, but plugins and search clients look for them when present.
+
+```yaml
+---
+external_id: 1789234567890     # provider-side id (tweet id, gmail thread id, …)
+external_url: https://…         # round-trip link back to the source
+created: 2026-04-25T11:14:00Z   # original creation time
+tags: [pr, dither, review]
+attachments:
+  - id: 7f3a8c10-…
+    type: image/png
+    name: screenshot.png
+---
+```
+
+> `attachments[]` is reserved in the spec but **not yet promoted to disk by the host in v0** — the field parses but won't move blob files into a content-addressed store. Treat it as forward-compatible: emit it now, attachments will land later without a frontmatter migration.
+
+## How the index sees collections
+
+dither doesn't store entries in a database. Search is provided by [qmd](https://github.com/tobilu/qmd), which builds a SQLite index over the directory tree. Every top-level subdirectory of `~/.dither/entries/` is registered as a qmd collection on open, and qmd indexes `**/*.md` underneath.
+
+The index file lives at `~/.dither/qmd-index.sqlite`. Don't edit it — it's regenerable from your markdown. See [Storage](/docs/concepts/storage).
+
+To (re)scan the tree after manual edits or external file moves, run:
+
+```bash
+dither index update
+```
+
+Plugin runs trigger this automatically when they promote new entries.
+
+## Hand-editing entries
+
+dither doesn't fight you. Open any `.md` under `entries/` in your editor, change the body, change the frontmatter, rename the file — it's all fine. The host doesn't lock files, doesn't watch them in v0, and doesn't impose body conventions. After a manual edit, run `dither index update` to refresh the search index.
+
+If you delete or move a file by hand, run `dither index update` to drop stale entries from the index.
+
+For the commands themselves, see the [CLI reference](/docs/cli).

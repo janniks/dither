@@ -1,0 +1,32 @@
+---
+title: dither status
+description: Summarize the dither install.
+---
+
+```bash
+dither status
+```
+
+Prints where dither is installed and a quick count of what's in it. No flags, no arguments.
+
+## Output
+
+```
+home:        /Users/me/.dither
+plugins:     2
+collections: 3
+entries:     142
+```
+
+| Line | Meaning |
+| --- | --- |
+| `home` | Resolved home directory. `$DITHER_HOME` if set, else `~/.dither`. |
+| `plugins` | Number of grants files under `<home>/grants/` (one per installed plugin). |
+| `collections` | Number of top-level directories under `<home>/entries/`. |
+| `entries` | Recursive count of `*.md` files under `<home>/entries/`. |
+
+If `<home>/entries/` doesn't exist, `collections` and `entries` are reported as `0`.
+
+This is a filesystem walk, not an index lookup, so the count reflects what's on disk regardless of whether the qmd index is up to date. To make the index match what `status` reports, run [`dither index update`](/docs/cli/index-update).
+
+See also: [CLI overview](/docs/cli).

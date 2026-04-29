@@ -5,9 +5,9 @@
   "description": "Personal index for the agentic era — workspace root.",
   "license": "MIT",
   "workspaces": [
-    "apps/*",
     "packages/*",
-    "packages/plugins/*"
+    "packages/plugins/*",
+    "docs"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",

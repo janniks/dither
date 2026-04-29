@@ -1,0 +1,84 @@
+---
+title: Security model
+description: The Deno sandbox, what plugins can do, and the honest v0 caveats.
+---
+
+dither plugins are not trusted code running with your full user privileges. Each plugin runs as a `deno` subprocess with permission flags derived from its manifest — nothing else gets through.
+
+## The sandbox in plain English
+
+When you run a plugin, dither spawns Deno roughly like this:
+
+```
+deno run \
+  --import-map=<run-dir>/_import-map.json \
+  --allow-read=<plugin-dir>,<run-dir>,<sdk-path>[,<file-grants>…] \
+  --allow-write=<plugin-dir>/state,<run-dir> \
+  --allow-env=DITHER_RUN_DIR,DITHER_INPUT_FILE,DITHER_STATE_FILE,DITHER_TRIGGER,DITHER_PLUGIN_NAME[,<host_env>…] \
+  [--allow-net=<host_net>…] \
+  <plugin-dir>/plugin.ts
+```
+
+A plugin can:
+
+- Read its own installed source dir and its run scratch dir.
+- Write to its run scratch dir and to its own `state/` folder.
+- Read whatever `DITHER_*` env vars dither sets, plus any extras it declared in `permissions.host_env`.
+- Reach the network only on the hosts in `permissions.host_net` (omitted entirely if the manifest declares none).
+
+A plugin **cannot**:
+
+- Read or write anywhere else under `~/.dither/` — including `entries/`, `grants/`, other plugins, or the qmd index.
+- Read arbitrary user files. File access only extends to paths you explicitly granted via `files[]` at install time.
+- Reach a host that isn't in its manifest. No `host_net` means no network at all.
+- Read environment variables that aren't in `host_env` or the always-granted `DITHER_*` set. Secrets do **not** ride through env vars — they're delivered in `input.json`.
+- Spawn subprocesses or load FFI. `--allow-run` and `--allow-ffi` are never passed.
+
+## The manifest fields that drive permissions
+
+These all live under the `dither` block in a plugin's `package.json`.
+
+### `permissions.host_net`
+
+An array of hostnames. Becomes `--allow-net=host1,host2`. If absent or empty, no `--allow-net` flag is passed and the plugin has zero network access.
+
+### `permissions.host_env`
+
+An array of env var names the plugin can read in addition to the always-granted `DITHER_*` set. Use sparingly — most config and credentials should flow through `inputs[]`, not the environment.
+
+### `collections.writes`
+
+An array of collection names the plugin is allowed to promote into. **Enforced at promote time, not at write time.** A plugin can write any `*.md` it likes into its run dir; dither inspects each file's `collection:` frontmatter after the run and rejects the whole batch if any file targets a collection outside this list.
+
+## Promote-time validation
+
+After the plugin exits, dither walks every `*.md` file in the run dir and checks:
+
+1. The file has a YAML frontmatter block.
+2. `source:` matches the plugin's package name. Plugins cannot impersonate other plugins.
+3. `collection:` is set and is in the plugin's `collections.writes` grant.
+
+Any failure throws and stops the promote. The run dir is removed regardless.
+
+## Where secrets live
+
+Inputs declared with `kind: secret` in the manifest are collected at install time (via the `--input` flag) and stored in `~/.dither/grants/<plugin-name>.json` alongside non-secret inputs and file paths. At run time, dither reads them out and writes them into `~/.dither/runs/<run-id>/input.json` for the plugin to consume.
+
+Secrets are **never passed through the environment** — even though the plugin can `--allow-env=...`, secrets ride exclusively in `input.json`.
+
+## Honest caveats (real today, not future polish)
+
+The sandbox model above is the *intended* contract. The v0 implementation has known gaps:
+
+- **Secrets are stored plaintext in `~/.dither/grants/<name>.json`.** The architecture commits to OS keychain integration (macOS Keychain, libsecret on Linux), but that's not implemented yet. The grants file is on your local disk, scoped by Unix permissions, but anything that can read your home dir can read your secrets.
+- **Plugin output filenames are not validated for path traversal.** A malicious plugin can emit a file with a `filename` like `"../foo.md"` and the SDK's `join(runDir, name)` will write outside the run dir. Don't run plugins you don't trust.
+- **Promote does a blind copy.** If a plugin emits `notes.md` for collection `notes` and you already have a hand-authored `entries/notes/notes.md`, the plugin's file overwrites yours with no warning. Back up `entries/` before installing a plugin that writes into a collection you also author into by hand.
+- **The frontmatter parser used at promote is regex-based** and can be confused by escaped quotes inside YAML string values. In rare cases a plugin's `source:` or `collection:` line may parse incorrectly, causing the validation check to fail (or, less likely, pass incorrectly). The SDK emits well-formed values, but this is brittle and will be replaced with a real YAML parser.
+- **`host_net` accepts the empty string and `*`.** A manifest with `host_net: [""]` or `host_net: ["*"]` produces an empty `--allow-net=` flag, which Deno interprets as "all hosts." Audit a plugin's manifest before granting; don't rely on the schema to reject pathological values.
+- **`permissions.browser` is schema-only.** The browser sidebar is described in the architecture but not built. Manifests can declare it; nothing happens.
+
+## Threat model
+
+dither assumes you trust plugin code at install time. The sandbox limits how much damage a misbehaving plugin can do — it cannot read your SSH keys, browse your Downloads folder, or talk to a host the manifest didn't list. But the v0 sandbox is **not airtight**: the caveats above are real escape hatches, not theoretical ones.
+
+Treat plugin installation the way you'd treat installing a npm package or a VS Code extension. Read the source, or only install from authors you trust. Don't paste random `dither plugin install …` commands from the internet.

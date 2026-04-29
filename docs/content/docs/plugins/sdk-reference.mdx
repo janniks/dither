@@ -1,0 +1,233 @@
+---
+title: "@dither/plugin SDK reference"
+description: Every export from @dither/plugin with signatures, behavior, and examples.
+---
+
+`@dither/plugin` is the author SDK for dither plugins. It is a tiny module: five exports, no transitive runtime deps, designed to be imported under Deno via the import map the host injects.
+
+The SDK relies on five environment variables set by the plugin host. Every function except `VERSION` will throw if invoked outside that environment:
+
+| Env var              | Purpose                                                                                        |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| `DITHER_RUN_DIR`     | Per-run scratch directory. `writeEntry` writes here.                                            |
+| `DITHER_INPUT_FILE`  | Path to the `input.json` produced from your grants file. `readInput` reads this.                |
+| `DITHER_STATE_FILE`  | Path to the plugin's persistent `state.json`. `readState` / `writeState` use this.              |
+| `DITHER_TRIGGER`     | `"scheduled" \| "watch" \| "manual"` — what caused this run.                                    |
+| `DITHER_PLUGIN_NAME` | The plugin's name from `package.json`. Auto-stamped onto every entry's `source` frontmatter.   |
+
+If any of these is missing, the SDK throws:
+
+> `<NAME> is not set; this code must run inside the dither plugin host.`
+
+## `VERSION`
+
+```ts
+export const VERSION: string;
+```
+
+The SDK's package version (currently `"0.0.1"`). Useful for plugins that want to log or branch on SDK capabilities.
+
+```ts
+import { VERSION } from "@dither/plugin";
+console.log(`SDK ${VERSION}`);
+```
+
+## `interface PluginInput<C, S>`
+
+```ts
+interface PluginInput<C = Record<string, unknown>, S = Record<string, string>> {
+  trigger: "scheduled" | "watch" | "manual";
+  config: C;
+  secrets: S;
+  files: Record<string, string>;
+  targets: string[];
+}
+```
+
+The shape returned by `readInput()`. Type parameters:
+
+- `C` — the type of `config`. The host puts every non-`secret` declared input here, keyed by the input's `id`. Numeric inputs arrive as `number`, booleans as `boolean`, strings as `string`. Defaults from the manifest are coerced at install time.
+- `S` — the type of `secrets`. The host puts every `kind: "secret"` declared input here, keyed by `id`. Always strings (the host calls `String(value)` before writing).
+
+Fields:
+
+- `trigger` — what fired the run. Plugins that behave differently on scheduled vs. manual runs can branch on this.
+- `config` — non-secret inputs. Empty object if the plugin declares no non-secret inputs.
+- `secrets` — secret inputs. Empty object if none.
+- `files` — absolute paths to the user's file/folder inputs, keyed by `id`. Each path is on Deno's `--allow-read` allowlist. Optional file inputs that the user did not supply will simply be missing keys.
+- `targets` — currently always `[]`. Reserved for future watch-trigger payloads (the entries that changed, etc.).
+
+## `interface EntryOptions`
+
+```ts
+interface EntryOptions {
+  collection: string;
+  body: string;
+  frontmatter?: Record<string, unknown>;
+  filename?: string;
+}
+```
+
+The argument to `writeEntry()`.
+
+- `collection` — target collection. Must be in the plugin's `dither.collections.writes` grant or promotion will reject the file.
+- `body` — markdown body. Do **not** include your own frontmatter fence; the SDK emits one for you.
+- `frontmatter` — optional fields. **Three keys are reserved: `id`, `source`, `collection`.** Any value you put under those keys is overwritten by the SDK before writing:
+  - `id` — if you set `frontmatter.id` to a string, it is used as the entry id (and as the default filename). Otherwise a UUID is generated.
+  - `source` — always overwritten with `DITHER_PLUGIN_NAME`.
+  - `collection` — always overwritten with `opts.collection`.
+- `filename` — optional output filename inside `DITHER_RUN_DIR`. Defaults to `<id>.md`. Rarely useful; collisions overwrite silently.
+
+## `readInput<C, S>()`
+
+```ts
+function readInput<C = Record<string, unknown>, S = Record<string, string>>(): Promise<PluginInput<C, S>>;
+```
+
+Reads and JSON-parses the file at `DITHER_INPUT_FILE` and returns it as a typed `PluginInput<C, S>`.
+
+**Behavior:**
+
+- Throws if `DITHER_INPUT_FILE` is unset.
+- Throws if the file is missing or unreadable (it is always present under the host).
+- No schema validation — the type parameters are pure TypeScript shape; the runtime returns whatever the JSON contains.
+
+**Example** (from the `echo-config` fixture):
+
+```ts
+import { readInput, writeEntry } from "@dither/plugin";
+
+interface Config { GREETING: string; MAX_RUNS: number }
+interface Secrets { API_TOKEN: string }
+
+const input = await readInput<Config, Secrets>();
+console.log(input.trigger, input.config.GREETING);
+```
+
+## `writeEntry(opts)`
+
+```ts
+function writeEntry(opts: EntryOptions): Promise<string>;
+```
+
+Serializes one markdown entry into `DITHER_RUN_DIR`. Returns the absolute path written.
+
+**Behavior:**
+
+- Generates a UUID for `id` unless `opts.frontmatter.id` is a string.
+- Determines the filename: `opts.filename` if given, else `<id>.md`.
+- Builds frontmatter as `{ ...opts.frontmatter, id, source, collection }` — your frontmatter values are spread first, then the three reserved keys are written last so they always win.
+- Emits frontmatter via a minimal YAML serializer that JSON-encodes every value (strings get quoted, numbers/booleans pass through, arrays and objects come out as inline JSON). Most YAML parsers accept this; if you need a particular YAML shape, embed it in `body` and skip the relevant `frontmatter` key.
+- Creates `dirname(out)` if necessary and writes the file UTF-8.
+- Throws if `DITHER_RUN_DIR` or `DITHER_PLUGIN_NAME` is unset.
+
+**Resulting file:**
+
+```md
+---
+title: "Hi"
+id: "<uuid>"
+source: "<plugin name>"
+collection: "<your collection>"
+---
+
+<your body>
+```
+
+(Note the trailing newline after the body — the SDK appends one.)
+
+**Example** (from the `import-folder` fixture):
+
+```ts
+import { writeEntry } from "@dither/plugin";
+
+await writeEntry({
+  collection: "imported",
+  frontmatter: { external_id: "fixture-1", title: "Hello from fixture" },
+  body: "# Hello\n\nThis entry was emitted via the @dither/plugin SDK.",
+});
+```
+
+## `readState<T>()`
+
+```ts
+function readState<T = Record<string, unknown>>(): Promise<T | null>;
+```
+
+Reads and JSON-parses the file at `DITHER_STATE_FILE`.
+
+**Behavior:**
+
+- Returns `null` if the file does not exist (i.e. first run).
+- Returns `null` if the file exists but is empty after trimming.
+- Otherwise returns `JSON.parse(content) as T`. No schema validation.
+- Throws if `DITHER_STATE_FILE` is unset.
+
+**Example:**
+
+```ts
+import { readState } from "@dither/plugin";
+
+interface State { lastSeen?: string; cursor?: number }
+
+const state = (await readState<State>()) ?? { cursor: 0 };
+console.log(state.cursor);
+```
+
+## `writeState<T>(state)`
+
+```ts
+function writeState<T>(state: T): Promise<void>;
+```
+
+JSON-stringifies `state` (pretty-printed, 2-space indent) and writes it to `DITHER_STATE_FILE`, creating the parent directory if necessary.
+
+**Behavior:**
+
+- Overwrites the previous state file in full — there is no merge.
+- No size limit, no schema check. Whatever you write is what you get back from `readState` next run.
+- Throws if `DITHER_STATE_FILE` is unset.
+
+**Example:**
+
+```ts
+import { readState, writeState } from "@dither/plugin";
+
+interface State { lastSeen: string }
+
+const prev = (await readState<State>()) ?? { lastSeen: "" };
+await writeState<State>({ lastSeen: new Date().toISOString() });
+```
+
+## Putting it together
+
+A complete plugin that uses every export:
+
+```ts
+import {
+  VERSION,
+  readInput,
+  readState,
+  writeEntry,
+  writeState,
+  type PluginInput,
+} from "@dither/plugin";
+
+interface Config { feed_url: string }
+interface State  { lastSeen?: string }
+
+const input: PluginInput<Config> = await readInput<Config>();
+const state = (await readState<State>()) ?? {};
+
+console.error(`plugin SDK ${VERSION}, trigger=${input.trigger}`);
+
+const now = new Date().toISOString();
+
+await writeEntry({
+  collection: "feed",
+  frontmatter: { feed_url: input.config.feed_url, fetched_at: now },
+  body: `# Run at ${now}\n\nPrevious run: ${state.lastSeen ?? "never"}`,
+});
+
+await writeState<State>({ lastSeen: now });
+```

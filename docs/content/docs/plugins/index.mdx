@@ -1,0 +1,67 @@
+---
+title: Plugins
+description: What a dither plugin is, what it can do, and how it gets from your laptop into your index.
+---
+
+A **dither plugin** is a single Deno TypeScript file plus a `package.json` manifest. The dither host runs it, captures any markdown entries it writes, and promotes those entries into your collections so they show up in search.
+
+Plugins are how new sources of content land in dither: importers, scrapers, fetchers, watchers, and one-shot transforms. They're sandboxed (Deno runtime, narrow permissions derived from the manifest) and they have no direct access to your entries unless the manifest grants it.
+
+## What a plugin is, concretely
+
+Two files:
+
+```text
+my-plugin/
+  package.json   # name, version, and a `dither` block (the manifest)
+  plugin.ts      # the code the host runs under Deno
+```
+
+The plugin imports from `@dither/plugin` and writes markdown entries via `writeEntry()`. The host stamps the resulting files with their `id`, `source`, and `collection` and copies them into `~/.dither/entries/<collection>/`.
+
+> **Deno is required.** The host spawns plugins with `deno run`. You need Deno (v2.x tested) on any machine that runs plugins, including your dev box. Plugins do not run under Node.
+
+## What a plugin can do
+
+- **Emit entries** into one or more collections it has been granted (`collections.writes`).
+- **Read user-supplied config** — strings, numbers, booleans, and secrets — declared in the manifest's `inputs[]`.
+- **Read user-supplied file paths** — single files or folders — declared in `files[]`. The host validates them at install time and adds them to Deno's `--allow-read`.
+- **Persist state** between runs via `readState()` / `writeState()`. State lives at `~/.dither/plugins/<name>/state/state.json`.
+- **Reach the network**, but only to hosts listed in `permissions.host_net` (passed to Deno as `--allow-net`).
+- **Read process env vars** listed in `permissions.host_env` (added to Deno's `--allow-env` allowlist).
+
+## The three trigger types
+
+Every plugin declares (implicitly or explicitly) how it wants to be invoked:
+
+- **Manual** — `dither plugin run <name>`. Always available. This is the only trigger actually wired in v0.
+- **Scheduled** — `schedule: "*/15 * * * *"` in the manifest. The field is parsed and stored, but the daemon that fires plugins on a cron does not exist yet. Declare it; nothing will fire it.
+- **Watched** — `watch: { collections: [...], glob: "..." }`. Same story: schema-only in v0. The watcher that triggers plugins on collection changes lands in a later phase.
+
+Whichever trigger fires, the value lands in `input.trigger` (`"manual" | "scheduled" | "watch"`) so a plugin can branch on it later.
+
+## Lifecycle
+
+```text
+ install ──► resolve grants ──► run ──► emit entries ──► host promotes ──► re-index
+```
+
+1. **Install** — `dither plugin install <path>`. The CLI parses `package.json`, validates the `dither` block, copies the source to `~/.dither/plugins/<name>/`, and writes a grants file at `~/.dither/grants/<name>.json` capturing the manifest, resolved input values, and resolved file paths.
+2. **Resolve grants** — Required `inputs[]` without a default must be supplied via `--input`. Required `files[]` must be supplied via `--file` and must exist on disk and match their declared `kind` (file vs folder).
+3. **Run** — `dither plugin run <name>` spawns Deno with permissions derived from the manifest, sets the `DITHER_*` env vars, and writes `input.json` into a per-run scratch directory.
+4. **Emit entries** — the plugin writes `*.md` files into `DITHER_RUN_DIR` (use `writeEntry()` from the SDK).
+5. **Promote** — after the plugin exits cleanly, the host scans the run dir for `*.md`, validates each one's `source` matches the plugin name and `collection` is in the plugin's `collections.writes` grant, then copies it into `~/.dither/entries/<collection>/`.
+6. **Re-index** — if anything was promoted, the qmd index is refreshed so new entries are searchable immediately. The run dir is then deleted.
+
+## Sharp edges to know up front
+
+- **Secrets are stored plaintext** in `~/.dither/grants/<name>.json` in v0. The keychain integration is parked for later. Don't hand a plugin a credential you wouldn't put in a JSON file in your home directory.
+- **`permissions.browser` and `collections.auto_create` exist in the schema** but are not enforced anywhere yet. Schema-only in v0.
+- **Only local-path installs work today.** Git URLs, registries, and remote sources are not implemented.
+
+## Next
+
+<Cards>
+  <Card title="Authoring guide" href="/docs/plugins/authoring" description="Build your first plugin from scratch — manifest, code, install, run." />
+  <Card title="SDK reference" href="/docs/plugins/sdk-reference" description="Every export from @dither/plugin with signatures and behavior." />
+</Cards>

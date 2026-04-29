@@ -1,0 +1,100 @@
+---
+title: dither plugin
+description: Install, run, list, and remove plugins.
+---
+
+Plugins are small Deno programs that write markdown into collections you've granted them. The CLI manages four lifecycle actions.
+
+> **Deno is required** on `PATH` for `plugin run`. The runner spawns `deno` with derived `--allow-*` flags.
+
+## install
+
+```bash
+dither plugin install <source> [--input KEY=VALUE,...] [--file KEY=PATH,...]
+```
+
+Copies the plugin from a local directory into `~/.dither/plugins/<name>/`, validates its manifest (the `dither` block of `package.json`), resolves declared inputs, and writes a grants record to `~/.dither/grants/<name>.json`.
+
+| Argument / flag | Description |
+| --- | --- |
+| `source` | Positional. Path to the plugin directory (must contain `package.json`). Required. |
+| `--input KEY=VALUE,...` | Comma-separated values for declared `string`, `number`, `bool`, and `secret` inputs. |
+| `--file KEY=PATH,...` | Comma-separated paths for declared `file` and `folder` inputs. Paths must exist; `file` inputs must be files, `folder` inputs must be directories. |
+
+Required inputs without defaults must be supplied or install fails before anything is written to disk.
+
+```bash
+dither plugin install ./packages/cli/test/fixtures/import-folder
+# installed import-folder@0.0.1
+#   → /Users/me/.dither/plugins/import-folder
+
+dither plugin install ./my-plugin \
+  --input api_key=sk-...,limit=50 \
+  --file inbox=/Users/me/Documents/inbox
+```
+
+## run
+
+```bash
+dither plugin run <name>
+```
+
+Executes an installed plugin once. Trigger is recorded as `manual`. The runner:
+
+1. Creates a fresh run dir at `~/.dither/runs/<runId>/`.
+2. Writes `input.json` (config + secrets + file paths) for the plugin to read.
+3. Spawns `deno` with `--allow-read`, `--allow-write`, `--allow-env`, and `--allow-net` scoped to what the manifest declared.
+4. Promotes every `*.md` file the plugin wrote to the run dir into `~/.dither/entries/<collection>/`, after verifying frontmatter declares both a `source` matching the plugin name and a `collection` the plugin is granted to write.
+5. Runs `index update` if anything was promoted.
+6. Deletes the run dir.
+
+| Argument | Description |
+| --- | --- |
+| `name` | Positional. Name of an installed plugin. Required. |
+
+```bash
+$ dither plugin run import-folder
+run 4c0d…  promoted 3 entries:
+  /Users/me/.dither/entries/imported/note-1.md
+  /Users/me/.dither/entries/imported/note-2.md
+  /Users/me/.dither/entries/imported/note-3.md
+```
+
+If the plugin exits non-zero, or writes a file declaring a collection it isn't granted, the command throws and leaves promoted-so-far entries in place but the run dir survives for inspection only when the failure is in promotion (errors during plugin execution clean up only on success).
+
+## list
+
+```bash
+dither plugin list
+```
+
+Tab-separated: `<name>\t<version>\t<collections>\t<schedule>`. Prints `(no plugins installed)` when `~/.dither/grants/` is empty or missing.
+
+```bash
+$ dither plugin list
+import-folder  0.0.1  imported  -
+arxiv-watch    0.2.0  papers    daily
+```
+
+The `schedule` column shows the manifest's declared schedule, but **scheduled execution is not implemented in v0** — you still need to invoke `dither plugin run` yourself.
+
+## remove
+
+```bash
+dither plugin remove <name>
+```
+
+Deletes `~/.dither/plugins/<name>/` and `~/.dither/grants/<name>.json`. Plugin state under the plugin dir goes with it (state preservation across reinstall is a later concern). Already-promoted entries under `~/.dither/entries/` are untouched.
+
+| Argument | Description |
+| --- | --- |
+| `name` | Positional. Name of an installed plugin. Required. |
+
+```bash
+$ dither plugin remove import-folder
+removed import-folder
+```
+
+Errors if the plugin is not installed.
+
+See also: [CLI overview](/docs/cli), [Plugin authoring](/docs/plugins).

@@ -1,0 +1,4 @@
+{
+  "title": "CLI reference",
+  "pages": ["index", "search", "get", "index-update", "plugin", "status"]
+}
