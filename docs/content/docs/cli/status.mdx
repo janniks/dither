@@ -18,12 +18,12 @@ collections: 3
 entries:     142
 ```
 
-| Line | Meaning |
-| --- | --- |
-| `home` | Resolved home directory. `$DITHER_HOME` if set, else `~/.dither`. |
-| `plugins` | Number of grants files under `<home>/grants/` (one per installed plugin). |
-| `collections` | Number of top-level directories under `<home>/entries/`. |
-| `entries` | Recursive count of `*.md` files under `<home>/entries/`. |
+| Line          | Meaning                                                                   |
+| ------------- | ------------------------------------------------------------------------- |
+| `home`        | Resolved home directory. `$DITHER_HOME` if set, else `~/.dither`.         |
+| `plugins`     | Number of grants files under `<home>/grants/` (one per installed plugin). |
+| `collections` | Number of top-level directories under `<home>/entries/`.                  |
+| `entries`     | Recursive count of `*.md` files under `<home>/entries/`.                  |
 
 If `<home>/entries/` doesn't exist, `collections` and `entries` are reported as `0`.
 

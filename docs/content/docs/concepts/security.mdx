@@ -68,7 +68,7 @@ Secrets are **never passed through the environment** — even though the plugin 
 
 ## Honest caveats (real today, not future polish)
 
-The sandbox model above is the *intended* contract. The v0 implementation has known gaps:
+The sandbox model above is the _intended_ contract. The v0 implementation has known gaps:
 
 - **Secrets are stored plaintext in `~/.dither/grants/<name>.json`.** The architecture commits to OS keychain integration (macOS Keychain, libsecret on Linux), but that's not implemented yet. The grants file is on your local disk, scoped by Unix permissions, but anything that can read your home dir can read your secrets.
 - **Plugin output filenames are not validated for path traversal.** A malicious plugin can emit a file with a `filename` like `"../foo.md"` and the SDK's `join(runDir, name)` will write outside the run dir. Don't run plugins you don't trust.

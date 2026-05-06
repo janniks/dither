@@ -128,7 +128,7 @@ await writeEntry({
 
 interface State { runs: number }
 
-const prev = (await readState<State>()) ?? { runs: 0 };
+const prev = await readState<State>({ runs: 0 });
 const next: State = { runs: prev.runs + 1 };
 await writeState(next);
 

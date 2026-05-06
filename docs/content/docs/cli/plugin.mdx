@@ -15,11 +15,11 @@ dither plugin install <source> [--input KEY=VALUE,...] [--file KEY=PATH,...]
 
 Copies the plugin from a local directory into `~/.dither/plugins/<name>/`, validates its manifest (the `dither` block of `package.json`), resolves declared inputs, and writes a grants record to `~/.dither/grants/<name>.json`.
 
-| Argument / flag | Description |
-| --- | --- |
-| `source` | Positional. Path to the plugin directory (must contain `package.json`). Required. |
-| `--input KEY=VALUE,...` | Comma-separated values for declared `string`, `number`, `bool`, and `secret` inputs. |
-| `--file KEY=PATH,...` | Comma-separated paths for declared `file` and `folder` inputs. Paths must exist; `file` inputs must be files, `folder` inputs must be directories. |
+| Argument / flag         | Description                                                                                                                                        |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source`                | Positional. Path to the plugin directory (must contain `package.json`). Required.                                                                  |
+| `--input KEY=VALUE,...` | Comma-separated values for declared `string`, `number`, `bool`, and `secret` inputs.                                                               |
+| `--file KEY=PATH,...`   | Comma-separated paths for declared `file` and `folder` inputs. Paths must exist; `file` inputs must be files, `folder` inputs must be directories. |
 
 Required inputs without defaults must be supplied or install fails before anything is written to disk.
 
@@ -48,9 +48,9 @@ Executes an installed plugin once. Trigger is recorded as `manual`. The runner:
 5. Runs `index update` if anything was promoted.
 6. Deletes the run dir.
 
-| Argument | Description |
-| --- | --- |
-| `name` | Positional. Name of an installed plugin. Required. |
+| Argument | Description                                        |
+| -------- | -------------------------------------------------- |
+| `name`   | Positional. Name of an installed plugin. Required. |
 
 ```bash
 $ dither plugin run import-folder
@@ -86,9 +86,9 @@ dither plugin remove <name>
 
 Deletes `~/.dither/plugins/<name>/` and `~/.dither/grants/<name>.json`. Plugin state under the plugin dir goes with it (state preservation across reinstall is a later concern). Already-promoted entries under `~/.dither/entries/` are untouched.
 
-| Argument | Description |
-| --- | --- |
-| `name` | Positional. Name of an installed plugin. Required. |
+| Argument | Description                                        |
+| -------- | -------------------------------------------------- |
+| `name`   | Positional. Name of an installed plugin. Required. |
 
 ```bash
 $ dither plugin remove import-folder

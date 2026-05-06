@@ -43,9 +43,9 @@ These are managed (or validated) by dither when a plugin promotes an entry. You 
 
 ```yaml
 ---
-id: <stable-id>           # used for `dither get <id>`; survives moves
-source: gmail-ingest       # plugin name, or your own label for hand-written entries
-collection: gmail          # must match the folder the file lives under
+id: <stable-id> # used for `dither get <id>`; survives moves
+source: gmail-ingest # plugin name, or your own label for hand-written entries
+collection: gmail # must match the folder the file lives under
 ---
 ```
 
@@ -57,9 +57,9 @@ These are part of the frontmatter convention. dither doesn't require them, but p
 
 ```yaml
 ---
-external_id: 1789234567890     # provider-side id (tweet id, gmail thread id, …)
-external_url: https://…         # round-trip link back to the source
-created: 2026-04-25T11:14:00Z   # original creation time
+external_id: 1789234567890 # provider-side id (tweet id, gmail thread id, …)
+external_url: https://… # round-trip link back to the source
+created: 2026-04-25T11:14:00Z # original creation time
 tags: [pr, dither, review]
 attachments:
   - id: 7f3a8c10-…

@@ -7,13 +7,13 @@ description: Every export from @dither/plugin with signatures, behavior, and exa
 
 The SDK relies on five environment variables set by the plugin host. Every function except `VERSION` will throw if invoked outside that environment:
 
-| Env var              | Purpose                                                                                        |
-| -------------------- | ---------------------------------------------------------------------------------------------- |
-| `DITHER_RUN_DIR`     | Per-run scratch directory. `writeEntry` writes here.                                            |
-| `DITHER_INPUT_FILE`  | Path to the `input.json` produced from your grants file. `readInput` reads this.                |
-| `DITHER_STATE_FILE`  | Path to the plugin's persistent `state.json`. `readState` / `writeState` use this.              |
-| `DITHER_TRIGGER`     | `"scheduled" \| "watch" \| "manual"` — what caused this run.                                    |
-| `DITHER_PLUGIN_NAME` | The plugin's name from `package.json`. Auto-stamped onto every entry's `source` frontmatter.   |
+| Env var              | Purpose                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| `DITHER_RUN_DIR`     | Per-run scratch directory. `writeEntry` writes here.                                         |
+| `DITHER_INPUT_FILE`  | Path to the `input.json` produced from your grants file. `readInput` reads this.             |
+| `DITHER_STATE_FILE`  | Path to the plugin's persistent `state.json`. `readState` / `writeState` use this.           |
+| `DITHER_TRIGGER`     | `"scheduled" \| "watch" \| "manual"` — what caused this run.                                 |
+| `DITHER_PLUGIN_NAME` | The plugin's name from `package.json`. Auto-stamped onto every entry's `source` frontmatter. |
 
 If any of these is missing, the SDK throws:
 
@@ -81,7 +81,9 @@ The argument to `writeEntry()`.
 ## `readInput<C, S>()`
 
 ```ts
-function readInput<C = Record<string, unknown>, S = Record<string, string>>(): Promise<PluginInput<C, S>>;
+function readInput<C = Record<string, unknown>, S = Record<string, string>>(): Promise<
+  PluginInput<C, S>
+>;
 ```
 
 Reads and JSON-parses the file at `DITHER_INPUT_FILE` and returns it as a typed `PluginInput<C, S>`.
@@ -97,8 +99,13 @@ Reads and JSON-parses the file at `DITHER_INPUT_FILE` and returns it as a typed 
 ```ts
 import { readInput, writeEntry } from "@dither/plugin";
 
-interface Config { GREETING: string; MAX_RUNS: number }
-interface Secrets { API_TOKEN: string }
+interface Config {
+  GREETING: string;
+  MAX_RUNS: number;
+}
+interface Secrets {
+  API_TOKEN: string;
+}
 
 const input = await readInput<Config, Secrets>();
 console.log(input.trigger, input.config.GREETING);
@@ -148,30 +155,61 @@ await writeEntry({
 });
 ```
 
-## `readState<T>()`
+## `readFile(inputId)`
 
 ```ts
-function readState<T = Record<string, unknown>>(): Promise<T | null>;
+function readFile(inputId: string): Promise<string>;
 ```
 
-Reads and JSON-parses the file at `DITHER_STATE_FILE`.
+Reads a file the user supplied as a `files[]` input. The SDK looks up the absolute path in `input.json.files[inputId]` (which the host already added to Deno's `--allow-read` allowlist) and returns the UTF-8 contents.
+
+Saves the two-step pattern of importing `node:fs/promises` and indexing into `input.files` by hand.
 
 **Behavior:**
 
-- Returns `null` if the file does not exist (i.e. first run).
-- Returns `null` if the file exists but is empty after trimming.
+- Throws if the input id is not present in `input.json.files` (i.e. not declared in the manifest's `files[]`, or not provided at install time, or not required and not supplied).
+- Always reads as UTF-8. For binary files, fall back to `node:fs/promises` and `input.files[id]` directly.
+- Throws if `DITHER_INPUT_FILE` is unset.
+
+**Example** (from the `read-file` fixture):
+
+```ts
+import { readFile, writeEntry } from "@dither/plugin";
+
+const body = await readFile("SOURCE");
+
+await writeEntry({
+  collection: "read",
+  frontmatter: { external_id: "from-file" },
+  body,
+});
+```
+
+## `readState<T>(initial)`
+
+```ts
+function readState<T>(initial: T): Promise<T>;
+```
+
+Reads and JSON-parses the file at `DITHER_STATE_FILE`. Returns `initial` when the file is missing or empty, so the plugin never has to handle a `null` branch.
+
+**Behavior:**
+
+- Returns `initial` if the file does not exist (first run).
+- Returns `initial` if the file exists but is empty after trimming.
 - Otherwise returns `JSON.parse(content) as T`. No schema validation.
 - Throws if `DITHER_STATE_FILE` is unset.
+
+`T` is inferred from `initial`, so most call sites can drop the explicit generic.
 
 **Example:**
 
 ```ts
-import { readState } from "@dither/plugin";
+import { readState, writeState } from "@dither/plugin";
 
-interface State { lastSeen?: string; cursor?: number }
-
-const state = (await readState<State>()) ?? { cursor: 0 };
-console.log(state.cursor);
+const state = await readState({ cursor: 0, lastSeen: "" });
+state.cursor += 1;
+await writeState(state);
 ```
 
 ## `writeState<T>(state)`
@@ -193,9 +231,11 @@ JSON-stringifies `state` (pretty-printed, 2-space indent) and writes it to `DITH
 ```ts
 import { readState, writeState } from "@dither/plugin";
 
-interface State { lastSeen: string }
+interface State {
+  lastSeen: string;
+}
 
-const prev = (await readState<State>()) ?? { lastSeen: "" };
+const prev = await readState<State>({ lastSeen: "" });
 await writeState<State>({ lastSeen: new Date().toISOString() });
 ```
 
@@ -213,11 +253,15 @@ import {
   type PluginInput,
 } from "@dither/plugin";
 
-interface Config { feed_url: string }
-interface State  { lastSeen?: string }
+interface Config {
+  feed_url: string;
+}
+interface State {
+  lastSeen: string;
+}
 
 const input: PluginInput<Config> = await readInput<Config>();
-const state = (await readState<State>()) ?? {};
+const state = await readState<State>({ lastSeen: "" });
 
 console.error(`plugin SDK ${VERSION}, trigger=${input.trigger}`);
 

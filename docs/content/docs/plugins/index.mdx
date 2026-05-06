@@ -25,8 +25,8 @@ The plugin imports from `@dither/plugin` and writes markdown entries via `writeE
 
 - **Emit entries** into one or more collections it has been granted (`collections.writes`).
 - **Read user-supplied config** — strings, numbers, booleans, and secrets — declared in the manifest's `inputs[]`.
-- **Read user-supplied file paths** — single files or folders — declared in `files[]`. The host validates them at install time and adds them to Deno's `--allow-read`.
-- **Persist state** between runs via `readState()` / `writeState()`. State lives at `~/.dither/plugins/<name>/state/state.json`.
+- **Read user-supplied files** — declared in `files[]`. The SDK's `readFile(id)` returns the contents directly; for the raw path or folders, `input.files[id]` is available.
+- **Persist state** between runs via `readState(initial)` / `writeState()`. State lives at `~/.dither/plugins/<name>/state/state.json`.
 - **Reach the network**, but only to hosts listed in `permissions.host_net` (passed to Deno as `--allow-net`).
 - **Read process env vars** listed in `permissions.host_env` (added to Deno's `--allow-env` allowlist).
 
@@ -62,6 +62,14 @@ Whichever trigger fires, the value lands in `input.trigger` (`"manual" | "schedu
 ## Next
 
 <Cards>
-  <Card title="Authoring guide" href="/docs/plugins/authoring" description="Build your first plugin from scratch — manifest, code, install, run." />
-  <Card title="SDK reference" href="/docs/plugins/sdk-reference" description="Every export from @dither/plugin with signatures and behavior." />
+  <Card
+    title="Authoring guide"
+    href="/docs/plugins/authoring"
+    description="Build your first plugin from scratch — manifest, code, install, run."
+  />
+  <Card
+    title="SDK reference"
+    href="/docs/plugins/sdk-reference"
+    description="Every export from @dither/plugin with signatures and behavior."
+  />
 </Cards>

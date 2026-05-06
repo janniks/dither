@@ -12,7 +12,7 @@
  * promotes them into ~/.dither/entries/<collection>/ after the plugin exits.
  */
 
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile as fsReadFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -50,8 +50,43 @@ export async function readInput<C = Record<string, unknown>, S = Record<string, 
   PluginInput<C, S>
 > {
   const path = env("DITHER_INPUT_FILE");
-  const content = await readFile(path, "utf-8");
+  const content = await fsReadFile(path, "utf-8");
   return JSON.parse(content) as PluginInput<C, S>;
+}
+
+/**
+ * Read a file the user supplied as a `files[]` input. Resolves the input id
+ * to its absolute path (which the host already added to Deno's --allow-read
+ * allowlist) and returns the UTF-8 contents as a string.
+ *
+ * Saves plugin authors from importing `node:fs/promises` and the
+ * lookup-then-read two-step:
+ *
+ *   // before
+ *   import { readFile } from "node:fs/promises";
+ *   import { readInput } from "@dither/plugin";
+ *   const input = await readInput();
+ *   const body = await readFile(input.files.SOURCE, "utf-8");
+ *
+ *   // after
+ *   import { readFile } from "@dither/plugin";
+ *   const body = await readFile("SOURCE");
+ *
+ * Throws if the input id was not declared in the manifest's `files[]` or was
+ * not provided at install time. For non-utf-8 reads, fall back to
+ * `node:fs/promises` directly.
+ */
+export async function readFile(inputId: string): Promise<string> {
+  const inputPath = env("DITHER_INPUT_FILE");
+  const inputContent = await fsReadFile(inputPath, "utf-8");
+  const input = JSON.parse(inputContent) as PluginInput;
+  const path = input.files[inputId];
+  if (!path) {
+    throw new Error(
+      `File input '${inputId}' was not provided at install time (or is not declared in the manifest's files[]).`,
+    );
+  }
+  return await fsReadFile(path, "utf-8");
 }
 
 function yamlValue(v: unknown): string {
@@ -85,11 +120,24 @@ export async function writeEntry(opts: EntryOptions): Promise<string> {
   return out;
 }
 
-export async function readState<T = Record<string, unknown>>(): Promise<T | null> {
+/**
+ * Read the plugin's persistent state. The caller passes the initial value
+ * the plugin should see on its first run (or after the state file is wiped) —
+ * the SDK returns that value when no state has been written yet, so the
+ * plugin never has to deal with a `null` branch.
+ *
+ * The type parameter is inferred from `initial`, so most call sites can
+ * drop the explicit generic:
+ *
+ *   const state = await readState({ runs: 0 });
+ *   state.runs += 1;
+ *   await writeState(state);
+ */
+export async function readState<T>(initial: T): Promise<T> {
   const path = env("DITHER_STATE_FILE");
-  if (!existsSync(path)) return null;
-  const content = await readFile(path, "utf-8");
-  if (content.trim() === "") return null;
+  if (!existsSync(path)) return initial;
+  const content = await fsReadFile(path, "utf-8");
+  if (content.trim() === "") return initial;
   return JSON.parse(content) as T;
 }
 

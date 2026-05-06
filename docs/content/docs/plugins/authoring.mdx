@@ -74,18 +74,18 @@ Every field below is optional unless noted. The full schema lives in `packages/c
 
 ### Identity
 
-| Field          | Type     | Notes                                                                  |
-| -------------- | -------- | ---------------------------------------------------------------------- |
-| `display_name` | `string` | Human label shown in `dither plugin list` and (eventually) UI.         |
-| `tagline`      | `string` | One-liner.                                                             |
-| `icon`         | `string` | Identifier or path. Schema-only in v0; nothing renders icons yet.      |
+| Field          | Type     | Notes                                                             |
+| -------------- | -------- | ----------------------------------------------------------------- |
+| `display_name` | `string` | Human label shown in `dither plugin list` and (eventually) UI.    |
+| `tagline`      | `string` | One-liner.                                                        |
+| `icon`         | `string` | Identifier or path. Schema-only in v0; nothing renders icons yet. |
 
 ### Triggers
 
-| Field      | Type                                            | Notes                                                                    |
-| ---------- | ----------------------------------------------- | ------------------------------------------------------------------------ |
-| `schedule` | `string` (cron expression)                      | Stored, not yet runtime-enforced. Manual `dither plugin run` works now.  |
-| `watch`    | `{ collections: string[]; glob?: string }`      | Stored, not yet runtime-enforced.                                        |
+| Field      | Type                                       | Notes                                                                   |
+| ---------- | ------------------------------------------ | ----------------------------------------------------------------------- |
+| `schedule` | `string` (cron expression)                 | Stored, not yet runtime-enforced. Manual `dither plugin run` works now. |
+| `watch`    | `{ collections: string[]; glob?: string }` | Stored, not yet runtime-enforced.                                       |
 
 ### `inputs[]`
 
@@ -133,11 +133,11 @@ At install time the path is resolved to absolute, checked to exist, and asserted
 
 ### `permissions`
 
-| Field                | Type         | Effect                                                                                                    |
-| -------------------- | ------------ | --------------------------------------------------------------------------------------------------------- |
-| `host_net`           | `string[]`   | Becomes `--allow-net=<csv>`. Empty/absent → no network.                                                   |
-| `host_env`           | `string[]`   | Names appended to Deno's `--allow-env`. The `DITHER_*` vars are always included.                          |
-| `permissions.browser`| `{ hosts }`  | Schema-only in v0; the browser sidebar lands in a later phase.                                            |
+| Field                 | Type        | Effect                                                                           |
+| --------------------- | ----------- | -------------------------------------------------------------------------------- |
+| `host_net`            | `string[]`  | Becomes `--allow-net=<csv>`. Empty/absent → no network.                          |
+| `host_env`            | `string[]`  | Names appended to Deno's `--allow-env`. The `DITHER_*` vars are always included. |
+| `permissions.browser` | `{ hosts }` | Schema-only in v0; the browser sidebar lands in a later phase.                   |
 
 ### `collections`
 
@@ -173,8 +173,13 @@ Read the values the user supplied at install time. `readInput<Config, Secrets>()
 ```ts
 import { readInput, writeEntry } from "@dither/plugin";
 
-interface Config { GREETING: string; MAX_RUNS: number }
-interface Secrets { API_TOKEN: string }
+interface Config {
+  GREETING: string;
+  MAX_RUNS: number;
+}
+interface Secrets {
+  API_TOKEN: string;
+}
 
 const input = await readInput<Config, Secrets>();
 
@@ -192,40 +197,47 @@ await writeEntry({
 
 ### 4c. Adding file inputs
 
-`input.files` is keyed by the manifest's input `id`. The path is absolute and already on Deno's read allowlist:
+The SDK's `readFile(id)` looks up the file path the user supplied at install time, reads it, and returns the UTF-8 contents. One import, one call:
 
 ```ts
-import { readFile } from "node:fs/promises";
-import { readInput, writeEntry } from "@dither/plugin";
+import { readFile, writeEntry } from "@dither/plugin";
 
-const input = await readInput();
-const sourcePath = input.files.SOURCE;
-if (!sourcePath) throw new Error("input.files.SOURCE missing");
-
-const body = await readFile(sourcePath, "utf-8");
+const body = await readFile("SOURCE");
 
 await writeEntry({
   collection: "read",
-  frontmatter: { source_path: sourcePath },
+  frontmatter: { external_id: "from-file" },
   body,
 });
 ```
 
+If you need the raw path (for example to record it in frontmatter, or for a non-utf-8 read), it's still available on `input.files[id]`:
+
+```ts
+import { readInput } from "@dither/plugin";
+import { readFile as fsReadFile } from "node:fs/promises";
+
+const input = await readInput();
+const buf = await fsReadFile(input.files.SOURCE!); // Buffer, not string
+```
+
 ### 4d. State between runs
 
-`readState()` returns `null` on the first run; `writeState()` persists JSON to `~/.dither/plugins/<name>/state/state.json`:
+`readState(initial)` takes the value the plugin should see on its first run and returns it when no state has been written yet — no `null` branch to handle. `writeState()` persists JSON to `~/.dither/plugins/<name>/state/state.json`:
 
 ```ts
 import { readState, writeState, writeEntry } from "@dither/plugin";
 
-interface State { lastSeen?: string }
+interface State {
+  lastSeen: string;
+}
 
-const state = (await readState<State>()) ?? {};
+const state = await readState<State>({ lastSeen: "" });
 const now = new Date().toISOString();
 
 await writeEntry({
   collection: "notes",
-  body: `Last run: ${state.lastSeen ?? "never"}\nThis run: ${now}`,
+  body: `Last run: ${state.lastSeen || "never"}\nThis run: ${now}`,
 });
 
 await writeState<State>({ lastSeen: now });
@@ -265,9 +277,9 @@ The host:
    ```json
    {
      "trigger": "manual",
-     "config":  { "GREETING": "hi", "MAX_RUNS": 5 },
+     "config": { "GREETING": "hi", "MAX_RUNS": 5 },
      "secrets": { "API_TOKEN": "sk-…" },
-     "files":   { "SOURCE": "/abs/path/to/notes.md" },
+     "files": { "SOURCE": "/abs/path/to/notes.md" },
      "targets": []
    }
    ```

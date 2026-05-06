@@ -13,18 +13,18 @@ When `DITHER_HOME` is unset, dither resolves to `~/.dither` on every platform.
 
 ## What's there today
 
-| Path | Purpose | Written by |
-| --- | --- | --- |
-| `~/.dither/entries/<collection>/**/*.md` | Your canonical markdown. One folder per collection. | You + plugins (via promote) |
-| `~/.dither/qmd-index.sqlite` | The qmd search index over `entries/`. | `dither index update`, plugin runs |
-| `~/.dither/plugins/<name>/` | Installed plugin source — copied verbatim from the install path. | `dither plugin install` |
-| `~/.dither/plugins/<name>/state/state.json` | Plugin's persistent state (e.g. last-synced cursor). | The plugin itself, at run time |
-| `~/.dither/grants/<name>.json` | dither-owned record of the plugin's manifest, resolved input values, and file paths. | `dither plugin install` |
-| `~/.dither/runs/<run-id>/` | Per-run scratch dir. The plugin writes its `*.md` output here. | `dither plugin run` (auto-cleaned) |
+| Path                                        | Purpose                                                                              | Written by                         |
+| ------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------- |
+| `~/.dither/entries/<collection>/**/*.md`    | Your canonical markdown. One folder per collection.                                  | You + plugins (via promote)        |
+| `~/.dither/qmd-index.sqlite`                | The qmd search index over `entries/`.                                                | `dither index update`, plugin runs |
+| `~/.dither/plugins/<name>/`                 | Installed plugin source — copied verbatim from the install path.                     | `dither plugin install`            |
+| `~/.dither/plugins/<name>/state/state.json` | Plugin's persistent state (e.g. last-synced cursor).                                 | The plugin itself, at run time     |
+| `~/.dither/grants/<name>.json`              | dither-owned record of the plugin's manifest, resolved input values, and file paths. | `dither plugin install`            |
+| `~/.dither/runs/<run-id>/`                  | Per-run scratch dir. The plugin writes its `*.md` output here.                       | `dither plugin run` (auto-cleaned) |
 
 Two paths to know about:
 
-- `entries/<collection>/` is the only directory whose contents are *yours* in the strong sense. Everything else is bookkeeping.
+- `entries/<collection>/` is the only directory whose contents are _yours_ in the strong sense. Everything else is bookkeeping.
 - `runs/<run-id>/` is ephemeral. After a successful promote, the host removes it. Don't put anything you care about in there.
 
 ## What the architecture reserves but v0 doesn't write
@@ -52,7 +52,7 @@ Everything else is regenerable:
 
 - `qmd-index.sqlite` — rebuilds from `entries/` via `dither index update`.
 - `plugins/<name>/` — reinstall with `dither plugin install`.
-- `plugins/<name>/state/` — plugin will resync from scratch (this can mean re-fetching from APIs; not always cheap, but never lossy for *your* data).
+- `plugins/<name>/state/` — plugin will resync from scratch (this can mean re-fetching from APIs; not always cheap, but never lossy for _your_ data).
 - `grants/<name>.json` — recreated by reinstalling the plugin and re-supplying inputs.
 - `runs/<run-id>/` — already ephemeral.
 

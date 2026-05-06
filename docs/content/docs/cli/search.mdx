@@ -11,18 +11,18 @@ Searches the qmd index built from `~/.dither/entries/`. Prints one tab-separated
 
 ## Arguments
 
-| Name | Description |
-| --- | --- |
+| Name    | Description                              |
+| ------- | ---------------------------------------- |
 | `query` | Positional. The search string. Required. |
 
 ## Flags
 
-| Flag | Description |
-| --- | --- |
-| `-c, --collection <name>` | Restrict the search to a single collection (i.e. one folder under `entries/`). |
-| `-n, --limit <N>` | Max results to return. Defaults to qmd's internal default. |
-| `--rerank` | Run the LLM reranker over the candidate set. Slower, higher quality. Only meaningful in `hybrid` mode. |
-| `--mode <hybrid\|lex>` | `hybrid` (default) combines BM25 + vector + LLM query expansion. `lex` is pure BM25 — no models, no embeddings, instant. |
+| Flag                      | Description                                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `-c, --collection <name>` | Restrict the search to a single collection (i.e. one folder under `entries/`).                                           |
+| `-n, --limit <N>`         | Max results to return. Defaults to qmd's internal default.                                                               |
+| `--rerank`                | Run the LLM reranker over the candidate set. Slower, higher quality. Only meaningful in `hybrid` mode.                   |
+| `--mode <hybrid\|lex>`    | `hybrid` (default) combines BM25 + vector + LLM query expansion. `lex` is pure BM25 — no models, no embeddings, instant. |
 
 `--mode` only accepts the literal strings `hybrid` and `lex`; anything else is ignored and the default is used.
 
