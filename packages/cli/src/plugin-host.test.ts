@@ -337,6 +337,40 @@ await writeEntry({
     rmSync(dir, { recursive: true, force: true });
   }, 60000);
 
+  it("SDK writeEntry rejects '..' in filename and frontmatter.id", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dither-sdk-traversal-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "sdk-traverser",
+        version: "0.0.1",
+        dither: { collections: ["safe"] },
+      }),
+    );
+    writeFileSync(
+      join(dir, "plugin.ts"),
+      `import { writeEntry } from "@dither/plugin";
+await writeEntry({
+  collection: "safe",
+  filename: "../escape.md",
+  body: "should be rejected",
+});
+`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+
+    await installPlugin({ source: dir });
+    // Plugin throws inside Deno → host wraps it as a non-zero exit.
+    await expect(runPlugin({ name: "sdk-traverser" })).rejects.toThrow(/exited with code/);
+
+    // Nothing escaped runs/ or plugins/ — the run dir cleanup also covers this.
+    expect(existsSync(join(home, "escape.md"))).toBe(false);
+
+    rmSync(dir, { recursive: true, force: true });
+  }, 30000);
+
   it("run dir is cleaned up even when promote fails", async () => {
     const dir = mkdtempSync(join(tmpdir(), "dither-cleanup-"));
     writeFileSync(

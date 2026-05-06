@@ -99,13 +99,29 @@ function yamlValue(v: unknown): string {
   return JSON.stringify(v);
 }
 
+function assertFlatFilename(label: string, name: string): void {
+  if (!name) throw new Error(`${label} must be non-empty`);
+  if (name === "." || name === "..") {
+    throw new Error(`${label} must not be '${name}'`);
+  }
+  if (name.includes("/") || name.includes("\\")) {
+    throw new Error(`${label} '${name}' must be a flat name (no '/' or '\\\\')`);
+  }
+}
+
 export async function writeEntry(opts: EntryOptions): Promise<string> {
   const runDir = env("DITHER_RUN_DIR");
   const pluginName = env("DITHER_PLUGIN_NAME");
 
   const explicitId = typeof opts.frontmatter?.id === "string" ? opts.frontmatter.id : undefined;
+  if (explicitId !== undefined) {
+    assertFlatFilename("frontmatter.id", explicitId);
+  }
   const id = explicitId ?? randomUUID();
 
+  if (opts.filename !== undefined) {
+    assertFlatFilename("filename", opts.filename);
+  }
   const baseName = opts.filename ?? `${id}.md`;
   const out = join(runDir, baseName);
 
