@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { resolveHome } from "./home";
 import { parsePackage, type Manifest, type ParsedPackage } from "./manifest";
+import { validateGrantPattern } from "./collection-paths";
 
 export interface InstallOptions {
   source: string;
@@ -117,6 +118,7 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
   const files = await resolveFiles(parsed.manifest.files, opts.files);
   const net = resolveAllowList(parsed.manifest.net, opts.net);
   const collections = resolveAllowList(parsed.manifest.collections, opts.collections);
+  for (const pattern of collections) validateGrantPattern(pattern);
 
   const home = resolveHome();
   const destDir = join(home, "plugins", parsed.name);

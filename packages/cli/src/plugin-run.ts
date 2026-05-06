@@ -4,11 +4,12 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import matter from "gray-matter";
 import { resolveHome } from "./home";
 import { parsePackage } from "./manifest";
 import { updateIndex } from "./update-index";
 import { getGlobalEnv } from "./global-env";
-import { validateCollectionPath, grantsCover } from "./collection-paths";
+import { validateCollectionPath, validateGrantPattern, grantsCover } from "./collection-paths";
 
 export interface ProgressMessage {
   message: string;
@@ -54,14 +55,9 @@ interface GrantsFile {
   collections?: string[];
 }
 
-function extractField(content: string, key: string): string | null {
-  const m = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return null;
-  for (const line of m[1]!.split("\n")) {
-    const kv = line.match(new RegExp(`^${key}:\\s*"?([^"\\n]+)"?\\s*$`));
-    if (kv) return kv[1]!.trim().replace(/^"|"$/g, "");
-  }
-  return null;
+interface ParsedFrontmatter {
+  source?: unknown;
+  collection?: unknown;
 }
 
 function parseControl(line: string): ProgressMessage | null {
@@ -78,6 +74,73 @@ function parseControl(line: string): ProgressMessage | null {
   } catch {
     return null;
   }
+}
+
+interface PromoteCandidate {
+  src: string;
+  dest: string;
+  collection: string;
+  filename: string;
+}
+
+async function planPromotion(
+  runDir: string,
+  pluginName: string,
+  home: string,
+  allowedCollections: readonly string[],
+): Promise<PromoteCandidate[]> {
+  const entries = await readdir(runDir);
+  const out: PromoteCandidate[] = [];
+  for (const filename of entries) {
+    if (!filename.endsWith(".md")) continue;
+    const src = join(runDir, filename);
+    const content = await readFile(src, "utf-8");
+    const data = matter(content).data as ParsedFrontmatter;
+
+    const source = typeof data.source === "string" ? data.source : null;
+    if (source !== pluginName) {
+      throw new Error(
+        `output ${filename} declares source=${source ?? "(missing)"}; expected ${pluginName}`,
+      );
+    }
+    const collection = typeof data.collection === "string" ? data.collection : null;
+    if (!collection) {
+      throw new Error(`output ${filename} missing 'collection' frontmatter`);
+    }
+    validateCollectionPath(collection);
+    if (!grantsCover(allowedCollections, collection)) {
+      throw new Error(
+        `plugin '${pluginName}' is not granted write access to collection '${collection}'`,
+      );
+    }
+
+    const destDir = join(home, "entries", collection);
+    const dest = join(destDir, filename);
+    if (existsSync(dest)) {
+      const existing = await readFile(dest, "utf-8");
+      const existingSource = (matter(existing).data as ParsedFrontmatter).source;
+      if (existingSource !== pluginName) {
+        throw new Error(
+          `output ${filename} would clobber an existing entry at '${collection}/${filename}' (source=${
+            typeof existingSource === "string" ? existingSource : "(missing)"
+          }, this plugin=${pluginName})`,
+        );
+      }
+    }
+
+    out.push({ src, dest, collection, filename });
+  }
+  return out;
+}
+
+async function copyPromoted(candidates: PromoteCandidate[]): Promise<string[]> {
+  const promoted: string[] = [];
+  for (const c of candidates) {
+    await mkdir(join(c.dest, ".."), { recursive: true });
+    await copyFile(c.src, c.dest);
+    promoted.push(c.dest);
+  }
+  return promoted;
 }
 
 export async function runPlugin(opts: RunOptions): Promise<RunResult> {
@@ -104,9 +167,8 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
   const grantCollections = Array.from(
     new Set([...(grants.collections ?? []), ...(opts.collections ?? [])]),
   );
+  for (const pattern of grantCollections) validateGrantPattern(pattern);
 
-  // Resolve the env values plugins will see: literals win; refs pull from
-  // global env; manifest defaults fill the rest.
   const resolvedEnv: Record<string, string> = { ...grantEnv };
   for (const name of envRefs) {
     if (resolvedEnv[name] !== undefined) continue;
@@ -122,135 +184,107 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
   const runDir = join(home, "runs", runId);
   await mkdir(runDir, { recursive: true });
 
-  const stateDir = join(pluginDir, "state");
-  await mkdir(stateDir, { recursive: true });
-  const stateFile = join(stateDir, "state.json");
+  try {
+    const stateDir = join(pluginDir, "state");
+    await mkdir(stateDir, { recursive: true });
+    const stateFile = join(stateDir, "state.json");
 
-  const inputFile = join(runDir, "input.json");
-  const trigger = opts.trigger ?? "manual";
-  await writeFile(
-    inputFile,
-    JSON.stringify(
-      {
-        trigger,
-        env: resolvedEnv,
-        files: grantFiles,
-        targets: [],
-      },
-      null,
-      2,
-    ),
-  );
+    const inputFile = join(runDir, "input.json");
+    const trigger = opts.trigger ?? "manual";
+    await writeFile(
+      inputFile,
+      JSON.stringify(
+        {
+          trigger,
+          env: resolvedEnv,
+          files: grantFiles,
+          targets: [],
+        },
+        null,
+        2,
+      ),
+    );
 
-  // Resolve the SDK path so we can build a Deno import map.
-  const sdkUrl = import.meta.resolve("@dither/plugin");
-  const sdkPath = fileURLToPath(sdkUrl);
-  const importMapPath = join(runDir, "_import-map.json");
-  await writeFile(
-    importMapPath,
-    JSON.stringify({
-      imports: { "@dither/plugin": sdkUrl },
-    }),
-  );
+    const sdkUrl = import.meta.resolve("@dither/plugin");
+    const sdkPath = fileURLToPath(sdkUrl);
+    const importMapPath = join(runDir, "_import-map.json");
+    await writeFile(
+      importMapPath,
+      JSON.stringify({
+        imports: { "@dither/plugin": sdkUrl },
+      }),
+    );
 
-  const allowRead = [pluginDir, runDir, sdkPath, ...Object.values(grantFiles)].join(",");
-  const allowWrite = [stateDir, runDir].join(",");
-  const allowEnv = DITHER_ENV_VARS.join(",");
+    const allowRead = [pluginDir, runDir, sdkPath, ...Object.values(grantFiles)].join(",");
+    const allowWrite = [stateDir, runDir].join(",");
+    const allowEnv = DITHER_ENV_VARS.join(",");
 
-  const denoArgs = [
-    "run",
-    `--import-map=${importMapPath}`,
-    `--allow-read=${allowRead}`,
-    `--allow-write=${allowWrite}`,
-    `--allow-env=${allowEnv}`,
-  ];
-  if (grantNet.length) {
-    denoArgs.push(`--allow-net=${grantNet.join(",")}`);
-  }
-  denoArgs.push(join(pluginDir, "plugin.ts"));
+    const denoArgs = [
+      "run",
+      `--import-map=${importMapPath}`,
+      `--allow-read=${allowRead}`,
+      `--allow-write=${allowWrite}`,
+      `--allow-env=${allowEnv}`,
+    ];
+    if (grantNet.length) {
+      denoArgs.push(`--allow-net=${grantNet.join(",")}`);
+    }
+    denoArgs.push(join(pluginDir, "plugin.ts"));
 
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    DITHER_RUN_DIR: runDir,
-    DITHER_INPUT_FILE: inputFile,
-    DITHER_STATE_FILE: stateFile,
-    DITHER_TRIGGER: trigger,
-    DITHER_PLUGIN_NAME: opts.name,
-  };
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      DITHER_RUN_DIR: runDir,
+      DITHER_INPUT_FILE: inputFile,
+      DITHER_STATE_FILE: stateFile,
+      DITHER_TRIGGER: trigger,
+      DITHER_PLUGIN_NAME: opts.name,
+    };
 
-  await new Promise<void>((res, rej) => {
-    // stdout is inherited so user `console.log` flows straight through.
-    // stderr is piped so we can parse `_dither` control messages (progress)
-    // out of the stream; everything else is forwarded to host stderr.
-    const child = spawn("deno", denoArgs, {
-      env,
-      stdio: ["inherit", "inherit", "pipe"],
-    });
-    let buf = "";
-    child.stderr!.setEncoding("utf-8");
-    child.stderr!.on("data", (chunk: string) => {
-      buf += chunk;
-      let nl: number;
-      while ((nl = buf.indexOf("\n")) !== -1) {
-        const line = buf.slice(0, nl);
-        buf = buf.slice(nl + 1);
-        const msg = parseControl(line);
-        if (msg && opts.onProgress) {
-          opts.onProgress(msg);
-        } else {
-          process.stderr.write(`${line}\n`);
+    await new Promise<void>((res, rej) => {
+      const child = spawn("deno", denoArgs, {
+        env,
+        stdio: ["inherit", "inherit", "pipe"],
+      });
+      let buf = "";
+      child.stderr!.setEncoding("utf-8");
+      child.stderr!.on("data", (chunk: string) => {
+        buf += chunk;
+        let nl: number;
+        while ((nl = buf.indexOf("\n")) !== -1) {
+          const line = buf.slice(0, nl);
+          buf = buf.slice(nl + 1);
+          const msg = parseControl(line);
+          if (msg && opts.onProgress) {
+            opts.onProgress(msg);
+          } else {
+            process.stderr.write(`${line}\n`);
+          }
         }
-      }
+      });
+      child.stderr!.on("end", () => {
+        if (buf) process.stderr.write(buf);
+      });
+      child.on("error", rej);
+      child.on("exit", (code) => {
+        if (code === 0) res();
+        else rej(new Error(`plugin '${opts.name}' exited with code ${code}`));
+      });
     });
-    child.stderr!.on("end", () => {
-      if (buf) process.stderr.write(buf);
-    });
-    child.on("error", rej);
-    child.on("exit", (code) => {
-      if (code === 0) res();
-      else rej(new Error(`plugin '${opts.name}' exited with code ${code}`));
-    });
-  });
 
-  // Promote any *.md files the plugin wrote.
-  const entries = await readdir(runDir);
-  const promoted: string[] = [];
-  for (const file of entries) {
-    if (!file.endsWith(".md")) continue;
-    const src = join(runDir, file);
-    const content = await readFile(src, "utf-8");
+    // Two-pass promote: validate every output, then copy. Any validation
+    // failure throws before any file is moved into entries/, so a partial
+    // promote is impossible.
+    const candidates = await planPromotion(runDir, opts.name, home, grantCollections);
+    const promoted = await copyPromoted(candidates);
 
-    const source = extractField(content, "source");
-    if (source !== opts.name) {
-      throw new Error(
-        `output ${file} declares source=${source ?? "(missing)"}; expected ${opts.name}`,
-      );
-    }
-    const collection = extractField(content, "collection");
-    if (!collection) {
-      throw new Error(`output ${file} missing 'collection' frontmatter`);
-    }
-    validateCollectionPath(collection);
-    if (!grantsCover(grantCollections, collection)) {
-      throw new Error(
-        `plugin '${opts.name}' is not granted write access to collection '${collection}'`,
-      );
+    if (promoted.length > 0) {
+      await updateIndex();
     }
 
-    const destDir = join(home, "entries", ...collection.split("/"));
-    await mkdir(destDir, { recursive: true });
-    const dest = join(destDir, file);
-    await copyFile(src, dest);
-    promoted.push(dest);
+    return { runId, promoted };
+  } finally {
+    // Always clean up the run dir — failed runs would otherwise leave
+    // input.json (containing plaintext env values, possibly secrets) on disk.
+    await rm(runDir, { recursive: true, force: true });
   }
-
-  await rm(runDir, { recursive: true, force: true });
-
-  // Refresh the qmd index so newly-promoted entries are searchable
-  // immediately. Skipped when nothing was written — saves a no-op pass.
-  if (promoted.length > 0) {
-    await updateIndex();
-  }
-
-  return { runId, promoted };
 }

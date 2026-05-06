@@ -229,6 +229,147 @@ await writeEntry({ collection: "messages-archive/x", body: "leak" });
     rmSync(dir, { recursive: true, force: true });
   }, 30000);
 
+  it("nested grant: messages/** also authorizes the bare 'messages' collection", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dither-nested-bare-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "nested-bare",
+        version: "0.0.1",
+        dither: { collections: ["messages/**"] },
+      }),
+    );
+    writeFileSync(
+      join(dir, "plugin.ts"),
+      `import { writeEntry } from "@dither/plugin";
+await writeEntry({ collection: "messages", body: "bare parent" });
+`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+
+    await installPlugin({ source: dir });
+    const result = await runPlugin({ name: "nested-bare" });
+    expect(result.promoted.length).toBe(1);
+
+    rmSync(dir, { recursive: true, force: true });
+  }, 60000);
+
+  it("install rejects an empty grant pattern", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dither-empty-grant-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "emptyish",
+        version: "0.0.1",
+        dither: { collections: ["ok"] },
+      }),
+    );
+    writeFileSync(join(dir, "plugin.ts"), `// noop\n`);
+
+    const { installPlugin } = await import("./plugin-install");
+    await expect(installPlugin({ source: dir, collections: [""] })).rejects.toThrow(
+      /grant pattern is empty/,
+    );
+
+    rmSync(dir, { recursive: true, force: true });
+  }, 30000);
+
+  it("install rejects a manifest grant pattern with '..'", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dither-bad-manifest-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "bad-manifest",
+        version: "0.0.1",
+        dither: { collections: ["../*"] },
+      }),
+    );
+    writeFileSync(join(dir, "plugin.ts"), `// noop\n`);
+
+    const { installPlugin } = await import("./plugin-install");
+    await expect(installPlugin({ source: dir })).rejects.toThrow(/'\.\.'/);
+
+    rmSync(dir, { recursive: true, force: true });
+  }, 30000);
+
+  it("promote refuses to clobber a hand-authored entry at the same path", async () => {
+    // Pre-existing user-authored file (no plugin source frontmatter).
+    const collectionDir = join(home, "entries", "imported");
+    mkdirSync(collectionDir, { recursive: true });
+    const targetId = "fixture-clobber";
+    writeFileSync(
+      join(collectionDir, `${targetId}.md`),
+      "---\ntitle: Hand-authored\n---\n\nDo not overwrite me.\n",
+    );
+
+    const dir = mkdtempSync(join(tmpdir(), "dither-clobber-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "clobberer",
+        version: "0.0.1",
+        dither: { collections: ["imported"] },
+      }),
+    );
+    writeFileSync(
+      join(dir, "plugin.ts"),
+      `import { writeEntry } from "@dither/plugin";
+await writeEntry({
+  collection: "imported",
+  frontmatter: { id: "${targetId}" },
+  body: "trying to overwrite",
+});
+`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+
+    await installPlugin({ source: dir });
+    await expect(runPlugin({ name: "clobberer" })).rejects.toThrow(/clobber/);
+
+    // Original content is intact.
+    const after = readFileSync(join(collectionDir, `${targetId}.md`), "utf-8");
+    expect(after).toContain("Do not overwrite me.");
+
+    rmSync(dir, { recursive: true, force: true });
+  }, 60000);
+
+  it("run dir is cleaned up even when promote fails", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dither-cleanup-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "fail-promote",
+        version: "0.0.1",
+        dither: { collections: ["allowed"] },
+      }),
+    );
+    writeFileSync(
+      join(dir, "plugin.ts"),
+      `import { writeEntry } from "@dither/plugin";
+await writeEntry({ collection: "forbidden", body: "this will fail to promote" });
+`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+
+    await installPlugin({ source: dir });
+    await expect(runPlugin({ name: "fail-promote" })).rejects.toThrow(/not granted/);
+
+    // No leftover run dir — the try/finally guarantees cleanup even on throw.
+    const runsDir = join(home, "runs");
+    if (existsSync(runsDir)) {
+      const remaining = readdirSync(runsDir);
+      expect(remaining).toEqual([]);
+    }
+
+    rmSync(dir, { recursive: true, force: true });
+  }, 30000);
+
   it("install grant can widen past the manifest (manifest is default, not ceiling)", async () => {
     const dir = mkdtempSync(join(tmpdir(), "dither-widen-"));
     writeFileSync(
