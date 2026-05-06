@@ -6,14 +6,8 @@
   "dither": {
     "display_name": "Import Folder",
     "tagline": "Test fixture for the plugin SDK.",
-    "permissions": {},
-    "collections": {
-      "writes": [
-        "imported"
-      ],
-      "auto_create": [
-        "imported"
-      ]
-    }
+    "collections": [
+      "imported"
+    ]
   }
 }

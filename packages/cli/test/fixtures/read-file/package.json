@@ -14,14 +14,8 @@
         "required": true
       }
     ],
-    "permissions": {},
-    "collections": {
-      "writes": [
-        "read"
-      ],
-      "auto_create": [
-        "read"
-      ]
-    }
+    "collections": [
+      "read"
+    ]
   }
 }

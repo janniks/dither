@@ -1,11 +1,9 @@
 import { z } from "zod";
 
-const InputDef = z.object({
-  id: z.string(),
-  name: z.string().optional(),
-  kind: z.enum(["secret", "string", "number", "bool"]),
+const EnvDef = z.object({
+  name: z.string(),
   description: z.string().optional(),
-  default: z.unknown().optional(),
+  default: z.string().optional(),
 });
 
 const FileDef = z.object({
@@ -14,22 +12,6 @@ const FileDef = z.object({
   kind: z.enum(["file", "folder"]),
   extensions: z.array(z.string()).optional(),
   required: z.boolean().optional(),
-});
-
-const Permissions = z.object({
-  host_net: z.array(z.string()).optional(),
-  host_env: z.array(z.string()).optional(),
-  browser: z
-    .object({
-      hosts: z.array(z.string()),
-    })
-    .optional(),
-});
-
-const Collections = z.object({
-  writes: z.array(z.string()).optional(),
-  reads: z.array(z.string()).optional(),
-  auto_create: z.array(z.string()).optional(),
 });
 
 const ManifestSchema = z.object({
@@ -43,10 +25,10 @@ const ManifestSchema = z.object({
       glob: z.string().optional(),
     })
     .optional(),
-  inputs: z.array(InputDef).optional(),
+  env: z.array(EnvDef).optional(),
   files: z.array(FileDef).optional(),
-  permissions: Permissions.optional(),
-  collections: Collections.optional(),
+  net: z.array(z.string()).optional(),
+  collections: z.array(z.string()).optional(),
 });
 
 export type Manifest = z.infer<typeof ManifestSchema>;

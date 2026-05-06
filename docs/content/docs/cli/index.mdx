@@ -17,9 +17,10 @@ dither --help
 | [`dither get <ref>`](/docs/cli/get)                | Print the body of an entry by display path or docid.                   |
 | [`dither index update`](/docs/cli/index-update)    | Re-scan `~/.dither/entries/` and refresh the qmd index.                |
 | [`dither plugin install <path>`](/docs/cli/plugin) | Install a plugin from a local directory.                               |
-| [`dither plugin run <name>`](/docs/cli/plugin)     | Run an installed plugin once and promote its outputs.                  |
+| [`dither plugin run <target>`](/docs/cli/plugin)   | Run a plugin once, by name or path, with optional per-run overrides.   |
 | [`dither plugin list`](/docs/cli/plugin)           | List installed plugins.                                                |
 | [`dither plugin remove <name>`](/docs/cli/plugin)  | Uninstall a plugin (deletes code, state, grants).                      |
+| [`dither env set/get/unset/list`](/docs/cli/env)   | Manage the dither global env store at `~/.dither/env.json`.            |
 | [`dither status`](/docs/cli/status)                | Print where dither is installed and what it contains.                  |
 
 ## Exit codes

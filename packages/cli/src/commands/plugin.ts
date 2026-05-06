@@ -1,8 +1,8 @@
 import { defineCommand } from "citty";
 import { spawn } from "node:child_process";
-import { mkdirSync, openSync } from "node:fs";
-import { join } from "node:path";
-import { installPlugin, type InputValue } from "../plugin-install";
+import { mkdirSync, openSync, existsSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { installPlugin } from "../plugin-install";
 import { runPlugin } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
 import { removePlugin } from "../plugin-remove";
@@ -21,6 +21,56 @@ function parsePairs(value: string | undefined): Record<string, string> {
   return out;
 }
 
+function parseList(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+const grantArgs = {
+  env: {
+    type: "string" as const,
+    description: "Comma-separated NAME=VALUE pairs for declared env (literals).",
+  },
+  "allow-env": {
+    type: "string" as const,
+    description: "Comma-separated env names this plugin may read from `dither env`.",
+  },
+  file: {
+    type: "string" as const,
+    description: "Comma-separated ID=PATH pairs for declared files.",
+  },
+  "allow-net": {
+    type: "string" as const,
+    description: "Comma-separated hosts this plugin may reach. Subset of manifest `net`.",
+  },
+  "allow-collection": {
+    type: "string" as const,
+    description:
+      "Comma-separated collections this plugin may write to. Subset of manifest `collections`.",
+  },
+};
+
+interface GrantArgs {
+  env?: string;
+  "allow-env"?: string;
+  file?: string;
+  "allow-net"?: string;
+  "allow-collection"?: string;
+}
+
+function readGrantArgs(args: GrantArgs) {
+  return {
+    env: parsePairs(args.env),
+    envRefs: parseList(args["allow-env"]),
+    files: parsePairs(args.file),
+    net: parseList(args["allow-net"]),
+    collections: parseList(args["allow-collection"]),
+  };
+}
+
 const installSubcommand = defineCommand({
   meta: {
     name: "install",
@@ -32,19 +82,11 @@ const installSubcommand = defineCommand({
       required: true,
       description: "Path to the plugin directory",
     },
-    input: {
-      type: "string",
-      description: "Comma-separated KEY=VALUE pairs for declared text/secret inputs",
-    },
-    file: {
-      type: "string",
-      description: "Comma-separated KEY=PATH pairs for declared file inputs",
-    },
+    ...grantArgs,
   },
   async run({ args }) {
-    const inputs = parsePairs(args.input) as Record<string, InputValue>;
-    const files = parsePairs(args.file);
-    const result = await installPlugin({ source: args.source, inputs, files });
+    const grants = readGrantArgs(args);
+    const result = await installPlugin({ source: args.source, ...grants });
     console.log(`installed ${result.name}@${result.version}`);
     console.log(`  → ${result.dest}`);
     return result;
@@ -54,13 +96,14 @@ const installSubcommand = defineCommand({
 const runSubcommand = defineCommand({
   meta: {
     name: "run",
-    description: "Run an installed plugin once.",
+    description:
+      "Run a plugin once. Accepts an installed plugin name or a path to a plugin directory (auto-installs).",
   },
   args: {
-    name: {
+    target: {
       type: "positional",
       required: true,
-      description: "Plugin name (must be installed)",
+      description: "Installed plugin name OR path to a plugin directory",
     },
     detach: {
       type: "boolean",
@@ -68,27 +111,46 @@ const runSubcommand = defineCommand({
         "Fork the run into the background and return immediately. Stdout/stderr are captured to a log file.",
       default: false,
     },
+    ...grantArgs,
   },
   async run({ args }) {
+    const grants = readGrantArgs(args);
+
+    // If the target is an existing directory, treat as a path: install (or
+    // reinstall) with the supplied flags as the persisted grants, then run
+    // by name with no per-run overrides. If the target is a plain name, the
+    // flags are per-run overrides layered on top of the existing grants.
+    let pluginName = args.target;
+    let runOverrides: ReturnType<typeof readGrantArgs> | null = grants;
+    const candidatePath = resolve(args.target);
+    const isPath = existsSync(candidatePath) && existsSync(join(candidatePath, "package.json"));
+    if (isPath) {
+      const installed = await installPlugin({ source: candidatePath, ...grants });
+      pluginName = installed.name;
+      runOverrides = null;
+      console.log(`installed ${installed.name}@${installed.version}`);
+    }
+
     if (args.detach) {
       const home = resolveHome();
       const logsDir = join(home, "logs");
       mkdirSync(logsDir, { recursive: true });
-      const logPath = join(logsDir, `${args.name}-${Date.now()}.log`);
+      const logPath = join(logsDir, `${pluginName}-${Date.now()}.log`);
       const fd = openSync(logPath, "a");
-      const child = spawn(process.execPath, [process.argv[1]!, "plugin", "run", args.name], {
+      const child = spawn(process.execPath, [process.argv[1]!, "plugin", "run", pluginName], {
         detached: true,
         stdio: ["ignore", fd, fd],
       });
       child.unref();
-      console.log(`detached run for ${args.name} (pid ${child.pid})`);
+      console.log(`detached run for ${pluginName} (pid ${child.pid})`);
       console.log(`  logs: ${logPath}`);
       return { detached: true, pid: child.pid, logPath };
     }
 
     const tty = process.stderr.isTTY;
     const result = await runPlugin({
-      name: args.name,
+      name: pluginName,
+      ...runOverrides,
       onProgress: (msg) => {
         if (tty) {
           process.stderr.write(`\r\x1b[K${msg.message}`);

@@ -3,7 +3,7 @@ title: Authoring a plugin
 description: Build, install, and run a dither plugin end-to-end.
 ---
 
-This page walks from a one-file "Hello world" plugin to one with text inputs, file inputs, secrets, and persistent state. Every snippet is copy-paste runnable.
+This page walks from a one-file "Hello world" plugin to one with env values, file inputs, and persistent state. Every snippet is copy-paste runnable.
 
 ## Prerequisites
 
@@ -34,9 +34,7 @@ That's it. No `node_modules`, no build step. Deno resolves `@dither/plugin` via 
   "dither": {
     "display_name": "Hello World",
     "tagline": "Writes one entry and exits.",
-    "collections": {
-      "writes": ["notes"]
-    }
+    "collections": ["notes"]
   }
 }
 ```
@@ -78,7 +76,7 @@ Every field below is optional unless noted. The full schema lives in `packages/c
 | -------------- | -------- | ----------------------------------------------------------------- |
 | `display_name` | `string` | Human label shown in `dither plugin list` and (eventually) UI.    |
 | `tagline`      | `string` | One-liner.                                                        |
-| `icon`         | `string` | Identifier or path. Schema-only in v0; nothing renders icons yet. |
+| `icon`         | `string` | Identifier or path. Schema-only today; nothing renders icons yet. |
 
 ### Triggers
 
@@ -87,31 +85,32 @@ Every field below is optional unless noted. The full schema lives in `packages/c
 | `schedule` | `string` (cron expression)                 | Stored, not yet runtime-enforced. Manual `dither plugin run` works now. |
 | `watch`    | `{ collections: string[]; glob?: string }` | Stored, not yet runtime-enforced.                                       |
 
-### `inputs[]`
+### `env[]`
 
-User-supplied config and secrets. Each entry:
+User-supplied env values. All values are plain strings; if your plugin needs a number or a bool, coerce inside plugin code (`Number(input.env.MAX_RUNS)`, `input.env.DEBUG === "true"`). Each entry:
 
 ```ts
 {
-  id: string;            // key the plugin reads (e.g. "GREETING")
-  name?: string;         // human label
-  kind: "secret" | "string" | "number" | "bool";
-  description?: string;
-  default?: unknown;     // if absent, the input is required at install time
+  name: string;          // key the plugin reads via input.env[name]
+  description?: string;  // human-readable help
+  default?: string;      // if absent and not provided, install fails
 }
 ```
 
-At install time, values you pass via `--input` are coerced to the declared `kind` (`number` → `Number(v)`, `bool` → `true` if `"true"`/`"1"`/`1`). Values without a default are **required**; install fails with `Required input '<id>' was not provided and has no default.`
+A value is resolved in this order at install time:
 
-At run time, `kind: "secret"` inputs land in `input.secrets`; everything else lands in `input.config`.
+1. A literal passed via `--env "NAME=VALUE,..."`.
+2. A grant to read from the global `dither env` store, passed via `--allow-env "NAME,..."`. The literal value is **not** copied into the grants file; it's looked up at run time from `~/.dither/env.json`.
+3. The manifest `default`.
+4. Otherwise install fails: `Required env '<name>' was not provided …`.
 
 Example, lifted from the `echo-config` fixture:
 
 ```json
-"inputs": [
-  { "id": "GREETING",  "name": "Greeting text", "kind": "string" },
-  { "id": "MAX_RUNS",  "name": "Max runs",      "kind": "number", "default": 3 },
-  { "id": "API_TOKEN", "name": "API token",     "kind": "secret" }
+"env": [
+  { "name": "GREETING",  "description": "A non-secret string the plugin will echo." },
+  { "name": "MAX_RUNS",  "default": "3" },
+  { "name": "API_TOKEN", "description": "A secret-like value the plugin will echo (proves delivery)." }
 ]
 ```
 
@@ -124,28 +123,28 @@ User-supplied filesystem paths. Each entry:
   id: string;
   name?: string;
   kind: "file" | "folder";
-  extensions?: string[];   // schema-only in v0; not validated
+  extensions?: string[];   // schema-only today; not validated
   required?: boolean;
 }
 ```
 
 At install time the path is resolved to absolute, checked to exist, and asserted against `kind` (file vs folder). At run time the absolute path is delivered as `input.files[id]`, and the path is added to Deno's `--allow-read` allowlist so the plugin can open it.
 
-### `permissions`
+### `net`
 
-| Field                 | Type        | Effect                                                                           |
-| --------------------- | ----------- | -------------------------------------------------------------------------------- |
-| `host_net`            | `string[]`  | Becomes `--allow-net=<csv>`. Empty/absent → no network.                          |
-| `host_env`            | `string[]`  | Names appended to Deno's `--allow-env`. The `DITHER_*` vars are always included. |
-| `permissions.browser` | `{ hosts }` | Schema-only in v0; the browser sidebar lands in a later phase.                   |
+```ts
+net?: string[];
+```
+
+Top-level list of hosts the plugin may reach (e.g. `["api.example.com", "files.example.com:443"]`). Becomes `--allow-net=<csv>` on the Deno spawn. Empty / absent → no network. The `permissions` block from earlier drafts is **gone**; `net` lives at the top level of the `dither` block.
 
 ### `collections`
 
-| Field         | Type       | Notes                                                                                                          |
-| ------------- | ---------- | -------------------------------------------------------------------------------------------------------------- |
-| `writes`      | `string[]` | The collections this plugin may emit into. Output that targets a non-listed collection is rejected at promote. |
-| `reads`       | `string[]` | Reserved for plugins that read existing entries. Schema-only in v0.                                            |
-| `auto_create` | `string[]` | Schema-only in v0; collections are created on demand at promote time today.                                    |
+```ts
+collections?: string[];
+```
+
+Flat list of collections this plugin may emit into. Output that targets a collection outside the list is rejected at promotion. There is no separate `reads` / `writes` split today — collections are created on demand at promote time when needed.
 
 ## 4. Writing the plugin
 
@@ -166,31 +165,32 @@ await writeEntry({
 });
 ```
 
-### 4b. Adding inputs
+### 4b. Adding env values
 
-Read the values the user supplied at install time. `readInput<Config, Secrets>()` is generic; provide your own types for autocomplete:
+Read env values supplied at install time via `input.env`. All values are strings — coerce in your plugin if you need numbers or booleans:
 
 ```ts
 import { readInput, writeEntry } from "@dither/plugin";
 
-interface Config {
-  GREETING: string;
-  MAX_RUNS: number;
-}
-interface Secrets {
-  API_TOKEN: string;
-}
+const input = await readInput();
 
-const input = await readInput<Config, Secrets>();
+const greeting = input.env.GREETING;
+const maxRuns = Number(input.env.MAX_RUNS);
+const token = input.env.API_TOKEN;
 
 await writeEntry({
   collection: "echoed",
-  frontmatter: { greeting: input.config.GREETING, max_runs: input.config.MAX_RUNS },
+  frontmatter: {
+    external_id: "echo-1",
+    greeting,
+    max_runs: maxRuns,
+  },
   body: [
     "# Echo result",
     "",
-    `Greeting: ${input.config.GREETING}`,
-    `Token: ${input.secrets.API_TOKEN}`,
+    `Greeting: ${greeting}`,
+    `Max runs: ${maxRuns}`,
+    `Token: ${token}`,
   ].join("\n"),
 });
 ```
@@ -247,27 +247,63 @@ await writeState<State>({ lastSeen: now });
 
 ```bash
 dither plugin install ./path/to/plugin \
-  --input "GREETING=hi,MAX_RUNS=5,API_TOKEN=sk-…" \
-  --file  "SOURCE=/abs/path/to/notes.md"
+  --env "GREETING=hi,MAX_RUNS=5" \
+  --allow-env "API_TOKEN" \
+  --file "SOURCE=/abs/path/to/notes.md" \
+  --allow-net "api.example.com" \
+  --allow-collection "echoed"
 ```
 
-Both flags take **comma-separated `KEY=VALUE` pairs**. The first `=` per pair is the separator; values may contain `=` but not `,`. There is no escape syntax.
+The flag set:
 
-What happens:
+| Flag                 | Shape            | Effect                                                                                                |
+| -------------------- | ---------------- | ----------------------------------------------------------------------------------------------------- |
+| `--env`              | `NAME=VALUE,...` | Literal env values; written into the grants file.                                                     |
+| `--allow-env`        | `NAME,NAME,...`  | Names this plugin may read from the global `dither env` store at run time.                            |
+| `--file`             | `ID=PATH,...`    | Paths for declared `files[]`. Resolved to absolute, checked to exist, kind-asserted.                  |
+| `--allow-net`        | `host,host,...`  | Network hosts. Must be a subset of the manifest's `net`. Omitted → manifest's full `net` is granted.  |
+| `--allow-collection` | `coll,coll,...`  | Collections the plugin may write to. Subset of manifest `collections`. Omitted → manifest's full set. |
 
-- `package.json` is parsed and the `dither` block validated.
-- Inputs without a value and without a `default` cause install to fail.
-- File paths are resolved to absolute, checked to exist, and verified against `kind`.
-- The plugin source is copied to `~/.dither/plugins/<name>/`.
-- A grants file at `~/.dither/grants/<name>.json` records the manifest, the resolved inputs (including secret values, **plaintext, in v0**), and the resolved file paths.
+All five flags are accepted on **both** `dither plugin install` and `dither plugin run`. The split is the same comma-separated `KEY=VALUE` parser used in v0; values may contain `=` but not `,`, and there is no escape syntax.
+
+What install does:
+
+- Parses `package.json` and validates the `dither` block.
+- Resolves env: literal → `--allow-env` ref → manifest `default`. Missing required → fails.
+- Resolves files: each path must exist and match its declared `kind`.
+- Validates `net` and `collections` flags are subsets of the manifest declarations.
+- Copies the plugin source to `~/.dither/plugins/<name>/`.
+- Writes `~/.dither/grants/<name>.json` with the manifest, env literals, env refs, file paths, net hosts, and collections.
 
 Reinstalling overwrites the previous install and grants file.
+
+### Global env values
+
+For values you'd rather not paste into every install command (API tokens, base URLs), use `dither env`:
+
+```bash
+dither env set API_TOKEN sk-…
+dither env list
+dither env unset API_TOKEN
+```
+
+These live in `~/.dither/env.json`. A plugin only sees a name if you grant it via `--allow-env`. The literal value is **not** copied into the grants file; it's read from the global store at run time, so updating it once via `dither env set` is enough for every plugin that has the grant.
 
 ## 6. Running
 
 ```bash
 dither plugin run hello-world             # blocks; shows live status
 dither plugin run hello-world --detach    # forks into the background
+dither plugin run ./path/to/plugin        # auto-installs from path, then runs
+```
+
+The positional accepts an installed plugin name **or** a path to a plugin directory. If it's a path (a directory containing `package.json`), the CLI installs it first using the same grant flags as the persisted grants, then runs it.
+
+If it's a name, any grant flags you pass are **per-run overrides**: layered on top of the existing grants for this single run, then discarded. Use this to grant an extra collection or env value temporarily without rewriting the grants file:
+
+```bash
+dither plugin run hello-world --env "GREETING=ahoy"
+dither plugin run hello-world --allow-collection "experiments"
 ```
 
 `run` blocks by default. While the plugin executes, the host overwrites a single status line with the latest `progress()` message (see §6a). When the plugin exits, the status line is cleared and promoted entries are printed.
@@ -277,19 +313,19 @@ dither plugin run hello-world --detach    # forks into the background
 The host:
 
 1. Loads the grants file.
-2. Splits `inputs` into `config` (non-secret) and `secrets` (`kind: "secret"`).
-3. Creates `~/.dither/runs/<runId>/` and writes `input.json`:
+2. Layers any per-run overrides on top.
+3. Resolves env values: literals → global `dither env` for granted refs → manifest defaults.
+4. Creates `~/.dither/runs/<runId>/` and writes `input.json`:
    ```json
    {
      "trigger": "manual",
-     "config": { "GREETING": "hi", "MAX_RUNS": 5 },
-     "secrets": { "API_TOKEN": "sk-…" },
+     "env": { "GREETING": "hi", "MAX_RUNS": "5", "API_TOKEN": "sk-…" },
      "files": { "SOURCE": "/abs/path/to/notes.md" },
      "targets": []
    }
    ```
-4. Spawns `deno run` with permissions derived from the manifest.
-5. After the plugin exits, scans the run dir for `*.md`, validates frontmatter, promotes valid entries to `~/.dither/entries/<collection>/`, refreshes the index, and deletes the run dir.
+5. Spawns `deno run` with permissions derived from the grant.
+6. After the plugin exits, scans the run dir for `*.md`, validates frontmatter, promotes valid entries to `~/.dither/entries/<collection>/`, refreshes the index, and deletes the run dir.
 
 A plugin process that exits non-zero aborts the run; nothing is promoted.
 
@@ -354,16 +390,16 @@ The Deno spawn is built like this (from `packages/cli/src/plugin-run.ts`):
 
 - `--allow-read=<pluginDir>,<runDir>,<sdkPath>,<…each granted file path>`
 - `--allow-write=<stateDir>,<runDir>`
-- `--allow-env=DITHER_*,<…each entry of permissions.host_env>`
-- `--allow-net=<csv of permissions.host_net>` (only added if the list is non-empty)
+- `--allow-env=DITHER_RUN_DIR,DITHER_INPUT_FILE,DITHER_STATE_FILE,DITHER_TRIGGER,DITHER_PLUGIN_NAME`
+- `--allow-net=<csv of granted net hosts>` (only added if the list is non-empty)
 
-A plugin cannot read or write outside those paths, cannot reach hosts not on `host_net`, and cannot read env vars not on `host_env` plus the `DITHER_*` set. See [security concepts](/docs/concepts/security) for the broader picture.
+A plugin cannot read or write outside those paths, cannot reach hosts off the `net` grant, and cannot read process env vars beyond the `DITHER_*` set. User-supplied env values reach the plugin through `input.env` (which it reads from `DITHER_INPUT_FILE`), not through the OS environment.
 
 ## 9. Sharp edges
 
-- **Secrets are plaintext.** `~/.dither/grants/<name>.json` is just JSON. Don't store credentials you wouldn't put in a home-directory JSON file. Keychain integration is parked for later.
+- **Env values are stored plaintext.** `~/.dither/grants/<name>.json` and `~/.dither/env.json` are JSON files in your home directory. Don't store credentials you wouldn't put there. Keychain integration is a later phase.
 - **No git/registry installs.** Only local paths. Cloning your plugin yourself first is the workaround.
-- **`schedule` and `watch` don't fire anything yet.** Declare them, but trigger your plugin manually until the daemon ships.
-- **CLI flag parsing has no escape syntax.** Comma in a value will be treated as a pair separator. If you need a comma in a secret, install programmatically via the `installPlugin()` API instead.
+- **`schedule` and `watch` don't fire anything yet.** Declare them, but trigger your plugin manually until the daemon and watcher ship.
+- **CLI flag parsing has no escape syntax.** A comma in a value will be treated as a pair separator. If you need a comma in a value, install programmatically via the `installPlugin()` API instead.
 - **Output filename collisions overwrite.** If two `writeEntry()` calls in one run produce the same `<id>.md` (e.g. you supplied the same `frontmatter.id`), the second overwrites the first inside the run dir, and only one is promoted.
 - **Detached runs aren't tracked.** `--detach` writes a log file and `unref()`s the child. There is no `dither plugin status` to query, no PID file, no stop command yet. Tail the printed log path; kill via `kill <pid>` if needed.

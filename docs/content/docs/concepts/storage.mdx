@@ -13,19 +13,51 @@ When `DITHER_HOME` is unset, dither resolves to `~/.dither` on every platform.
 
 ## What's there today
 
-| Path                                        | Purpose                                                                              | Written by                         |
-| ------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------- |
-| `~/.dither/entries/<collection>/**/*.md`    | Your canonical markdown. One folder per collection.                                  | You + plugins (via promote)        |
-| `~/.dither/qmd-index.sqlite`                | The qmd search index over `entries/`.                                                | `dither index update`, plugin runs |
-| `~/.dither/plugins/<name>/`                 | Installed plugin source — copied verbatim from the install path.                     | `dither plugin install`            |
-| `~/.dither/plugins/<name>/state/state.json` | Plugin's persistent state (e.g. last-synced cursor).                                 | The plugin itself, at run time     |
-| `~/.dither/grants/<name>.json`              | dither-owned record of the plugin's manifest, resolved input values, and file paths. | `dither plugin install`            |
-| `~/.dither/runs/<run-id>/`                  | Per-run scratch dir. The plugin writes its `*.md` output here.                       | `dither plugin run` (auto-cleaned) |
+| Path                                        | Purpose                                                                    | Written by                         |
+| ------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------- |
+| `~/.dither/entries/<collection>/**/*.md`    | Your canonical markdown. One folder per collection.                        | You + plugins (via promote)        |
+| `~/.dither/qmd-index.sqlite`                | The qmd search index over `entries/`.                                      | `dither index update`, plugin runs |
+| `~/.dither/env.json`                        | The dither-managed global env store. Plain JSON, names → values.           | `dither env set/unset`             |
+| `~/.dither/plugins/<name>/`                 | Installed plugin source — copied verbatim from the install path.           | `dither plugin install`            |
+| `~/.dither/plugins/<name>/state/state.json` | Plugin's persistent state (e.g. last-synced cursor).                       | The plugin itself, at run time     |
+| `~/.dither/grants/<name>.json`              | dither-owned record of the plugin's manifest snapshot and resolved grants. | `dither plugin install`            |
+| `~/.dither/runs/<run-id>/`                  | Per-run scratch dir. The plugin writes its `*.md` output here.             | `dither plugin run` (auto-cleaned) |
+| `~/.dither/logs/<name>-<ts>.log`            | Captured stdout/stderr of `dither plugin run --detach`.                    | `dither plugin run --detach`       |
 
 Two paths to know about:
 
 - `entries/<collection>/` is the only directory whose contents are _yours_ in the strong sense. Everything else is bookkeeping.
 - `runs/<run-id>/` is ephemeral. After a successful promote, the host removes it. Don't put anything you care about in there.
+
+## The grants file
+
+`~/.dither/grants/<name>.json` is dither's record of what a specific plugin is allowed to do. It looks like this:
+
+```json
+{
+  "name": "my-plugin",
+  "version": "0.1.0",
+  "installedAt": "2026-05-01T12:00:00Z",
+  "manifest": {
+    /* the plugin's declared shape, frozen at install */
+  },
+  "env": { "MAX_RETRIES": "5" },
+  "envRefs": ["OPENAI_API_KEY"],
+  "files": { "SOURCE": "/abs/path/to/file" },
+  "net": ["api.openai.com"],
+  "collections": ["notes"]
+}
+```
+
+The four grant fields (`env`, `envRefs`, `files`, `net`, `collections`) are described in detail in [Security](/docs/concepts/security). `manifest` is captured at install time so reinstalls and runs use a stable declaration.
+
+## The global env store
+
+`~/.dither/env.json` is the dither-managed env namespace. It has nothing to do with shell env vars — dither owns its own. Plugins granted `--allow-env KEY` read these values (looked up by name at every run). See [`dither env`](/docs/cli/env).
+
+```json
+{ "OPENAI_API_KEY": "sk-...", "ANTHROPIC_API_KEY": "..." }
+```
 
 ## What the architecture reserves but v0 doesn't write
 
@@ -46,14 +78,16 @@ You should not edit this file by hand. Treat it the way you'd treat a build cach
 
 ## What to back up
 
-Just `entries/`.
+`entries/` and `env.json`.
+
+`entries/` is your corpus. `env.json` is the only place your global env values exist on disk — losing it means re-supplying every API key.
 
 Everything else is regenerable:
 
 - `qmd-index.sqlite` — rebuilds from `entries/` via `dither index update`.
 - `plugins/<name>/` — reinstall with `dither plugin install`.
 - `plugins/<name>/state/` — plugin will resync from scratch (this can mean re-fetching from APIs; not always cheap, but never lossy for _your_ data).
-- `grants/<name>.json` — recreated by reinstalling the plugin and re-supplying inputs.
-- `runs/<run-id>/` — already ephemeral.
+- `grants/<name>.json` — recreated by reinstalling the plugin and re-supplying grant flags.
+- `runs/<run-id>/`, `logs/` — already ephemeral.
 
-A `tar` of `~/.dither/entries/` is a complete backup of your dither corpus. Pair it with a copy of any plugin install commands you used (or just keep the plugin source somewhere) and you can rebuild the rest in minutes.
+A `tar` of `~/.dither/entries/` plus a copy of `~/.dither/env.json` is a complete backup of your dither user data. Pair it with the plugin source (or your install commands) and you can rebuild the rest in minutes.

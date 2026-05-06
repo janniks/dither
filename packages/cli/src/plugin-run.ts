@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { resolveHome } from "./home";
 import { parsePackage } from "./manifest";
 import { updateIndex } from "./update-index";
+import { getGlobalEnv } from "./global-env";
 
 export interface ProgressMessage {
   message: string;
@@ -17,6 +18,16 @@ export interface ProgressMessage {
 export interface RunOptions {
   name: string;
   trigger?: "scheduled" | "watch" | "manual";
+  /** Per-run env literal overrides. Layered on top of grants for this run only. */
+  env?: Record<string, string>;
+  /** Per-run env-grant additions. Layered on top of grants for this run only. */
+  envRefs?: string[];
+  /** Per-run file overrides. Each path is added to --allow-read. */
+  files?: Record<string, string>;
+  /** Per-run net additions. Layered on top of grants for this run only. */
+  net?: string[];
+  /** Per-run collection grant additions. */
+  collections?: string[];
   /** Called for every `progress()` NDJSON message the plugin emits on stderr. */
   onProgress?: (msg: ProgressMessage) => void;
 }
@@ -34,12 +45,19 @@ const DITHER_ENV_VARS = [
   "DITHER_PLUGIN_NAME",
 ];
 
-function extractCollection(content: string): string | null {
+interface GrantsFile {
+  env?: Record<string, string>;
+  envRefs?: string[];
+  files?: Record<string, string>;
+  net?: string[];
+  collections?: string[];
+}
+
+function extractField(content: string, key: string): string | null {
   const m = content.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
-  const lines = m[1]!.split("\n");
-  for (const line of lines) {
-    const kv = line.match(/^collection:\s*"?([^"\n]+)"?\s*$/);
+  for (const line of m[1]!.split("\n")) {
+    const kv = line.match(new RegExp(`^${key}:\\s*"?([^"\\n]+)"?\\s*$`));
     if (kv) return kv[1]!.trim().replace(/^"|"$/g, "");
   }
   return null;
@@ -61,16 +79,6 @@ function parseControl(line: string): ProgressMessage | null {
   }
 }
 
-function extractSource(content: string): string | null {
-  const m = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return null;
-  for (const line of m[1]!.split("\n")) {
-    const kv = line.match(/^source:\s*"?([^"\n]+)"?\s*$/);
-    if (kv) return kv[1]!.trim().replace(/^"|"$/g, "");
-  }
-  return null;
-}
-
 export async function runPlugin(opts: RunOptions): Promise<RunResult> {
   const home = resolveHome();
   const pluginDir = join(home, "plugins", opts.name);
@@ -80,32 +88,34 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
 
   const pkgRaw = JSON.parse(await readFile(join(pluginDir, "package.json"), "utf-8")) as unknown;
   const parsed = parsePackage(pkgRaw);
-  const allowedCollections = new Set(parsed.manifest.collections?.writes ?? []);
 
-  // Load grants written at install time. Splits inputs by manifest kind:
-  // `secret` → input.json.secrets, others → input.json.config. File paths
-  // pass through unchanged into input.json.files and become extra
-  // --allow-read entries on the Deno spawn.
   const grantsPath = join(home, "grants", `${opts.name}.json`);
-  const grantsRaw = existsSync(grantsPath)
-    ? (JSON.parse(await readFile(grantsPath, "utf-8")) as {
-        inputs?: Record<string, unknown>;
-        files?: Record<string, string>;
-      })
-    : { inputs: {}, files: {} };
-  const grantInputs = grantsRaw.inputs ?? {};
-  const grantFiles = grantsRaw.files ?? {};
+  const grants: GrantsFile = existsSync(grantsPath)
+    ? (JSON.parse(await readFile(grantsPath, "utf-8")) as GrantsFile)
+    : {};
 
-  const config: Record<string, unknown> = {};
-  const secrets: Record<string, string> = {};
-  for (const def of parsed.manifest.inputs ?? []) {
-    const value = grantInputs[def.id];
-    if (value === undefined) continue;
-    if (def.kind === "secret") {
-      secrets[def.id] = String(value);
-    } else {
-      config[def.id] = value;
-    }
+  // Layer per-run overrides on top of grants. Per-run additions are ephemeral —
+  // they don't get written back to the grants file.
+  const grantEnv = { ...grants.env, ...opts.env };
+  const envRefs = Array.from(new Set([...(grants.envRefs ?? []), ...(opts.envRefs ?? [])]));
+  const grantFiles = { ...grants.files, ...opts.files };
+  const grantNet = Array.from(new Set([...(grants.net ?? []), ...(opts.net ?? [])]));
+  const grantCollections = Array.from(
+    new Set([...(grants.collections ?? []), ...(opts.collections ?? [])]),
+  );
+  const allowedCollections = new Set(grantCollections);
+
+  // Resolve the env values plugins will see: literals win; refs pull from
+  // global env; manifest defaults fill the rest.
+  const resolvedEnv: Record<string, string> = { ...grantEnv };
+  for (const name of envRefs) {
+    if (resolvedEnv[name] !== undefined) continue;
+    const globalValue = await getGlobalEnv(name);
+    if (globalValue !== undefined) resolvedEnv[name] = globalValue;
+  }
+  for (const def of parsed.manifest.env ?? []) {
+    if (resolvedEnv[def.name] !== undefined) continue;
+    if (def.default !== undefined) resolvedEnv[def.name] = def.default;
   }
 
   const runId = randomUUID();
@@ -123,8 +133,7 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
     JSON.stringify(
       {
         trigger,
-        config,
-        secrets,
+        env: resolvedEnv,
         files: grantFiles,
         targets: [],
       },
@@ -146,7 +155,7 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
 
   const allowRead = [pluginDir, runDir, sdkPath, ...Object.values(grantFiles)].join(",");
   const allowWrite = [stateDir, runDir].join(",");
-  const allowEnv = [...DITHER_ENV_VARS, ...(parsed.manifest.permissions?.host_env ?? [])].join(",");
+  const allowEnv = DITHER_ENV_VARS.join(",");
 
   const denoArgs = [
     "run",
@@ -155,9 +164,8 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
     `--allow-write=${allowWrite}`,
     `--allow-env=${allowEnv}`,
   ];
-  const hostNet = parsed.manifest.permissions?.host_net ?? [];
-  if (hostNet.length) {
-    denoArgs.push(`--allow-net=${hostNet.join(",")}`);
+  if (grantNet.length) {
+    denoArgs.push(`--allow-net=${grantNet.join(",")}`);
   }
   denoArgs.push(join(pluginDir, "plugin.ts"));
 
@@ -212,13 +220,13 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
     const src = join(runDir, file);
     const content = await readFile(src, "utf-8");
 
-    const source = extractSource(content);
+    const source = extractField(content, "source");
     if (source !== opts.name) {
       throw new Error(
         `output ${file} declares source=${source ?? "(missing)"}; expected ${opts.name}`,
       );
     }
-    const collection = extractCollection(content);
+    const collection = extractField(content, "collection");
     if (!collection) {
       throw new Error(`output ${file} missing 'collection' frontmatter`);
     }

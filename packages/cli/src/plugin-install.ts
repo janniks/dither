@@ -4,14 +4,18 @@ import { join, resolve } from "node:path";
 import { resolveHome } from "./home";
 import { parsePackage, type Manifest, type ParsedPackage } from "./manifest";
 
-export type InputValue = string | number | boolean;
-
 export interface InstallOptions {
   source: string;
-  /** Values for the manifest's declared `inputs[]`, keyed by `id`. */
-  inputs?: Record<string, InputValue>;
+  /** Per-plugin literal env values, keyed by name. */
+  env?: Record<string, string>;
+  /** Names of global env values this plugin may read. */
+  envRefs?: string[];
   /** Paths for the manifest's declared `files[]`, keyed by `id`. */
   files?: Record<string, string>;
+  /** Net hosts the plugin may reach (subset of manifest `net`). Empty / undefined → grant manifest's full declaration. */
+  net?: string[];
+  /** Collections the plugin may write to (subset of manifest `collections`). Empty / undefined → grant manifest's full declaration. */
+  collections?: string[];
 }
 
 export interface InstalledPlugin {
@@ -20,33 +24,30 @@ export interface InstalledPlugin {
   dest: string;
 }
 
-function coerceInput(kind: "secret" | "string" | "number" | "bool", value: InputValue): InputValue {
-  if (kind === "number") {
-    return typeof value === "number" ? value : Number(value);
-  }
-  if (kind === "bool") {
-    if (typeof value === "boolean") return value;
-    return value === "true" || value === "1" || value === 1;
-  }
-  return String(value);
-}
-
-function resolveInputs(
-  declared: Manifest["inputs"],
-  provided: Record<string, InputValue> | undefined,
-): Record<string, InputValue> {
-  const result: Record<string, InputValue> = {};
+function resolveEnv(
+  declared: Manifest["env"],
+  provided: Record<string, string> | undefined,
+  envRefs: string[],
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  const refSet = new Set(envRefs);
   for (const def of declared ?? []) {
-    const userValue = provided?.[def.id];
+    const userValue = provided?.[def.name];
     if (userValue !== undefined) {
-      result[def.id] = coerceInput(def.kind, userValue);
+      result[def.name] = userValue;
+      continue;
+    }
+    if (refSet.has(def.name)) {
+      // Grant resolves at run time from global env; literal not stored here.
       continue;
     }
     if (def.default !== undefined) {
-      result[def.id] = def.default as InputValue;
+      result[def.name] = def.default;
       continue;
     }
-    throw new Error(`Required input '${def.id}' was not provided and has no default.`);
+    throw new Error(
+      `Required env '${def.name}' was not provided (no value, no --allow-env grant, no default).`,
+    );
   }
   return result;
 }
@@ -60,24 +61,42 @@ async function resolveFiles(
     const userValue = provided?.[def.id];
     if (userValue === undefined) {
       if (def.required) {
-        throw new Error(`Required file input '${def.id}' was not provided.`);
+        throw new Error(`Required file '${def.id}' was not provided.`);
       }
       continue;
     }
     const absPath = resolve(userValue);
     if (!existsSync(absPath)) {
-      throw new Error(`File input '${def.id}' path does not exist: ${absPath}`);
+      throw new Error(`File '${def.id}' path does not exist: ${absPath}`);
     }
     const stats = await stat(absPath);
     if (def.kind === "file" && !stats.isFile()) {
-      throw new Error(`File input '${def.id}' must be a file, got: ${absPath}`);
+      throw new Error(`File '${def.id}' must be a file, got: ${absPath}`);
     }
     if (def.kind === "folder" && !stats.isDirectory()) {
-      throw new Error(`File input '${def.id}' must be a folder, got: ${absPath}`);
+      throw new Error(`File '${def.id}' must be a folder, got: ${absPath}`);
     }
     result[def.id] = absPath;
   }
   return result;
+}
+
+function resolveAllowList(
+  declared: string[] | undefined,
+  provided: string[] | undefined,
+): string[] {
+  const declaredSet = new Set(declared ?? []);
+  if (!provided || provided.length === 0) {
+    return Array.from(declaredSet);
+  }
+  for (const item of provided) {
+    if (!declaredSet.has(item)) {
+      throw new Error(
+        `Cannot grant '${item}' — not declared in the plugin's manifest. Manifest declares: ${[...declaredSet].join(", ") || "(none)"}.`,
+      );
+    }
+  }
+  return provided;
 }
 
 export async function installPlugin(opts: InstallOptions): Promise<InstalledPlugin> {
@@ -93,10 +112,13 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
   const pkgRaw = JSON.parse(await readFile(pkgPath, "utf-8")) as unknown;
   const parsed: ParsedPackage = parsePackage(pkgRaw);
 
-  // Validate + materialise inputs/files *before* touching disk so any
-  // missing-required failure rolls back cleanly with no half-installed state.
-  const inputs = resolveInputs(parsed.manifest.inputs, opts.inputs);
+  // Validate everything before touching disk so a missing-required failure
+  // rolls back cleanly with no half-installed state.
+  const envRefs = opts.envRefs ?? [];
+  const env = resolveEnv(parsed.manifest.env, opts.env, envRefs);
   const files = await resolveFiles(parsed.manifest.files, opts.files);
+  const net = resolveAllowList(parsed.manifest.net, opts.net);
+  const collections = resolveAllowList(parsed.manifest.collections, opts.collections);
 
   const home = resolveHome();
   const destDir = join(home, "plugins", parsed.name);
@@ -118,8 +140,11 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
         version: parsed.version,
         installedAt: new Date().toISOString(),
         manifest: parsed.manifest,
-        inputs,
+        env,
+        envRefs,
         files,
+        net,
+        collections,
       },
       null,
       2,

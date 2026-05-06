@@ -32,28 +32,23 @@ import { VERSION } from "@dither/plugin";
 console.log(`SDK ${VERSION}`);
 ```
 
-## `interface PluginInput<C, S>`
+## `interface PluginInput`
 
 ```ts
-interface PluginInput<C = Record<string, unknown>, S = Record<string, string>> {
+interface PluginInput {
   trigger: "scheduled" | "watch" | "manual";
-  config: C;
-  secrets: S;
+  env: Record<string, string>;
   files: Record<string, string>;
   targets: string[];
 }
 ```
 
-The shape returned by `readInput()`. Type parameters:
-
-- `C` — the type of `config`. The host puts every non-`secret` declared input here, keyed by the input's `id`. Numeric inputs arrive as `number`, booleans as `boolean`, strings as `string`. Defaults from the manifest are coerced at install time.
-- `S` — the type of `secrets`. The host puts every `kind: "secret"` declared input here, keyed by `id`. Always strings (the host calls `String(value)` before writing).
+The shape returned by `readInput()`.
 
 Fields:
 
 - `trigger` — what fired the run. Plugins that behave differently on scheduled vs. manual runs can branch on this.
-- `config` — non-secret inputs. Empty object if the plugin declares no non-secret inputs.
-- `secrets` — secret inputs. Empty object if none.
+- `env` — resolved env values keyed by the manifest's declared `name`. **All values are strings.** Plugins coerce in code (`Number(input.env.MAX_RUNS)`, `input.env.DEBUG === "true"`). Optional values that the user did not supply and that have no `default` will simply be missing keys.
 - `files` — absolute paths to the user's file/folder inputs, keyed by `id`. Each path is on Deno's `--allow-read` allowlist. Optional file inputs that the user did not supply will simply be missing keys.
 - `targets` — currently always `[]`. Reserved for future watch-trigger payloads (the entries that changed, etc.).
 
@@ -70,7 +65,7 @@ interface EntryOptions {
 
 The argument to `writeEntry()`.
 
-- `collection` — target collection. Must be in the plugin's `dither.collections.writes` grant or promotion will reject the file.
+- `collection` — target collection. Must be in the plugin's `dither.collections` grant or promotion will reject the file.
 - `body` — markdown body. Do **not** include your own frontmatter fence; the SDK emits one for you.
 - `frontmatter` — optional fields. **Three keys are reserved: `id`, `source`, `collection`.** Any value you put under those keys is overwritten by the SDK before writing:
   - `id` — if you set `frontmatter.id` to a string, it is used as the entry id (and as the default filename). Otherwise a UUID is generated.
@@ -78,37 +73,42 @@ The argument to `writeEntry()`.
   - `collection` — always overwritten with `opts.collection`.
 - `filename` — optional output filename inside `DITHER_RUN_DIR`. Defaults to `<id>.md`. Rarely useful; collisions overwrite silently.
 
-## `readInput<C, S>()`
+## `readInput()`
 
 ```ts
-function readInput<C = Record<string, unknown>, S = Record<string, string>>(): Promise<
-  PluginInput<C, S>
->;
+function readInput(): Promise<PluginInput>;
 ```
 
-Reads and JSON-parses the file at `DITHER_INPUT_FILE` and returns it as a typed `PluginInput<C, S>`.
+Reads and JSON-parses the file at `DITHER_INPUT_FILE` and returns it as a `PluginInput`.
 
 **Behavior:**
 
 - Throws if `DITHER_INPUT_FILE` is unset.
 - Throws if the file is missing or unreadable (it is always present under the host).
-- No schema validation — the type parameters are pure TypeScript shape; the runtime returns whatever the JSON contains.
+- No schema validation — the runtime returns whatever the JSON contains.
 
 **Example** (from the `echo-config` fixture):
 
 ```ts
 import { readInput, writeEntry } from "@dither/plugin";
 
-interface Config {
-  GREETING: string;
-  MAX_RUNS: number;
-}
-interface Secrets {
-  API_TOKEN: string;
-}
+const input = await readInput();
 
-const input = await readInput<Config, Secrets>();
-console.log(input.trigger, input.config.GREETING);
+await writeEntry({
+  collection: "echoed",
+  frontmatter: {
+    external_id: "echo-1",
+    greeting: input.env.GREETING,
+    max_runs: input.env.MAX_RUNS,
+  },
+  body: [
+    "# Echo result",
+    "",
+    "Greeting: " + input.env.GREETING,
+    "Max runs: " + input.env.MAX_RUNS,
+    "Token: " + input.env.API_TOKEN,
+  ].join("\n"),
+});
 ```
 
 ## `writeEntry(opts)`
@@ -161,13 +161,13 @@ await writeEntry({
 function readFile(inputId: string): Promise<string>;
 ```
 
-Reads a file the user supplied as a `files[]` input. The SDK looks up the absolute path in `input.json.files[inputId]` (which the host already added to Deno's `--allow-read` allowlist) and returns the UTF-8 contents.
+Reads a file the user supplied as a `files[]` input. The SDK looks up the absolute path in `input.files[inputId]` (which the host already added to Deno's `--allow-read` allowlist) and returns the UTF-8 contents.
 
 Saves the two-step pattern of importing `node:fs/promises` and indexing into `input.files` by hand.
 
 **Behavior:**
 
-- Throws if the input id is not present in `input.json.files` (i.e. not declared in the manifest's `files[]`, or not provided at install time, or not required and not supplied).
+- Throws if the input id is not present in `input.files` (i.e. not declared in the manifest's `files[]`, or not provided at install time, or not required and not supplied).
 - Always reads as UTF-8. For binary files, fall back to `node:fs/promises` and `input.files[id]` directly.
 - Throws if `DITHER_INPUT_FILE` is unset.
 
@@ -283,23 +283,13 @@ progress({ message: `done — ${ids.length} items`, done: ids.length, total: ids
 A complete plugin that uses every export:
 
 ```ts
-import {
-  VERSION,
-  readInput,
-  readState,
-  writeEntry,
-  writeState,
-  type PluginInput,
-} from "@dither/plugin";
+import { VERSION, readInput, readState, writeEntry, writeState } from "@dither/plugin";
 
-interface Config {
-  feed_url: string;
-}
 interface State {
   lastSeen: string;
 }
 
-const input: PluginInput<Config> = await readInput<Config>();
+const input = await readInput();
 const state = await readState<State>({ lastSeen: "" });
 
 console.error(`plugin SDK ${VERSION}, trigger=${input.trigger}`);
@@ -308,7 +298,7 @@ const now = new Date().toISOString();
 
 await writeEntry({
   collection: "feed",
-  frontmatter: { feed_url: input.config.feed_url, fetched_at: now },
+  frontmatter: { feed_url: input.env.feed_url, fetched_at: now },
   body: `# Run at ${now}\n\nPrevious run: ${state.lastSeen ?? "never"}`,
 });
 

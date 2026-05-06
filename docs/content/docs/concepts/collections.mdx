@@ -51,6 +51,28 @@ collection: gmail # must match the folder the file lives under
 
 For plugin output, `source` and `collection` are **enforced at promote time** — a plugin's file is rejected if `source` doesn't match the plugin's name or `collection` isn't one the plugin was granted to write. See [Security](/docs/concepts/security).
 
+## Plugins and collections
+
+A plugin's manifest declares the collections it _wants_ to write to as a flat list:
+
+```jsonc
+{
+  "dither": {
+    "collections": ["notes", "drafts"],
+  },
+}
+```
+
+That's the maximum. At install time, you grant a subset via `--allow-collection`:
+
+```bash
+dither plugin install ./my-plugin --allow-collection notes
+```
+
+If you pass no flag, the grant defaults to everything the manifest declared. If you try to grant a collection the manifest didn't declare, install fails. Promote validates each output's `collection:` frontmatter against the **grant**, not the manifest. See [`dither plugin`](/docs/cli/plugin) and [Security](/docs/concepts/security).
+
+Plugins do not "auto-create" collections. The directory under `~/.dither/entries/<collection>/` is created lazily on the first promote into it; nothing else changes — collections remain just folders.
+
 ### Optional fields
 
 These are part of the frontmatter convention. dither doesn't require them, but plugins and search clients look for them when present.

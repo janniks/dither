@@ -37,7 +37,7 @@ describe("plugin lifecycle (list / remove)", () => {
     await installPlugin({ source: IMPORT_FIXTURE });
     await installPlugin({
       source: ECHO_FIXTURE,
-      inputs: { GREETING: "x", API_TOKEN: "y" },
+      env: { GREETING: "x", API_TOKEN: "y" },
     });
 
     const list = await listPlugins();

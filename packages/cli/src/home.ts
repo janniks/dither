@@ -12,3 +12,7 @@ export function entriesDir(): string {
 export function indexDbPath(): string {
   return join(resolveHome(), "qmd-index.sqlite");
 }
+
+export function globalEnvPath(): string {
+  return join(resolveHome(), "env.json");
+}

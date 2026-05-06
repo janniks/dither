@@ -76,9 +76,7 @@ describe("plugin host", () => {
       JSON.stringify({
         name: "escaper",
         version: "0.0.1",
-        dither: {
-          collections: { writes: ["allowed"], auto_create: ["allowed"] },
-        },
+        dither: { collections: ["allowed"] },
       }),
     );
     writeFileSync(
@@ -116,7 +114,7 @@ await writeEntry({
       JSON.stringify({
         name: "progresser",
         version: "0.0.1",
-        dither: { collections: { writes: ["notes"], auto_create: ["notes"] } },
+        dither: { collections: ["notes"] },
       }),
     );
     writeFileSync(
@@ -157,9 +155,7 @@ progress({ message: "done", done: 2, total: 2 });
       JSON.stringify({
         name: "counter",
         version: "0.0.1",
-        dither: {
-          collections: { writes: ["counts"], auto_create: ["counts"] },
-        },
+        dither: { collections: ["counts"] },
       }),
     );
     writeFileSync(

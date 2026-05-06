@@ -9,16 +9,16 @@ export interface InstalledPluginInfo {
   installedAt?: string;
   schedule?: string;
   collections: string[];
-  hostNet: string[];
+  net: string[];
 }
 
 interface GrantsFile {
   version?: string;
   installedAt?: string;
+  net?: string[];
+  collections?: string[];
   manifest?: {
     schedule?: string;
-    collections?: { writes?: string[] };
-    permissions?: { host_net?: string[] };
   };
 }
 
@@ -39,8 +39,8 @@ export async function listPlugins(): Promise<InstalledPluginInfo[]> {
       version: grants.version ?? "?",
       ...(grants.installedAt ? { installedAt: grants.installedAt } : {}),
       ...(grants.manifest?.schedule ? { schedule: grants.manifest.schedule } : {}),
-      collections: grants.manifest?.collections?.writes ?? [],
-      hostNet: grants.manifest?.permissions?.host_net ?? [],
+      collections: grants.collections ?? [],
+      net: grants.net ?? [],
     });
   }
 

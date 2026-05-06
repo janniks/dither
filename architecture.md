@@ -138,6 +138,8 @@ Frontmatter-based hints (e.g. `kind: tweet`) can drive UI rendering later withou
 
 A plugin is a normal Node-style directory. Its manifest lives inside a regular `package.json` (so plugins can also be regular npm packages, share linting, etc.) under a nested `dither` key. We never collide with npm's own fields.
 
+The manifest **declares** what the plugin would like access to. The user **grants** the actual subset at install time via CLI flags. Manifest is the ceiling; grants are the floor (defaulting to the full ceiling when no flag is passed).
+
 ```jsonc
 {
   "name": "dither-gmail-ingest",
@@ -149,65 +151,49 @@ A plugin is a normal Node-style directory. Its manifest lives inside a regular `
     // store metadata
     "display_name": "Gmail Ingest",
     "tagline": "Sync your Gmail threads as markdown",
-    "icon": "lucide:mail", // or data: URL
+    "icon": "lucide:mail",
 
     // behavior — presence of options determines triggers
-    "schedule": "every 15m", // single string; accepts human ("every 15m",
-    // "daily at 9am") or raw cron ("*/15 * * * *").
-    // presence ⇒ runs on a timer
-    "watch": {
-      // presence ⇒ runs when matching files change
-      "collections": ["inbox"],
-      "glob": "**/*.md", // optional; defaults to **/*.md
-    },
-    // (a plugin with neither only runs on manual trigger; all plugins are
-    //  manually triggerable regardless via `dither plugin run` or MCP)
+    "schedule": "every 15m",
+    "watch": { "collections": ["inbox"], "glob": "**/*.md" },
 
-    // text inputs — config + secrets
-    "inputs": [
+    // env values the plugin reads at run time. All strings — coerce in code
+    // if you want a number/bool. The user supplies values via `--env` or
+    // grants access to a global value (managed by `dither env`) via
+    // `--allow-env`.
+    "env": [
       {
-        "id": "GMAIL_OAUTH_TOKEN",
-        "name": "Gmail OAuth token",
-        "kind": "secret", // "secret" | "string" | "number" | "bool"
+        "name": "GMAIL_OAUTH_TOKEN",
         "description": "OAuth refresh token from Google",
       },
       {
-        "id": "MAILBOX",
-        "name": "Mailbox to sync",
-        "kind": "string",
+        "name": "MAILBOX",
+        "description": "Mailbox to sync",
         "default": "INBOX",
       },
     ],
 
-    // file/folder inputs — separate because they aren't text
+    // file/folder paths the plugin reads. Granted via `--file ID=PATH`. The
+    // host validates kind + existence at install and adds the path to Deno's
+    // --allow-read.
     "files": [
       {
         "id": "ARCHIVE",
         "name": "Twitter archive zip",
-        "kind": "file", // "file" | "folder"
+        "kind": "file",
         "extensions": [".zip"],
         "required": false,
       },
     ],
 
-    // host-level permissions — what the OS exposes to this code
-    "permissions": {
-      "host_net": ["gmail.googleapis.com"],
-      "host_env": [], // non-secret host env vars; rare
-      "browser": {
-        // optional; presence ⇒ Playwright sidecar enabled
-        "hosts": ["twitter.com"], // top-level nav allowed here; subresources unrestricted
-      },
-      // run/ffi: not in v1
-      // browser.llm_assist: deferred to v2
-    },
+    // network grant. Manifest declares the maximum hosts; user grants the
+    // subset via `--allow-net`. Default-grants the full list if no flag.
+    "net": ["gmail.googleapis.com"],
 
-    // collection access — what user data the plugin reaches
-    "collections": {
-      "writes": ["gmail"], // by name; or "id:<uuid>" to pin
-      "reads": [],
-      "auto_create": ["gmail"], // OK to create at install time if missing
-    },
+    // collection grant. Plugin emits entries into one of these; promote
+    // rejects anything outside the granted set. Default-grants the full list
+    // if no `--allow-collection` flag.
+    "collections": ["gmail"],
   },
 }
 ```
@@ -223,27 +209,27 @@ Plugins are not categorized as `interval` / `trigger` / `enhance`. Behavior emer
 
 Every plugin is also manually triggerable via `dither plugin run <name>` or MCP regardless of these options. The plugin code can introspect `DITHER_TRIGGER` (`scheduled` | `watch` | `manual`) to differentiate if it cares.
 
-### `inputs` vs `files`
+### `env` vs `files`
 
-- **`inputs`**: text-shaped (string, secret, number, bool). Surface as form fields in the marketplace UI. Stored alongside other grants in `grants/<name>.json`. Secrets go to the OS keychain; the value the marketplace UI collects from the user is the literal token to be stored.
-- **`files`**: file/folder picker. Folder/file paths are passed through verbatim and the daemon adds matching `--allow-read` flags at run time. Necessary for plugins that operate on imports (Twitter archive, photo library, etc.). Kept separate so `inputs` can stay simple text.
+- **`env`**: name → string values. Replaces the old `inputs[]` and `host_env`. No `kind`, no `secret` flag — privacy is the user's call. Granted via `--env NAME=VALUE` (literal) or `--allow-env NAME` (read from the global env at `~/.dither/env.json`). Plugin reads them via `input.env[name]`. All values are strings; coerce in plugin code.
+- **`files`**: file/folder paths. Granted via `--file ID=PATH`. The path is added to Deno's `--allow-read` allowlist; the SDK's `readFile(id)` is the canonical accessor.
 
-`watch` and `schedule` are themselves user-configurable: the manifest's values are _defaults_ the user can accept, edit, or override at install time (or later via `dither plugin grant <name>`).
+`watch` and `schedule` are user-configurable: the manifest's values are _defaults_ the user can accept, edit, or override at install time (or later via `dither plugin grant <name>` — that subcommand is parked for the interactive-prompt phase).
 
 ### Permission derivation (daemon → Deno)
 
 ```
-host_net      → --allow-net=host1,host2
-host_env      → --allow-env=VAR1,VAR2
-files (paths) → --allow-read=<resolved file/folder path>
-              + --allow-write=runs/<id>
-              + --allow-write=plugins/<name>/state
-              + --allow-read =runs/<id>
-              + --allow-read =plugins/<name>/state
-              (NO --allow-env for secrets — they ride in input.json)
+grants.net      → --allow-net=host1,host2
+grants.files    → --allow-read=<resolved file/folder path>, …
+                + --allow-read=<plugin dir>, <run dir>, <SDK path>
+                + --allow-write=<plugin state dir>, <run dir>
+                + --allow-env=DITHER_RUN_DIR,DITHER_INPUT_FILE,
+                              DITHER_STATE_FILE,DITHER_TRIGGER,
+                              DITHER_PLUGIN_NAME
+                (env values ride in input.json — never as host env vars)
 ```
 
-`grants/<name>.json` is dither-owned: it has timestamps, is the single source of truth for what the daemon enforces, and survives plugin updates.
+`grants/<name>.json` is dither-owned: it has timestamps, is the single source of truth for what the host enforces, and survives plugin updates.
 
 ## Plugin run lifecycle
 
@@ -254,9 +240,8 @@ files (paths) → --allow-read=<resolved file/folder path>
    - mkdir -p runs/<run-id>/
    - writes runs/<run-id>/input.json with:
        { trigger: "scheduled" | "watch" | "manual",
-         config: {…},        ← values for `inputs` of kind string/number/bool
-         secrets: {…},       ← values for `inputs` of kind secret
-         files: {…},         ← resolved absolute paths for `files` entries
+         env: {…},           ← merged: grant literals + global lookups + manifest defaults
+         files: {…},         ← resolved absolute paths for granted `files`
          targets: [paths…]   ← for watch-triggered runs only
        }
 
@@ -288,7 +273,7 @@ files (paths) → --allow-read=<resolved file/folder path>
 7. Daemon records run outcome in dither.sqlite (success/failure, duration, files written).
 ```
 
-Run dir is **flat scratch**. No `in/`/`out/` subdirs. Persistent `state.json` lives at `plugins/<name>/state/` and is granted directly via Deno flags — no shuttle copies. Inputs (config + secrets + files + targets) arrive in one `input.json`.
+Run dir is **flat scratch**. No `in/`/`out/` subdirs. Persistent `state.json` lives at `plugins/<name>/state/` and is granted directly via Deno flags — no shuttle copies. Everything the plugin needs (env values, file paths, trigger info, watch targets) arrives in one `input.json`.
 
 ## Trigger orchestration
 
@@ -304,9 +289,11 @@ Dedupe / upsert by `external_id` is **not in v1**. Plugins create files; if they
 
 No conflict policy. If two plugins write to the same file, last-write-wins. The user can read the markdown and judge what happened. Liberal model — plugins are free to use whatever conventions they want (HTML comment fences, frontmatter sub-objects, …) without the host imposing structure.
 
-## Browser plugin runtime
+## Browser plugin runtime (parked, will redefine its own grant surface)
 
-Plugins that declare `permissions.browser` get a Playwright/Chromium sidecar. Three processes during a run instead of two:
+When the browser sidebar lands, it will introduce its own grant kind (likely `browser` at the top level, granted via something like `--allow-browser <host>`) — parallel to `net`/`env`/`files`/`collections`. The shape below is the still-good design from before the grants redesign; it just needs the surface re-attached to the new grant model when implemented.
+
+Plugins that declare a `browser` grant get a Playwright/Chromium sidecar. Three processes during a run instead of two:
 
 ```
 daemon ─→ Deno plugin ─(websocket)─→ Playwright/Chromium
@@ -314,10 +301,10 @@ daemon ─→ Deno plugin ─(websocket)─→ Playwright/Chromium
                                      network-filtered at the browser
 ```
 
-- **Network filter at the browser layer.** The `hosts` list is the _navigation_ whitelist — the URL bar. Subresources (Google Fonts, CDNs, analytics, anything a normal browser auto-loads from the page) are not filtered. Trying to micro-allowlist subresources defeats the point of using a real browser. Plugin authors who want stricter network control can use `host_net` instead and skip the browser entirely.
+- **Network filter at the browser layer.** The `hosts` list is the _navigation_ whitelist — the URL bar. Subresources (Google Fonts, CDNs, analytics, anything a normal browser auto-loads from the page) are not filtered. Trying to micro-allowlist subresources defeats the point of using a real browser. Plugin authors who want stricter network control can use the top-level `net` grant instead and skip the browser entirely.
 - **Persistent per-plugin profile.** `~/.dither/plugins/<name>/browser-profile/` is the Chromium `userDataDir`. Cookies, localStorage, IndexedDB persist across runs. The Deno plugin does not directly access this dir; the Chromium process owns it. Plugin code talks to Playwright via the websocket only.
 - **Headed ↔ headless is a runtime choice.** Plugin opens a session with `{ headed: true }` for first-time login (user solves captcha, signs in) and switches to `{ headed: false }` for unattended refresh runs. Cookies set in headed sessions work in headless ones because the profile is shared.
-- **Implicit consent.** If `permissions.browser` is granted at install, headed windows are allowed. No separate per-session prompt. The user accepted "this plugin can drive a browser" once.
+- **Implicit consent.** If a browser grant is given at install, headed windows are allowed. No separate per-session prompt. The user accepted "this plugin can drive a browser" once.
 - **Trust model.** Inside a navigated host, anything a normal browser can do is allowed — that's the contract of granting browser access. We don't try to sandbox JS execution within pages. If the user grants browser access to `twitter.com`, they're trusting the plugin not to do something stupid on twitter.com.
 
 LLM-assisted automation (e.g. `page.aiClick("login button")`) is **v2**. Manifest keeps `browser.llm_assist` reserved but unimplemented in v1. Plugins use selectors.
@@ -590,5 +577,6 @@ Public boundary = trust boundary. Sandbox and SDK code must be auditable, hence 
 - **2026-04-27** — WASM SQLite rejected for v1 (we're a Node daemon; `node:sqlite` already does what's needed). WASM parked for v2 web/edge surfaces (browser-based index demo, edge search proxying) where it actually pays off. Plugin runtime stays Deno; WASI swap rejected (loses ecosystem and security primitives we want).
 - **2026-04-27** — Switched from pnpm to npm. Public stuff lives in one npm-workspace monorepo (`dither` with `packages/cli`, `packages/plugin`, `packages/plugins/*`, `docs/`). Private stuff (`dither-edge`, `dither-sync`) stays in separate repos.
 - **2026-04-29** — Dropped the `apps/` directory. CLI moved to `packages/cli`. Reasoning: `apps/cli` was the only entry under `apps/`; the docs site went under `docs/` (next to `packages/`). Splitting one binary into a separate top-level dir didn't earn its keep — `packages/*` covers the published-to-npm artifacts uniformly.
+- **2026-04-30** — **Grants redesign**. Plugin permission model rebuilt around one concept: grants. Manifest declares the maximum (what the plugin would like); user-supplied install/run flags grant the actual subset. `inputs[]` → `env[]` (all strings, no `kind`, no `secret` flag — privacy is the user's call). `permissions` block dropped: `host_net` → top-level `net`, `host_env` removed (env is the only env), `permissions.browser` parked for the browser sidebar's own grant surface. `collections.writes/reads/auto_create` → flat `collections: string[]`, validated against grants at promote (not against the manifest). New global env store at `~/.dither/env.json` managed by `dither env set/get/unset/list`. SDK `PluginInput` is now `{ trigger, env, files, targets }` — the `config`/`secrets` split is gone. `plugin run <name|path>` accepts a path and auto-installs (flags persist as grants); `plugin run <name>` with grant flags layers them as ephemeral per-run overrides without mutating the grants file. CLI grant flags (parallel on `install` and `run`): `--env NAME=VALUE`, `--allow-env NAME` (reference a global), `--file ID=PATH`, `--allow-net HOST`, `--allow-collection NAME`. Default-grant-from-manifest if no flag passed; manifest is the ceiling, flags narrow.
 - **2026-04-27** — Formatter: `oxfmt` (not prettier). All-Oxc tooling for lint + format.
 - **2026-04-27** — Renamed product: `openindex`/`oi` → `dither`. NPM package `dither`, scope `@dither`, CLI binary `dither`, env vars `DITHER_*`, runtime dir `~/.dither/`. Repos renamed throughout (`dither`, `dither-edge`, `dither-sync`, `dither-docs`).

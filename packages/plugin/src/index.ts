@@ -23,11 +23,13 @@ import { randomUUID } from "node:crypto";
 
 export const VERSION = "0.0.1";
 
-export interface PluginInput<C = Record<string, unknown>, S = Record<string, string>> {
+export interface PluginInput {
   trigger: "scheduled" | "watch" | "manual";
-  config: C;
-  secrets: S;
+  /** Resolved env values keyed by name. All strings — coerce in plugin code. */
+  env: Record<string, string>;
+  /** Resolved absolute paths for declared `files[]`, keyed by id. */
   files: Record<string, string>;
+  /** For watch-triggered runs: the entries that changed. Always [] today. */
   targets: string[];
 }
 
@@ -50,12 +52,10 @@ function env(name: string): string {
   return v;
 }
 
-export async function readInput<C = Record<string, unknown>, S = Record<string, string>>(): Promise<
-  PluginInput<C, S>
-> {
+export async function readInput(): Promise<PluginInput> {
   const path = env("DITHER_INPUT_FILE");
   const content = await fsReadFile(path, "utf-8");
-  return JSON.parse(content) as PluginInput<C, S>;
+  return JSON.parse(content) as PluginInput;
 }
 
 /**
