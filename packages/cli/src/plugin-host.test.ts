@@ -107,6 +107,128 @@ await writeEntry({
     rmSync(escaperDir, { recursive: true, force: true });
   }, 30000);
 
+  it("nested grant: messages/** authorizes writes under messages/<sub>/", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dither-nested-ok-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "nested-ok",
+        version: "0.0.1",
+        dither: { collections: ["messages/**"] },
+      }),
+    );
+    writeFileSync(
+      join(dir, "plugin.ts"),
+      `import { writeEntry } from "@dither/plugin";
+await writeEntry({ collection: "messages/tom", body: "hi tom" });
+`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+
+    await installPlugin({ source: dir });
+    const result = await runPlugin({ name: "nested-ok" });
+    expect(result.promoted.length).toBe(1);
+
+    const tomDir = join(home, "entries", "messages", "tom");
+    expect(existsSync(tomDir)).toBe(true);
+    const files = readdirSync(tomDir).filter((f) => f.endsWith(".md"));
+    expect(files.length).toBe(1);
+    const content = readFileSync(join(tomDir, files[0]!), "utf-8");
+    expect(content).toContain('collection: "messages/tom"');
+
+    rmSync(dir, { recursive: true, force: true });
+  }, 60000);
+
+  it("rejects path traversal in the frontmatter collection value", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dither-traversal-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "traverser",
+        version: "0.0.1",
+        dither: { collections: ["**"] },
+      }),
+    );
+    writeFileSync(
+      join(dir, "plugin.ts"),
+      `import { writeEntry } from "@dither/plugin";
+await writeEntry({ collection: "../../etc/passwd", body: "escape" });
+`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+
+    await installPlugin({ source: dir });
+    await expect(runPlugin({ name: "traverser" })).rejects.toThrow(/'\.\.'/);
+
+    expect(existsSync(join(home, "entries", "..", "..", "etc"))).toBe(false);
+
+    rmSync(dir, { recursive: true, force: true });
+  }, 30000);
+
+  it("sibling-subtree isolation: messages/tom/** does not authorize messages/jane", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dither-sibling-subtree-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "tom-only",
+        version: "0.0.1",
+        dither: { collections: ["messages/tom/**"] },
+      }),
+    );
+    writeFileSync(
+      join(dir, "plugin.ts"),
+      `import { writeEntry } from "@dither/plugin";
+await writeEntry({ collection: "messages/jane", body: "leak" });
+`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+
+    await installPlugin({ source: dir });
+    await expect(runPlugin({ name: "tom-only" })).rejects.toThrow(
+      /not granted write access to collection 'messages\/jane'/,
+    );
+
+    expect(existsSync(join(home, "entries", "messages", "jane"))).toBe(false);
+
+    rmSync(dir, { recursive: true, force: true });
+  }, 30000);
+
+  it("sibling-name leak prevented: messages/** does not authorize messages-archive", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dither-sibling-name-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "messages-only",
+        version: "0.0.1",
+        dither: { collections: ["messages/**"] },
+      }),
+    );
+    writeFileSync(
+      join(dir, "plugin.ts"),
+      `import { writeEntry } from "@dither/plugin";
+await writeEntry({ collection: "messages-archive/x", body: "leak" });
+`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+
+    await installPlugin({ source: dir });
+    await expect(runPlugin({ name: "messages-only" })).rejects.toThrow(
+      /not granted write access to collection 'messages-archive\/x'/,
+    );
+
+    expect(existsSync(join(home, "entries", "messages-archive"))).toBe(false);
+
+    rmSync(dir, { recursive: true, force: true });
+  }, 30000);
+
   it("forwards progress() messages through onProgress and hides them from stderr", async () => {
     const progDir = mkdtempSync(join(tmpdir(), "dither-progress-plugin-"));
     writeFileSync(

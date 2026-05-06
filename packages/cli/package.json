@@ -21,10 +21,12 @@
   "dependencies": {
     "@tobilu/qmd": "^2.1.0",
     "citty": "^0.2.0",
+    "picomatch": "^4.0.4",
     "zod": "^4.2.1"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "@types/picomatch": "^4.0.3"
   },
   "engines": {
     "node": ">=22"

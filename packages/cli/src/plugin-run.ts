@@ -8,6 +8,7 @@ import { resolveHome } from "./home";
 import { parsePackage } from "./manifest";
 import { updateIndex } from "./update-index";
 import { getGlobalEnv } from "./global-env";
+import { validateCollectionPath, grantsCover } from "./collection-paths";
 
 export interface ProgressMessage {
   message: string;
@@ -103,7 +104,6 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
   const grantCollections = Array.from(
     new Set([...(grants.collections ?? []), ...(opts.collections ?? [])]),
   );
-  const allowedCollections = new Set(grantCollections);
 
   // Resolve the env values plugins will see: literals win; refs pull from
   // global env; manifest defaults fill the rest.
@@ -230,13 +230,14 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
     if (!collection) {
       throw new Error(`output ${file} missing 'collection' frontmatter`);
     }
-    if (!allowedCollections.has(collection)) {
+    validateCollectionPath(collection);
+    if (!grantsCover(grantCollections, collection)) {
       throw new Error(
         `plugin '${opts.name}' is not granted write access to collection '${collection}'`,
       );
     }
 
-    const destDir = join(home, "entries", collection);
+    const destDir = join(home, "entries", ...collection.split("/"));
     await mkdir(destDir, { recursive: true });
     const dest = join(destDir, file);
     await copyFile(src, dest);
