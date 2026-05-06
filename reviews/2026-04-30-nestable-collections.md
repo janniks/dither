@@ -139,7 +139,7 @@ Walked each finding against current code. The concurrent agent shipped one desig
 | ---------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ~~**M1**~~ | **resolved 2026-04-30**                   | Destination clobber check added in `plugin-run.ts:planPromotion`: refuses to overwrite an entry whose existing frontmatter `source` ≠ this plugin. Test `plugin-host.test.ts` "promote refuses to clobber a hand-authored entry".                                                                                                                                                  |
 | ~~**M2**~~ | **resolved 2026-04-30**                   | `runPlugin` now wraps run + promote in `try/finally`; promote uses validate-then-copy via `planPromotion` + `copyPromoted` two-pass. Failed runs no longer leak run dir or partially-promoted entries. Test "run dir is cleaned up even when promote fails".                                                                                                                       |
-| **M3**     | **still valid**                           | Comma-in-path breaks `--allow-read`. See "M3 approaches" section below — recommended fix is repeated `--allow-read` flags + clear error on commas in user-supplied paths.                                                                                                                                                                                                          |
+| **M3**     | **acknowledged, deferred 2026-04-30**     | Comma-in-path breaks `--allow-read`. User chose to keep the single-flag, comma-separated CLI format for v0 ("keep it simple"). No code change. The loud-error UX improvement on `parsePairs`/`parseList` is parked alongside the broader interactive-prompt phase.                                                                                                                 |
 | ~~**M4**~~ | **intentional 2026-04-30**                | State wipe on reinstall is the documented contract — install is configuration, reinstall replaces. State preservation across reinstalls is a v2 flag (`--keep-state` or similar), not v0 behavior.                                                                                                                                                                                 |
 | ~~**M5**~~ | **resolved 2026-04-30**                   | Replaced `extractField` regex with `gray-matter` in `plugin-run.ts`. SDK write side unchanged (JSON-as-YAML still parses). Promote security gate now reads YAML properly.                                                                                                                                                                                                          |
 | ~~**M6**~~ | **resolved 2026-04-30**                   | SDK `writeEntry` rejects `..`, `/`, `\\` in `filename` and `frontmatter.id`. Test "SDK writeEntry rejects '..' in filename and frontmatter.id".                                                                                                                                                                                                                                    |
@@ -207,8 +207,11 @@ The straightforward fix when we hit it: `realpath()` `sdkPath` before joining it
 
 **Must-fix — open:**
 
-- **M3** — comma-in-path. See "M3 approaches" above.
 - **M10** — `import.meta.resolve` symlink edge case. See "M10 explanation" above. Not a current bug under our npm-workspace setup; tracked for the moment a deploy env varies.
+
+**Must-fix — acknowledged, deferred:**
+
+- **M3** — comma-in-path. Single-flag CLI format preserved for v0 (user call). See "M3 approaches" above for when it's revisited.
 
 **Should-fix (before a v0 alpha tag):**
 
