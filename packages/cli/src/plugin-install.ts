@@ -1,4 +1,4 @@
-import { mkdir, cp, readFile, writeFile, rm, stat } from "node:fs/promises";
+import { mkdir, cp, readFile, writeFile, rm, lstat, realpath } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { resolveHome } from "./home";
@@ -66,11 +66,17 @@ async function resolveFiles(
       }
       continue;
     }
-    const absPath = resolve(userValue);
-    if (!existsSync(absPath)) {
-      throw new Error(`File '${def.id}' path does not exist: ${absPath}`);
+    const inputPath = resolve(userValue);
+    if (!existsSync(inputPath)) {
+      throw new Error(`File '${def.id}' path does not exist: ${inputPath}`);
     }
-    const stats = await stat(absPath);
+    // Canonicalise at install. Deno's --allow-read follows symlinks at
+    // runtime, so if we stored the user's potentially-symlinked path,
+    // replacing the link later would silently widen access to wherever
+    // the new target points. Storing the realpath pins the grant to its
+    // install-time destination.
+    const absPath = await realpath(inputPath);
+    const stats = await lstat(absPath);
     if (def.kind === "file" && !stats.isFile()) {
       throw new Error(`File '${def.id}' must be a file, got: ${absPath}`);
     }

@@ -156,6 +156,31 @@ describe("plugin env flow", () => {
     ).rejects.toThrow(/does not exist/);
   });
 
+  it("canonicalises a symlinked file grant to the real path at install time", async () => {
+    const { symlinkSync, realpathSync } = await import("node:fs");
+
+    const sourceDir = mkdtempSync(join(tmpdir(), "dither-symlink-src-"));
+    const realFile = realpathSync(join(sourceDir, "real.md").replace(/real\.md$/, "")) + "real.md";
+    writeFileSync(realFile, "real contents");
+    const linkFile = join(sourceDir, "link.md");
+    symlinkSync(realFile, linkFile);
+
+    const { installPlugin } = await import("./plugin-install");
+    await installPlugin({
+      source: READ_FILE_FIXTURE,
+      files: { SOURCE: linkFile },
+    });
+
+    // Grants file stores the realpath, not the symlink path — replacing
+    // the symlink later cannot silently widen the plugin's access.
+    const grantsRaw = readFileSync(join(home, "grants", "read-file.json"), "utf-8");
+    const grants = JSON.parse(grantsRaw) as { files: Record<string, string> };
+    expect(grants.files.SOURCE).toBe(realFile);
+    expect(grants.files.SOURCE).not.toBe(linkFile);
+
+    rmSync(sourceDir, { recursive: true, force: true });
+  });
+
   it("per-run env override does not mutate persisted grants", async () => {
     const { installPlugin } = await import("./plugin-install");
     const { runPlugin } = await import("./plugin-run");
