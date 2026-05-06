@@ -135,41 +135,93 @@ Walked each finding against current code. The concurrent agent shipped one desig
 
 ### Old findings (from `reviews/2026-04-29-post-option-c.md`) — current status
 
-| #       | status                                   | note                                                                                                                            |
-| ------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **M1**  | **still valid (now wider blast radius)** | Promote does blind `copyFile`. Nestable collections add more places a plugin can clobber a user-authored entry.                 |
-| **M2**  | **still valid**                          | Partial-promote on failure unchanged.                                                                                           |
-| **M3**  | **still valid**                          | Comma-in-path breaks `--allow-read`.                                                                                            |
-| **M4**  | **still valid**                          | Plugin state under `pluginDir/state/` wiped on reinstall.                                                                       |
-| **M5**  | **still valid (escalated to must-fix)**  | See N5. The new feature loads security on top of the fragile parser.                                                            |
-| **M6**  | **still valid**                          | SDK `writeEntry` filename path-traversal. The new traversal-rejection test only covers the `collection:` field, not `filename`. |
-| **M7**  | **still valid**                          | `resolveFiles` still uses `stat` (follows symlinks).                                                                            |
-| **M8**  | **still valid**                          | Reinstall is non-atomic.                                                                                                        |
-| **M9**  | **resolved**                             | `host_net` field is gone since the grants redesign.                                                                             |
-| **M10** | **still valid**                          | `import.meta.resolve` symlinked-workspace edge case.                                                                            |
-| **A3**  | **still valid**                          | Failed runs leak `runs/<id>/input.json` (now contains plaintext env).                                                           |
+| #          | status                                    | note                                                                                                                                                                                                                                                                                                                                                                               |
+| ---------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ~~**M1**~~ | **resolved 2026-04-30**                   | Destination clobber check added in `plugin-run.ts:planPromotion`: refuses to overwrite an entry whose existing frontmatter `source` ≠ this plugin. Test `plugin-host.test.ts` "promote refuses to clobber a hand-authored entry".                                                                                                                                                  |
+| ~~**M2**~~ | **resolved 2026-04-30**                   | `runPlugin` now wraps run + promote in `try/finally`; promote uses validate-then-copy via `planPromotion` + `copyPromoted` two-pass. Failed runs no longer leak run dir or partially-promoted entries. Test "run dir is cleaned up even when promote fails".                                                                                                                       |
+| **M3**     | **still valid**                           | Comma-in-path breaks `--allow-read`. See "M3 approaches" section below — recommended fix is repeated `--allow-read` flags + clear error on commas in user-supplied paths.                                                                                                                                                                                                          |
+| ~~**M4**~~ | **intentional 2026-04-30**                | State wipe on reinstall is the documented contract — install is configuration, reinstall replaces. State preservation across reinstalls is a v2 flag (`--keep-state` or similar), not v0 behavior.                                                                                                                                                                                 |
+| ~~**M5**~~ | **resolved 2026-04-30**                   | Replaced `extractField` regex with `gray-matter` in `plugin-run.ts`. SDK write side unchanged (JSON-as-YAML still parses). Promote security gate now reads YAML properly.                                                                                                                                                                                                          |
+| ~~**M6**~~ | **resolved 2026-04-30**                   | SDK `writeEntry` rejects `..`, `/`, `\\` in `filename` and `frontmatter.id`. Test "SDK writeEntry rejects '..' in filename and frontmatter.id".                                                                                                                                                                                                                                    |
+| ~~**M7**~~ | **resolved 2026-04-30**                   | `resolveFiles` now `realpath`s the granted path at install and stores the canonical destination in grants. Replacing the user-facing path with a symlink later cannot widen access — Deno's `--allow-read` is locked to the realpath. (Switched from "reject symlinks" plan because macOS OS-level chains like `/var → /private/var` would have rejected ordinary tmpdir() paths.) |
+| **M8**     | **acknowledged, intentionally not fixed** | Reinstall is `rm -rf → mkdir → cp`. Mid-cp failure leaves a half-installed plugin. Comment added to `plugin-install.ts` flagging the tmpdir-then-rename pattern as the future fix. Acceptable for v0; user can re-run install.                                                                                                                                                     |
+| **M9**     | **resolved**                              | `host_net` field is gone since the grants redesign.                                                                                                                                                                                                                                                                                                                                |
+| **M10**    | **still valid (theoretical)**             | See "M10 explanation" section below.                                                                                                                                                                                                                                                                                                                                               |
+| ~~**A3**~~ | **resolved 2026-04-30**                   | Run dir cleanup is now in a `try/finally` inside `runPlugin`. Failed runs no longer leave `runs/<id>/input.json` (with plaintext env values) on disk. Same fix that resolved M2.                                                                                                                                                                                                   |
+
+### M3 approaches
+
+The bug: `plugin-run.ts` joins paths with `,` for `--allow-read=...`. Deno splits on commas to get the list of allowed paths, so a path containing a literal comma silently splits into bogus entries. Same for `--allow-write` and `--allow-net`.
+
+There are two sides:
+
+**A. The Deno spawn itself.** Cleanest fix: pass each path as its own flag — `--allow-read=a --allow-read=b --allow-read=c`. Deno unions repeated flags with no separator parsing. Eliminates the comma issue at the runtime layer entirely. Independent of any CLI changes; safe to do now.
+
+**B. The CLI flags users type.** Today `--file "ID=PATH,ID2=PATH2"` (and similar) splits on `,` then on `=`. Two failure modes:
+
+- User puts a literal comma in a value: `--file "ID=/path,with,comma"` → silently butchered into `ID=/path` plus malformed `with` and `comma` fragments. No error.
+- User uses a different separator they think might work (`;`, `\n`, repeated flags): silently misparsed.
+
+Recommended approach for **B**:
+
+1.  **Detect malformed pairs and error loudly.** Update `parsePairs` to throw when any segment after splitting on `,` doesn't contain `=`. Today it silently drops them. New error: `--file segment 'with' is not a KEY=VALUE pair; commas in values aren't supported (use the programmatic API or move/rename the file).`
+2.  **Don't try to make commas-in-values work in v0.** Switching to repeated flags requires manual argv parsing (citty doesn't expose array args natively). Defer to the interactive-prompt phase where the whole flag UX gets revisited.
+
+Combined recommendation:
+
+- Switch the Deno-side `--allow-read` / `--allow-write` / `--allow-net` to repeated flags now (small, contained, low risk).
+- Add the loud-error to `parsePairs` and `parseList` for CLI-side malformed input.
+
+### M10 explanation
+
+The line in question: `apps/cli/src/plugin-run.ts` does
+
+```ts
+const sdkUrl = import.meta.resolve("@dither/plugin");
+const sdkPath = fileURLToPath(sdkUrl);
+```
+
+`import.meta.resolve("@dither/plugin")` runs in the host (Node) process and returns a `file://` URL pointing at the package's resolved entry — usually `packages/plugin/dist/index.mjs`. We then convert to a path and pass it both to Deno's import map (as a URL the plugin imports from) and to `--allow-read` (so Deno can read it).
+
+In an npm workspace, `node_modules/@dither/plugin` is a symlink to `packages/plugin`. Three things can vary:
+
+1. **Whether `import.meta.resolve` returns the symlink path or the realpath.** Default Node 22 follows symlinks during resolve, so `sdkUrl` points at the realpath under `packages/plugin`. With `node --preserve-symlinks`, it would point at the symlink path under `node_modules`.
+
+2. **Whether Deno's `--allow-read` matches by literal path or by realpath.** Deno canonicalises paths in permission checks; it matches the realpath at runtime. So if `--allow-read` is the realpath, it works. If `--allow-read` is the symlink path and Deno only checks realpath, the read might fail.
+
+3. **Whether the install layout has multi-level symlinks.** Under pnpm or some hoisted layouts, `node_modules/@dither/plugin/dist/index.mjs` may be a symlink to `node_modules/.pnpm/.../dist/index.mjs` which is itself a symlink to the workspace package. Multi-level chains vary by tool.
+
+In our **current** setup (npm workspaces, default Node flags, locked in earlier), `import.meta.resolve` returns the realpath, so `sdkPath` is the realpath under `packages/plugin/dist`, and `--allow-read=<that>` works. Plugin loads fine.
+
+The edge case bites when the deploy environment differs: a user installs `dither` globally via pnpm, or runs Node with `--preserve-symlinks`, or some tool makes `import.meta.resolve` return a non-canonical URL. In any of those cases, `sdkPath` might be the symlink path and Deno's runtime check may fail to match, leading to a "permission denied reading <sdk path>" error at plugin spawn.
+
+The straightforward fix when we hit it: `realpath()` `sdkPath` before joining it into `--allow-read`. One async call, defensive. Not a current bug; documented for the moment we have it.
 
 ### Recommended cut (post-validation)
 
-**Must-fix (do before any release):**
+**Must-fix — done:**
 
-- **N1** — `messages/**` should cover bare `messages`, OR document the rule + add a test.
-- **N2b** — validate user-supplied grant strings (call `validateCollectionPath` or a sibling `validateGrantPattern` on each `--allow-collection`/`--allow-net` value).
-- **N3** — same validation on manifest-declared patterns at install.
-- **N5 (M5)** — replace the regex frontmatter parser with a real one shared between SDK write and host read. Highest leverage single fix.
-- **M1** — destination-side clobber check on promote.
-- **M2** — validate-then-copy ordering with try/finally for run dir cleanup.
-- **M6** — SDK `writeEntry` filename traversal check.
-- **M7** — `lstat` / realpath on file grants.
-- **A3** — `try/finally` around run dir, regardless of throw site.
+- ~~**N1**~~, ~~**N2b**~~, ~~**N3**~~, ~~**N5 / M5**~~, ~~**M1**~~, ~~**M2**~~, ~~**M6**~~, ~~**M7**~~, ~~**A3**~~ — see status tables above.
+- ~~**M4**~~ — intentional, marked.
+- ~~**M8**~~ — acknowledged as v0-acceptable; comment in source flags the future tmpdir-then-rename fix.
+
+**Must-fix — open:**
+
+- **M3** — comma-in-path. See "M3 approaches" above.
+- **M10** — `import.meta.resolve` symlink edge case. See "M10 explanation" above. Not a current bug under our npm-workspace setup; tracked for the moment a deploy env varies.
 
 **Should-fix (before a v0 alpha tag):**
 
-- **N4** (hidden-file segments), **N7** (case inconsistency), **N8** (`...`), **N9** (silent literal), **N10** (zod-validate grants), **N11** (the named missing tests).
+- **N4** (hidden-file segments) — partially addressed by 2026-04-30 commit (segment validator now rejects leading `.`); confirm and tick.
+- **N6** (error-message info leak / source unescaped), **N7** (case inconsistency on `.md` suffix), **N8** (`...` segments) — partially addressed by the new `validateSegment` (`...` rejected); confirm.
+- **N9** (silent picomatch literal fallback for invalid patterns) — partially addressed by `validateGrantPattern` (rejects unmatched brackets/braces/parens); confirm coverage.
+- **N10** (zod-validate grants on load), **N11** (the named missing tests).
 
 **Nice-to-have / defer:**
 
-- **N12/N13** (cache decision), **N14** (hot regex), **N15** (parallel promote), **N16** (test helper), **N17** (shared `GrantOverlay` type), **N18** (typed errors), **N19/N20/N21/N23** (comment + tone polish), **N22** (inline `collection-paths.ts` — judgment call).
+- **N12/N13** (cache decision — partially addressed: bounded LRU 256, drop-or-keep judgment outstanding).
+- **N14** (hot regex — extractField removed entirely, gray-matter compiles its own; effectively gone).
+- **N15** (parallel promote), **N16** (test helper), **N17** (shared `GrantOverlay` type), **N18** (typed errors), **N19/N20/N21/N23** (comment + tone polish), **N22** (inline `collection-paths.ts` — judgment call).
 
 ## How to act on this file
 

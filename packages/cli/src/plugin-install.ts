@@ -129,6 +129,11 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
   const home = resolveHome();
   const destDir = join(home, "plugins", parsed.name);
 
+  // Reinstall is intentionally non-atomic for v0 simplicity: rm → mkdir → cp.
+  // If the cp fails midway (disk full, permission, killed), the previous
+  // install is gone and the new one is half-copied. Acceptable until we have
+  // real users — the user can re-run install. A tmpdir-then-rename pattern is
+  // the future fix; tracked in the review report.
   if (existsSync(destDir)) {
     await rm(destDir, { recursive: true, force: true });
   }
