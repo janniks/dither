@@ -485,6 +485,7 @@ These were touched but explicitly deferred. Frontmatter and manifest fields they
 - **Dedupe / upsert by `external_id`** — per-collection toggle, `(source, external_id) → entry_id` index in `dither.sqlite`. v1 plugins create new files on re-run.
 - **`dither key info` auto-emit** — personalized `skill.md` generation; lands with the web version.
 - **Optional plugin signing** — Sigstore / GPG; additive trust signal, never gating.
+- **Per-run tmp dir** — each plugin run gets its own scratch tmp dir (separate from the run dir, which is reserved for entry outputs). Some plugins need a place to drop intermediate working files (zip extracts, downloaded payloads, intermediate transforms) without leaving them on disk between runs. Spec deferred; just noting the need.
 
 ## Tooling & dependencies
 
