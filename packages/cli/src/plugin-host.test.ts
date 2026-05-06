@@ -229,6 +229,37 @@ await writeEntry({ collection: "messages-archive/x", body: "leak" });
     rmSync(dir, { recursive: true, force: true });
   }, 30000);
 
+  it("install grant can widen past the manifest (manifest is default, not ceiling)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dither-widen-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "widener",
+        version: "0.0.1",
+        // Manifest declares one collection; user grants a different, broader one.
+        dither: { collections: ["messages"] },
+      }),
+    );
+    writeFileSync(
+      join(dir, "plugin.ts"),
+      `import { writeEntry } from "@dither/plugin";
+await writeEntry({ collection: "notes/personal", body: "ok" });
+`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+
+    await installPlugin({ source: dir, collections: ["notes/**"] });
+    const result = await runPlugin({ name: "widener" });
+    expect(result.promoted.length).toBe(1);
+
+    const personalDir = join(home, "entries", "notes", "personal");
+    expect(existsSync(personalDir)).toBe(true);
+
+    rmSync(dir, { recursive: true, force: true });
+  }, 60000);
+
   it("forwards progress() messages through onProgress and hides them from stderr", async () => {
     const progDir = mkdtempSync(join(tmpdir(), "dither-progress-plugin-"));
     writeFileSync(

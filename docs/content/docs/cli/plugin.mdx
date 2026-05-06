@@ -17,15 +17,15 @@ Plugins are small Deno programs that write markdown into collections you've gran
 
 These are identical on `install` and `run`. They map one-to-one to the [grant kinds](/docs/concepts/security#the-four-grant-kinds).
 
-| Flag                          | Grants                                                                     |
-| ----------------------------- | -------------------------------------------------------------------------- |
-| `--env KEY=VALUE,...`         | Literal env values written into `input.env` for the plugin to read.        |
-| `--allow-env KEY,KEY2`        | Read access to those names in the global env store (`~/.dither/env.json`). |
-| `--file ID=PATH,...`          | A file/folder path. Implies `--allow-read=<path>` for the Deno sandbox.    |
-| `--allow-net HOST,HOST2`      | Net access to those hosts. Subset of the manifest's `net`.                 |
-| `--allow-collection NAME,...` | Promote into those collections. Subset of the manifest's `collections`.    |
+| Flag                          | Grants                                                                                                                                                      |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--env KEY=VALUE,...`         | Literal env values written into `input.env` for the plugin to read.                                                                                         |
+| `--allow-env KEY,KEY2`        | Read access to those names in the global env store (`~/.dither/env.json`).                                                                                  |
+| `--file ID=PATH,...`          | A file/folder path. Implies `--allow-read=<path>` for the Deno sandbox.                                                                                     |
+| `--allow-net HOST,HOST2`      | Net access to those hosts. Manifest `net` is the install-time default when this flag is omitted.                                                            |
+| `--allow-collection NAME,...` | Promote into those collections (glob patterns supported, e.g. `messages/**`). Manifest `collections` is the install-time default when this flag is omitted. |
 
-If a flag is omitted, the corresponding grant defaults to **everything the manifest declared** for that field. If a flag tries to grant something the manifest didn't declare, install fails. See [Security: default-grant from manifest](/docs/concepts/security#default-grant-from-manifest).
+If a flag is omitted, the corresponding grant defaults to **everything the manifest declared** for that field. When you supply a flag, that's the grant — the manifest is **not** a ceiling. The grants file is the source of truth at promote time. See [Security: default-grant from manifest](/docs/concepts/security#default-grant-from-manifest).
 
 > Comma is the only separator and `=` is reserved for `KEY=VALUE` pairs. Values containing `,` or `=` aren't expressible through the CLI flag — use the programmatic API.
 

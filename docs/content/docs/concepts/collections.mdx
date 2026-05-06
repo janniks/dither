@@ -53,25 +53,29 @@ For plugin output, `source` and `collection` are **enforced at promote time** �
 
 ## Plugins and collections
 
-A plugin's manifest declares the collections it _wants_ to write to as a flat list:
+A plugin's manifest declares the collections it _wants_ to write to. Entries are **glob patterns** over nestable path identifiers:
 
 ```jsonc
 {
   "dither": {
-    "collections": ["notes", "drafts"],
+    "collections": ["notes", "messages/**"],
   },
 }
 ```
 
-That's the maximum. At install time, you grant a subset via `--allow-collection`:
+That's the install-time **default**. At install you can override or extend it via `--allow-collection`:
 
 ```bash
-dither plugin install ./my-plugin --allow-collection notes
+dither plugin install ./my-plugin --allow-collection 'messages/tom/**'
 ```
 
-If you pass no flag, the grant defaults to everything the manifest declared. If you try to grant a collection the manifest didn't declare, install fails. Promote validates each output's `collection:` frontmatter against the **grant**, not the manifest. See [`dither plugin`](/docs/cli/plugin) and [Security](/docs/concepts/security).
+Glob semantics are standard: `notes` matches only the literal `notes` collection, `messages/**` matches all descendants of `messages` (but not the bare `messages` itself), `messages/*` matches direct children only, `messages/2026-*` is partial-segment match. To grant a parent and all descendants, list both: `notes,notes/**`.
 
-Plugins do not "auto-create" collections. The directory under `~/.dither/entries/<collection>/` is created lazily on the first promote into it; nothing else changes — collections remain just folders.
+If you pass no flag, the grant defaults to whatever the manifest declared. The manifest is **not** a ceiling — your `--allow-collection` flag is what actually ends up in the grants file, and that's what gates promote. Promote validates each output's `collection:` frontmatter against the grant set; values matching no glob are rejected.
+
+Plugins can write to nested paths: `writeEntry({ collection: "messages/tom" })` lands at `~/.dither/entries/messages/tom/<id>.md`. Path identifiers must use `[a-zA-Z0-9._-]` per segment, joined by `/`, with no `..`, no leading/trailing `/`, and no `.md` suffix.
+
+Plugins do not "auto-create" collections. The directory under `~/.dither/entries/<...path>/` is created lazily on the first promote into it; nothing else changes — collections remain just folders.
 
 ### Optional fields
 

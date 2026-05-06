@@ -144,7 +144,19 @@ Top-level list of hosts the plugin may reach (e.g. `["api.example.com", "files.e
 collections?: string[];
 ```
 
-Flat list of collections this plugin may emit into. Output that targets a collection outside the list is rejected at promotion. There is no separate `reads` / `writes` split today — collections are created on demand at promote time when needed.
+Glob patterns naming the collections this plugin may emit into. The manifest list seeds the install grant when the user doesn't pass `--allow-collection`. Output whose frontmatter `collection` value isn't matched by any glob in the resolved grant set is rejected at promote.
+
+Collection paths are nestable. Each entry is a glob over a path identifier:
+
+- `notes` — exact match (only the literal `notes` collection).
+- `messages/**` — all descendants of `messages` (`messages/tom`, `messages/tom/2026`, …) but **not** `messages` itself.
+- `messages/*` — direct children of `messages` only (`messages/tom`, not `messages/tom/anything`).
+- `messages/2026-*` — partial-segment match.
+- `messages,messages/**` — to grant both the bare collection and all descendants, list both.
+
+Path identifiers in `writeEntry({ collection })` and in entry frontmatter must use `[a-zA-Z0-9._-]` per segment, joined by `/`. No `..`, no leading/trailing `/`, no `.md` suffix.
+
+There is no separate `reads` / `writes` split today. Collections are created on demand at promote time.
 
 ## 4. Writing the plugin
 
@@ -256,13 +268,13 @@ dither plugin install ./path/to/plugin \
 
 The flag set:
 
-| Flag                 | Shape            | Effect                                                                                                |
-| -------------------- | ---------------- | ----------------------------------------------------------------------------------------------------- |
-| `--env`              | `NAME=VALUE,...` | Literal env values; written into the grants file.                                                     |
-| `--allow-env`        | `NAME,NAME,...`  | Names this plugin may read from the global `dither env` store at run time.                            |
-| `--file`             | `ID=PATH,...`    | Paths for declared `files[]`. Resolved to absolute, checked to exist, kind-asserted.                  |
-| `--allow-net`        | `host,host,...`  | Network hosts. Must be a subset of the manifest's `net`. Omitted → manifest's full `net` is granted.  |
-| `--allow-collection` | `coll,coll,...`  | Collections the plugin may write to. Subset of manifest `collections`. Omitted → manifest's full set. |
+| Flag                 | Shape            | Effect                                                                                                                                                                       |
+| -------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--env`              | `NAME=VALUE,...` | Literal env values; written into the grants file.                                                                                                                            |
+| `--allow-env`        | `NAME,NAME,...`  | Names this plugin may read from the global `dither env` store at run time.                                                                                                   |
+| `--file`             | `ID=PATH,...`    | Paths for declared `files[]`. Resolved to absolute, checked to exist, kind-asserted.                                                                                         |
+| `--allow-net`        | `host,host,...`  | Network hosts. Manifest `net` is the install-time _default_ (used when this flag is omitted); when supplied, the flag wins.                                                  |
+| `--allow-collection` | `coll,coll,...`  | Collections the plugin may write to. Glob patterns supported (`messages/**`, `notes/*`). Manifest `collections` is the install-time _default_; when supplied, the flag wins. |
 
 All five flags are accepted on **both** `dither plugin install` and `dither plugin run`. The split is the same comma-separated `KEY=VALUE` parser used in v0; values may contain `=` but not `,`, and there is no escape syntax.
 
@@ -271,7 +283,7 @@ What install does:
 - Parses `package.json` and validates the `dither` block.
 - Resolves env: literal → `--allow-env` ref → manifest `default`. Missing required → fails.
 - Resolves files: each path must exist and match its declared `kind`.
-- Validates `net` and `collections` flags are subsets of the manifest declarations.
+- Resolves `net` and `collections` grants: if you supplied a flag, that's the grant; otherwise the manifest declaration is the default. The manifest is _not_ a ceiling — install grants can widen past or differ from the manifest. The grants file is the source of truth at promote time.
 - Copies the plugin source to `~/.dither/plugins/<name>/`.
 - Writes `~/.dither/grants/<name>.json` with the manifest, env literals, env refs, file paths, net hosts, and collections.
 

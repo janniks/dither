@@ -37,10 +37,10 @@ End-to-end: `dither plugin install ./foo --allow-collection notes/personal` succ
 
 **Acceptance:**
 
-- [ ] `plugin-install.ts` no longer rejects `--allow-collection` or `--allow-net` values absent from the manifest.
-- [ ] New test: install widening `collections` past the manifest succeeds, plugin runs, output promotes.
-- [ ] Doc updates in `plugins/index.mdx`, `plugins/authoring.mdx`, `cli/plugin.mdx` reflect "manifest = default seed, not ceiling."
-- [ ] Lint, typecheck, full test suite green.
+- [x] `plugin-install.ts` no longer rejects `--allow-collection` or `--allow-net` values absent from the manifest.
+- [x] New test: install widening `collections` past the manifest succeeds, plugin runs, output promotes.
+- [x] Doc updates in `plugins/index.mdx`, `plugins/authoring.mdx`, `cli/plugin.mdx`, `concepts/security.mdx`, `concepts/collections.mdx` reflect "manifest = default seed, not ceiling."
+- [x] Lint, typecheck, full test suite green.
 
 ---
 
@@ -48,6 +48,6 @@ End-to-end: `dither plugin install ./foo --allow-collection notes/personal` succ
 
 When starting implementation, rename this file to `./plans/<feature>-RUNNING.md`. Work one phase at a time, ticking each phase's acceptance criteria as you satisfy them. Stage and commit only that phase's changes after finishing. Append a row to the log below after every phase. When all phases complete, rename back to `./plans/<feature>.md`.
 
-| Commit | Summary |
-| ------ | ------- |
-|        |         |
+| Commit  | Summary                                                                                                                                                                                                                                                                                                                                            |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 29f5860 | Phase 1 — nested writes with glob grants. New `collection-paths.ts` (validateCollectionPath + grantsCover, picomatch). Promote validates and `mkdir -p`s the nested dest. Four security tests (traversal, subtree isolation, sibling-name, positive). Side-bumped tsconfig lib to ES2023 to unblock typecheck. 40/40 tests, lint, typecheck green. |

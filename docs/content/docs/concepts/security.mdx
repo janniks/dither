@@ -9,8 +9,8 @@ dither plugins are not trusted code running with your full user privileges. Each
 
 The model has three distinct layers. Keeping them straight is the easiest way to reason about what a plugin can and can't do.
 
-1. **Manifest** — declared by the plugin author in `package.json` under the `dither` block. This is the **maximum** the plugin can ever ask for. It's a request, not a grant.
-2. **Grants** — written by dither at install time to `~/.dither/grants/<name>.json`. This is the **actual** allowance for this plugin on this machine. Grants are always a subset of the manifest. If you try to grant something the manifest didn't declare, install fails.
+1. **Manifest** — declared by the plugin author in `package.json` under the `dither` block. It describes what the plugin would like and seeds the install-time defaults. It is **not** an enforcement boundary; it's a description.
+2. **Grants** — written by dither at install time to `~/.dither/grants/<name>.json`. This is the **actual** allowance for this plugin on this machine, and the only thing that gates promote at run time. When you pass a `--allow-*` flag at install, that's the grant; when you don't, the manifest's declaration is used as the default. The user is the source of truth — the manifest cannot constrain a grant the user explicitly authorized.
 3. **Globals** — managed env values shared across plugins, stored in `~/.dither/env.json`. A plugin granted `--allow-env OPENAI_API_KEY` reads the current global value at every run. Rotate the global once; every plugin sees the new value next run. See [`dither env`](/docs/cli/env).
 
 The user is the only one who can move a value from the manifest into a grant. Plugins request; you authorize.
@@ -70,9 +70,9 @@ A plugin **cannot**:
 
 ## Default-grant from manifest
 
-If you `install` (or `run <path>`) without passing a grant flag, dither defaults the corresponding grant to **everything the manifest declared** for that field. Pass `--allow-net api.openai.com` for a manifest declaring two hosts and you narrow to one. Pass nothing and you get both.
+If you `install` (or `run <path>`) without passing a grant flag, dither defaults the corresponding grant to **everything the manifest declared** for that field. Pass `--allow-net api.openai.com` for a manifest declaring two hosts and that's the grant — only one. Pass nothing and you get both.
 
-This is friendly for trusted plugins and explicit for untrusted ones. The flag is the safe knob; the manifest is the ceiling.
+When you do pass a flag, that's what the plugin gets — the manifest is **not** a ceiling. If you want to grant a collection or net host the manifest didn't declare (e.g. you trust this plugin further than the author's defaults), the flag is the way. The grants file is always the source of truth at promote.
 
 ## Promote-time validation
 

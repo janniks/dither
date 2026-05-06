@@ -23,7 +23,7 @@ The plugin imports from `@dither/plugin` and writes markdown entries via `writeE
 
 ## What a plugin can do
 
-- **Emit entries** into collections it has been granted (`collections`). Output that targets a collection outside the grant is rejected at promotion time.
+- **Emit entries** into collections it has been granted (`collections`). Grants are glob patterns over nestable path identifiers (`notes`, `messages/**`, `messages/*`); the plugin's frontmatter `collection` value is matched against the grant set at promote, and unmatched values are rejected.
 - **Read user-supplied env values** declared in the manifest's `env[]`. All values are plain strings — coerce in plugin code (e.g. `Number(input.env.MAX_RUNS)`).
 - **Read user-supplied files** declared in `files[]`. Each granted path is added to Deno's `--allow-read` allowlist; `readFile(id)` returns the UTF-8 contents directly.
 - **Persist state** between runs via `readState(initial)` / `writeState()`. State lives at `~/.dither/plugins/<name>/state/state.json`.
@@ -47,7 +47,7 @@ Whichever trigger fires, the value lands in `input.trigger` (`"manual" | "schedu
 ```
 
 1. **Install** — `dither plugin install <path>`. The CLI parses `package.json`, validates the `dither` block, copies the source to `~/.dither/plugins/<name>/`, and writes a grants file at `~/.dither/grants/<name>.json` capturing the manifest plus resolved env values, env refs, file paths, net hosts, and collections.
-2. **Resolve grants** — Required env without a literal, an `--allow-env` ref, or a manifest `default` causes install to fail. Required `files[]` must be supplied via `--file` and must exist on disk and match their declared `kind` (file vs folder). `--allow-net` and `--allow-collection` must be subsets of the manifest's declarations; if you omit them, the manifest's full declarations are granted.
+2. **Resolve grants** — Required env without a literal, an `--allow-env` ref, or a manifest `default` causes install to fail. Required `files[]` must be supplied via `--file` and must exist on disk and match their declared `kind` (file vs folder). `--allow-net` and `--allow-collection` are direct grants — if you supply them, that's what the plugin gets; if you omit them, the manifest's declarations are used as the default. The manifest is **not** a ceiling; the grants file is the source of truth at promote.
 3. **Run** — `dither plugin run <name|path>`. If you pass a path, the plugin is (re)installed first using the same flags as persisted grants, then run. If you pass a name, any flags are layered as **per-run** overrides — they apply to this run only and are not written back to the grants file. The host spawns Deno with permissions derived from the grant, sets `DITHER_*` env vars, and writes `input.json` into a per-run scratch directory. Add `--detach` to fork the run into the background.
 4. **Emit entries** — the plugin writes `*.md` files into `DITHER_RUN_DIR` (use `writeEntry()` from the SDK). Long-running plugins should call `progress({ message })` to keep the user informed.
 5. **Promote** — after the plugin exits cleanly, the host scans the run dir for `*.md`, validates each file's `source` matches the plugin name and `collection` is in the grant, then copies it into `~/.dither/entries/<collection>/`.

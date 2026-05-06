@@ -81,22 +81,20 @@ async function resolveFiles(
   return result;
 }
 
+/**
+ * Resolve a grant list at install time. The manifest declaration is a
+ * *default seed* — used when the user doesn't pass an explicit flag.
+ * When the user does pass one, it wins, full stop. Manifest is no longer
+ * a ceiling; the grants file is the source of truth at promote.
+ */
 function resolveAllowList(
   declared: string[] | undefined,
   provided: string[] | undefined,
 ): string[] {
-  const declaredSet = new Set(declared ?? []);
   if (!provided || provided.length === 0) {
-    return Array.from(declaredSet);
+    return Array.from(new Set(declared ?? []));
   }
-  for (const item of provided) {
-    if (!declaredSet.has(item)) {
-      throw new Error(
-        `Cannot grant '${item}' — not declared in the plugin's manifest. Manifest declares: ${[...declaredSet].join(", ") || "(none)"}.`,
-      );
-    }
-  }
-  return provided;
+  return Array.from(new Set(provided));
 }
 
 export async function installPlugin(opts: InstallOptions): Promise<InstalledPlugin> {
