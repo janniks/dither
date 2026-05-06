@@ -10,6 +10,10 @@
  *
  * Plugins write markdown entries to DITHER_RUN_DIR; the host validates and
  * promotes them into ~/.dither/entries/<collection>/ after the plugin exits.
+ *
+ * Plugins talk back to the host through NDJSON control messages on stderr.
+ * `progress({ message })` is the only one today; the host overwrites a single
+ * status line with `message` while the plugin runs.
  */
 
 import { readFile as fsReadFile, writeFile, mkdir } from "node:fs/promises";
@@ -145,4 +149,35 @@ export async function writeState<T>(state: T): Promise<void> {
   const path = env("DITHER_STATE_FILE");
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, JSON.stringify(state, null, 2), "utf-8");
+}
+
+export interface ProgressOptions {
+  /** Human-readable status. Required. The host shows this verbatim. */
+  message: string;
+  /** Items completed so far. Optional; reserved for future renderers. */
+  done?: number;
+  /** Total items expected. Optional; reserved for future renderers. */
+  total?: number;
+}
+
+/**
+ * Send a progress update to the host. Emits one NDJSON line on stderr with a
+ * `_dither` sentinel so the host can distinguish control messages from log
+ * output. `message` is mandatory; `done` / `total` are advisory and may be
+ * surfaced by future renderers.
+ *
+ *   await progress({ message: "syncing chat 4 of 12" });
+ *   await progress({ message: "promoted 200 / 500", done: 200, total: 500 });
+ *
+ * Plain `console.log` / `console.error` keep working for development logging;
+ * only this helper goes through the control channel.
+ */
+export function progress(opts: ProgressOptions): void {
+  if (!opts.message) {
+    throw new Error("progress() requires a non-empty 'message'.");
+  }
+  const payload: Record<string, unknown> = { _dither: "progress", message: opts.message };
+  if (typeof opts.done === "number") payload.done = opts.done;
+  if (typeof opts.total === "number") payload.total = opts.total;
+  process.stderr.write(`${JSON.stringify(payload)}\n`);
 }

@@ -48,8 +48,8 @@ Whichever trigger fires, the value lands in `input.trigger` (`"manual" | "schedu
 
 1. **Install** — `dither plugin install <path>`. The CLI parses `package.json`, validates the `dither` block, copies the source to `~/.dither/plugins/<name>/`, and writes a grants file at `~/.dither/grants/<name>.json` capturing the manifest, resolved input values, and resolved file paths.
 2. **Resolve grants** — Required `inputs[]` without a default must be supplied via `--input`. Required `files[]` must be supplied via `--file` and must exist on disk and match their declared `kind` (file vs folder).
-3. **Run** — `dither plugin run <name>` spawns Deno with permissions derived from the manifest, sets the `DITHER_*` env vars, and writes `input.json` into a per-run scratch directory.
-4. **Emit entries** — the plugin writes `*.md` files into `DITHER_RUN_DIR` (use `writeEntry()` from the SDK).
+3. **Run** — `dither plugin run <name>` spawns Deno with permissions derived from the manifest, sets the `DITHER_*` env vars, and writes `input.json` into a per-run scratch directory. Add `--detach` to fork the run into the background; otherwise the CLI blocks and shows the latest `progress()` message on a single overwriting status line.
+4. **Emit entries** — the plugin writes `*.md` files into `DITHER_RUN_DIR` (use `writeEntry()` from the SDK). Long-running plugins should call `progress({ message })` to keep the user informed.
 5. **Promote** — after the plugin exits cleanly, the host scans the run dir for `*.md`, validates each one's `source` matches the plugin name and `collection` is in the plugin's `collections.writes` grant, then copies it into `~/.dither/entries/<collection>/`.
 6. **Re-index** — if anything was promoted, the qmd index is refreshed so new entries are searchable immediately. The run dir is then deleted.
 

@@ -1,8 +1,12 @@
 import { defineCommand } from "citty";
+import { spawn } from "node:child_process";
+import { mkdirSync, openSync } from "node:fs";
+import { join } from "node:path";
 import { installPlugin, type InputValue } from "../plugin-install";
 import { runPlugin } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
 import { removePlugin } from "../plugin-remove";
+import { resolveHome } from "../home";
 
 function parsePairs(value: string | undefined): Record<string, string> {
   if (!value) return {};
@@ -58,9 +62,43 @@ const runSubcommand = defineCommand({
       required: true,
       description: "Plugin name (must be installed)",
     },
+    detach: {
+      type: "boolean",
+      description:
+        "Fork the run into the background and return immediately. Stdout/stderr are captured to a log file.",
+      default: false,
+    },
   },
   async run({ args }) {
-    const result = await runPlugin({ name: args.name });
+    if (args.detach) {
+      const home = resolveHome();
+      const logsDir = join(home, "logs");
+      mkdirSync(logsDir, { recursive: true });
+      const logPath = join(logsDir, `${args.name}-${Date.now()}.log`);
+      const fd = openSync(logPath, "a");
+      const child = spawn(process.execPath, [process.argv[1]!, "plugin", "run", args.name], {
+        detached: true,
+        stdio: ["ignore", fd, fd],
+      });
+      child.unref();
+      console.log(`detached run for ${args.name} (pid ${child.pid})`);
+      console.log(`  logs: ${logPath}`);
+      return { detached: true, pid: child.pid, logPath };
+    }
+
+    const tty = process.stderr.isTTY;
+    const result = await runPlugin({
+      name: args.name,
+      onProgress: (msg) => {
+        if (tty) {
+          process.stderr.write(`\r\x1b[K${msg.message}`);
+        } else {
+          process.stderr.write(`${msg.message}\n`);
+        }
+      },
+    });
+    if (tty) process.stderr.write("\r\x1b[K");
+
     console.log(`run ${result.runId} promoted ${result.promoted.length} entries:`);
     for (const path of result.promoted) {
       console.log(`  ${path}`);

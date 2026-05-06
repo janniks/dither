@@ -109,6 +109,46 @@ await writeEntry({
     rmSync(escaperDir, { recursive: true, force: true });
   }, 30000);
 
+  it("forwards progress() messages through onProgress and hides them from stderr", async () => {
+    const progDir = mkdtempSync(join(tmpdir(), "dither-progress-plugin-"));
+    writeFileSync(
+      join(progDir, "package.json"),
+      JSON.stringify({
+        name: "progresser",
+        version: "0.0.1",
+        dither: { collections: { writes: ["notes"], auto_create: ["notes"] } },
+      }),
+    );
+    writeFileSync(
+      join(progDir, "plugin.ts"),
+      `import { progress, writeEntry } from "@dither/plugin";
+progress({ message: "starting" });
+progress({ message: "halfway", done: 1, total: 2 });
+await writeEntry({ collection: "notes", body: "ok" });
+progress({ message: "done", done: 2, total: 2 });
+`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+
+    await installPlugin({ source: progDir });
+    const seen: { message: string; done?: number; total?: number }[] = [];
+    const result = await runPlugin({
+      name: "progresser",
+      onProgress: (m) => seen.push(m),
+    });
+
+    expect(result.promoted.length).toBe(1);
+    expect(seen).toEqual([
+      { message: "starting", done: undefined, total: undefined },
+      { message: "halfway", done: 1, total: 2 },
+      { message: "done", done: 2, total: 2 },
+    ]);
+
+    rmSync(progDir, { recursive: true, force: true });
+  }, 60000);
+
   it("persists plugin state across runs via readState/writeState", async () => {
     const counterDir = mkdtempSync(join(tmpdir(), "dither-counter-plugin-"));
     mkdirSync(counterDir, { recursive: true });

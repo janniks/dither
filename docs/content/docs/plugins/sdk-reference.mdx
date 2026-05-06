@@ -3,7 +3,7 @@ title: "@dither/plugin SDK reference"
 description: Every export from @dither/plugin with signatures, behavior, and examples.
 ---
 
-`@dither/plugin` is the author SDK for dither plugins. It is a tiny module: five exports, no transitive runtime deps, designed to be imported under Deno via the import map the host injects.
+`@dither/plugin` is the author SDK for dither plugins. It is a tiny module: six exports, no transitive runtime deps, designed to be imported under Deno via the import map the host injects.
 
 The SDK relies on five environment variables set by the plugin host. Every function except `VERSION` will throw if invoked outside that environment:
 
@@ -237,6 +237,45 @@ interface State {
 
 const prev = await readState<State>({ lastSeen: "" });
 await writeState<State>({ lastSeen: new Date().toISOString() });
+```
+
+## `progress(opts)`
+
+```ts
+interface ProgressOptions {
+  message: string; // required
+  done?: number;
+  total?: number;
+}
+function progress(opts: ProgressOptions): void;
+```
+
+Emit a status update to the host. Synchronous: writes one NDJSON line to stderr with a `_dither: "progress"` sentinel. The host strips control lines from the stderr stream before forwarding the rest to its own stderr / log file.
+
+**Behavior:**
+
+- Throws synchronously if `message` is missing or empty. `message` is what the host displays; the other fields are advisory.
+- `done` and `total` are passed through verbatim. Future renderers may use them for percent / progress bars; today the CLI only renders `message`.
+- Plain `console.log` and `console.error` are not affected — they keep behaving as normal logging.
+
+**Display:**
+
+- `dither plugin run <name>` (blocking) overwrites a single status line on a TTY. On a non-TTY it appends each message on its own line.
+- `dither plugin run <name> --detach` writes every message into the log file at `~/.dither/logs/<plugin>-<ts>.log`.
+
+**Example:**
+
+```ts
+import { progress, writeEntry } from "@dither/plugin";
+
+const ids = await fetchIds();
+let i = 0;
+for (const id of ids) {
+  await writeEntry({ collection: "items", frontmatter: { id }, body: "…" });
+  if (++i % 25 === 0)
+    progress({ message: `synced ${i} / ${ids.length}`, done: i, total: ids.length });
+}
+progress({ message: `done — ${ids.length} items`, done: ids.length, total: ids.length });
 ```
 
 ## Putting it together

@@ -8,9 +8,17 @@ import { resolveHome } from "./home";
 import { parsePackage } from "./manifest";
 import { updateIndex } from "./update-index";
 
+export interface ProgressMessage {
+  message: string;
+  done?: number;
+  total?: number;
+}
+
 export interface RunOptions {
   name: string;
   trigger?: "scheduled" | "watch" | "manual";
+  /** Called for every `progress()` NDJSON message the plugin emits on stderr. */
+  onProgress?: (msg: ProgressMessage) => void;
 }
 
 export interface RunResult {
@@ -35,6 +43,22 @@ function extractCollection(content: string): string | null {
     if (kv) return kv[1]!.trim().replace(/^"|"$/g, "");
   }
   return null;
+}
+
+function parseControl(line: string): ProgressMessage | null {
+  if (!line || line[0] !== "{") return null;
+  try {
+    const obj = JSON.parse(line) as Record<string, unknown>;
+    if (obj._dither !== "progress") return null;
+    if (typeof obj.message !== "string") return null;
+    return {
+      message: obj.message,
+      done: typeof obj.done === "number" ? obj.done : undefined,
+      total: typeof obj.total === "number" ? obj.total : undefined,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function extractSource(content: string): string | null {
@@ -147,7 +171,32 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
   };
 
   await new Promise<void>((res, rej) => {
-    const child = spawn("deno", denoArgs, { env, stdio: "inherit" });
+    // stdout is inherited so user `console.log` flows straight through.
+    // stderr is piped so we can parse `_dither` control messages (progress)
+    // out of the stream; everything else is forwarded to host stderr.
+    const child = spawn("deno", denoArgs, {
+      env,
+      stdio: ["inherit", "inherit", "pipe"],
+    });
+    let buf = "";
+    child.stderr!.setEncoding("utf-8");
+    child.stderr!.on("data", (chunk: string) => {
+      buf += chunk;
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) !== -1) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        const msg = parseControl(line);
+        if (msg && opts.onProgress) {
+          opts.onProgress(msg);
+        } else {
+          process.stderr.write(`${line}\n`);
+        }
+      }
+    });
+    child.stderr!.on("end", () => {
+      if (buf) process.stderr.write(buf);
+    });
     child.on("error", rej);
     child.on("exit", (code) => {
       if (code === 0) res();

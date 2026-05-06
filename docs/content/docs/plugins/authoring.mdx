@@ -266,8 +266,13 @@ Reinstalling overwrites the previous install and grants file.
 ## 6. Running
 
 ```bash
-dither plugin run hello-world
+dither plugin run hello-world             # blocks; shows live status
+dither plugin run hello-world --detach    # forks into the background
 ```
+
+`run` blocks by default. While the plugin executes, the host overwrites a single status line with the latest `progress()` message (see §6a). When the plugin exits, the status line is cleared and promoted entries are printed.
+
+`--detach` forks the run into the background and returns immediately. Stdout and stderr are captured to `~/.dither/logs/<plugin>-<timestamp>.log`. The plugin keeps running after your shell exits; tail the log to watch progress.
 
 The host:
 
@@ -287,6 +292,23 @@ The host:
 5. After the plugin exits, scans the run dir for `*.md`, validates frontmatter, promotes valid entries to `~/.dither/entries/<collection>/`, refreshes the index, and deletes the run dir.
 
 A plugin process that exits non-zero aborts the run; nothing is promoted.
+
+### 6a. Reporting progress
+
+Long-running plugins (DB syncs, API backfills) should call `progress()` so the host can show the user what's happening. Each call emits one NDJSON line on stderr; the host parses it out of the stream and overwrites a single status line in blocking mode (or appends a line in non-TTY contexts and detached log files).
+
+```ts
+import { progress, writeEntry } from "@dither/plugin";
+
+const total = messages.length;
+for (const [i, m] of messages.entries()) {
+  await writeEntry({ collection: "messages", body: m.text });
+  if (i % 50 === 0) progress({ message: `synced ${i} / ${total}`, done: i, total });
+}
+progress({ message: "done", done: total, total });
+```
+
+`message` is required; `done` and `total` are advisory. `console.log` / `console.error` keep working for plain logging — only `progress()` goes through the control channel.
 
 ## 7. Inspecting outputs
 
@@ -344,3 +366,4 @@ A plugin cannot read or write outside those paths, cannot reach hosts not on `ho
 - **`schedule` and `watch` don't fire anything yet.** Declare them, but trigger your plugin manually until the daemon ships.
 - **CLI flag parsing has no escape syntax.** Comma in a value will be treated as a pair separator. If you need a comma in a secret, install programmatically via the `installPlugin()` API instead.
 - **Output filename collisions overwrite.** If two `writeEntry()` calls in one run produce the same `<id>.md` (e.g. you supplied the same `frontmatter.id`), the second overwrites the first inside the run dir, and only one is promoted.
+- **Detached runs aren't tracked.** `--detach` writes a log file and `unref()`s the child. There is no `dither plugin status` to query, no PID file, no stop command yet. Tail the printed log path; kill via `kill <pid>` if needed.
