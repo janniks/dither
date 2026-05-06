@@ -49,7 +49,7 @@ Two paths to know about:
 }
 ```
 
-The four grant fields (`env`, `envRefs`, `files`, `net`, `collections`) are described in detail in [Security](/docs/concepts/security). `manifest` is captured at install time so reinstalls and runs use a stable declaration.
+The five grant fields (`env`, `envRefs`, `files`, `net`, `collections`) are described in detail in [Security](/docs/concepts/security). `collections` are glob patterns; the example above grants only the literal `notes` collection. A grant like `["messages/**"]` would authorize all descendants of `messages`. `manifest` is captured at install time so reinstalls and runs use a stable declaration.
 
 ## The global env store
 

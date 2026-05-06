@@ -138,7 +138,7 @@ Frontmatter-based hints (e.g. `kind: tweet`) can drive UI rendering later withou
 
 A plugin is a normal Node-style directory. Its manifest lives inside a regular `package.json` (so plugins can also be regular npm packages, share linting, etc.) under a nested `dither` key. We never collide with npm's own fields.
 
-The manifest **declares** what the plugin would like access to. The user **grants** the actual subset at install time via CLI flags. Manifest is the ceiling; grants are the floor (defaulting to the full ceiling when no flag is passed).
+The manifest **declares** what the plugin would like access to. The user **grants** the actual access at install time via CLI flags. The manifest is the install-time _default_ — used when no `--allow-*` flag is passed for a given grant kind. It is **not** an enforcement boundary: the grants file is the source of truth at promote time, and CLI flags can grant collections or net hosts the manifest didn't declare. (Required `env` and `files[]` are the exception — those still must be supplied or install fails.)
 
 ```jsonc
 {
@@ -186,13 +186,15 @@ The manifest **declares** what the plugin would like access to. The user **grant
       },
     ],
 
-    // network grant. Manifest declares the maximum hosts; user grants the
-    // subset via `--allow-net`. Default-grants the full list if no flag.
+    // network grant — install-time default. The user can override or widen
+    // via `--allow-net`. Default-grants the full list when no flag is passed.
     "net": ["gmail.googleapis.com"],
 
-    // collection grant. Plugin emits entries into one of these; promote
-    // rejects anything outside the granted set. Default-grants the full list
-    // if no `--allow-collection` flag.
+    // collection grant — glob patterns over nestable path identifiers.
+    // Promote rejects entries whose `collection:` frontmatter doesn't match
+    // any glob in the resolved grant set. Manifest is the install-time
+    // default; `--allow-collection` overrides. Examples: "gmail", "messages/**",
+    // "messages/*", "messages/2026-*".
     "collections": ["gmail"],
   },
 }
@@ -578,5 +580,6 @@ Public boundary = trust boundary. Sandbox and SDK code must be auditable, hence 
 - **2026-04-27** — Switched from pnpm to npm. Public stuff lives in one npm-workspace monorepo (`dither` with `packages/cli`, `packages/plugin`, `packages/plugins/*`, `docs/`). Private stuff (`dither-edge`, `dither-sync`) stays in separate repos.
 - **2026-04-29** — Dropped the `apps/` directory. CLI moved to `packages/cli`. Reasoning: `apps/cli` was the only entry under `apps/`; the docs site went under `docs/` (next to `packages/`). Splitting one binary into a separate top-level dir didn't earn its keep — `packages/*` covers the published-to-npm artifacts uniformly.
 - **2026-04-30** — **Grants redesign**. Plugin permission model rebuilt around one concept: grants. Manifest declares the maximum (what the plugin would like); user-supplied install/run flags grant the actual subset. `inputs[]` → `env[]` (all strings, no `kind`, no `secret` flag — privacy is the user's call). `permissions` block dropped: `host_net` → top-level `net`, `host_env` removed (env is the only env), `permissions.browser` parked for the browser sidebar's own grant surface. `collections.writes/reads/auto_create` → flat `collections: string[]`, validated against grants at promote (not against the manifest). New global env store at `~/.dither/env.json` managed by `dither env set/get/unset/list`. SDK `PluginInput` is now `{ trigger, env, files, targets }` — the `config`/`secrets` split is gone. `plugin run <name|path>` accepts a path and auto-installs (flags persist as grants); `plugin run <name>` with grant flags layers them as ephemeral per-run overrides without mutating the grants file. CLI grant flags (parallel on `install` and `run`): `--env NAME=VALUE`, `--allow-env NAME` (reference a global), `--file ID=PATH`, `--allow-net HOST`, `--allow-collection NAME`. Default-grant-from-manifest if no flag passed; manifest is the ceiling, flags narrow.
+- **2026-05-06** — **Nestable collections + manifest-as-default.** Collections become path identifiers (`messages/tom`); grants become glob patterns over those paths (`messages/**`, `messages/*`, `messages/2026-*`). Standard glob semantics — no implicit subtree from a literal name. Promote validates the entry's frontmatter `collection` (no `..`, no leading/trailing `/`, allowed charset, no `.md` suffix), then matches against the grant glob set; first hit wins. New module `collection-paths.ts` (validateCollectionPath, grantsCover) backed by picomatch. qmd is untouched — top-level dirs under `~/.dither/entries/` remain the only qmd collections; nesting falls out of qmd's existing `**/*.md` recursive glob. Same patch drops the **manifest-as-ceiling** rule for `net` and `collections`: the manifest declaration is now an install-time _default_ only — a `--allow-collection` or `--allow-net` flag at install can grant values absent from the manifest. The grants file is the source of truth at promote.
 - **2026-04-27** — Formatter: `oxfmt` (not prettier). All-Oxc tooling for lint + format.
 - **2026-04-27** — Renamed product: `openindex`/`oi` → `dither`. NPM package `dither`, scope `@dither`, CLI binary `dither`, env vars `DITHER_*`, runtime dir `~/.dither/`. Repos renamed throughout (`dither`, `dither-edge`, `dither-sync`, `dither-docs`).

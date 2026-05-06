@@ -65,7 +65,7 @@ interface EntryOptions {
 
 The argument to `writeEntry()`.
 
-- `collection` — target collection. Must be in the plugin's `dither.collections` grant or promotion will reject the file.
+- `collection` — target collection. May be a nested path (e.g. `"messages/tom"`). Promotion matches it against the plugin's `dither.collections` grants (each is a glob pattern); if no grant glob matches, the file is rejected. Path rules: per-segment `[a-zA-Z0-9._-]`, no `..`, no leading/trailing `/`, no `.md` suffix.
 - `body` — markdown body. Do **not** include your own frontmatter fence; the SDK emits one for you.
 - `frontmatter` — optional fields. **Three keys are reserved: `id`, `source`, `collection`.** Any value you put under those keys is overwritten by the SDK before writing:
   - `id` — if you set `frontmatter.id` to a string, it is used as the entry id (and as the default filename). Otherwise a UUID is generated.

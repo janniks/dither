@@ -71,7 +71,8 @@ qmd depends on `better-sqlite3`, which has a native binding compiled per Node ve
 - **Required-env rule**: an env is required iff its manifest declaration has no `default` AND the user didn't grant a literal value or a global ref. Install fails with `Required env '<name>' was not provided…`.
 - **Required-file rule**: a file input is required iff `required: true` in the manifest.
 - **File kind validation**: `kind: file` requires a regular file at that path; `kind: folder` requires a directory.
-- **Default-grant-from-manifest**: at install, if the user passes no `--allow-net` flag, all manifest-declared net hosts are granted. Same for `--allow-collection`. Manifest is the ceiling; flags narrow.
+- **Default-grant-from-manifest**: at install, if the user passes no `--allow-net` flag, all manifest-declared net hosts are granted. Same for `--allow-collection`. The manifest is the install-time _default_ when the flag is omitted — it is **not** a ceiling. A `--allow-collection` or `--allow-net` flag can grant values the manifest didn't declare; the grants file is the source of truth at promote.
+- **Collection grants are globs**: `--allow-collection messages/**` (descendants), `messages/*` (direct children), `messages` (exact). Frontmatter `collection` may be a nested path; promote validates the path (no `..`, no leading/trailing `/`, no `.md` suffix) and matches against the grant glob set via picomatch (`packages/cli/src/collection-paths.ts`).
 - **Reference, not copy** for global env. A plugin granted `--allow-env OPENAI_API_KEY` reads the current value from `~/.dither/env.json` at every run. Rotate the global once via `dither env set`, every plugin sees the new value next run.
 
 ### API key defaults

@@ -80,7 +80,7 @@ After the plugin exits, dither walks every `*.md` file in the run dir and checks
 
 1. The file has a YAML frontmatter block.
 2. `source:` matches the plugin's package name. Plugins cannot impersonate other plugins.
-3. `collection:` is set and is in `grants.collections`.
+3. `collection:` is set, passes path validation (no `..`, no leading/trailing `/`, allowed charset, no `.md` suffix), and matches at least one glob pattern in `grants.collections`.
 
 Any failure throws and stops the promote. The run dir is removed regardless.
 
