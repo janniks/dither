@@ -10,6 +10,7 @@ import { parsePackage } from "./manifest";
 import { updateIndex } from "./update-index";
 import { getGlobalEnv } from "./global-env";
 import { validateCollectionPath, validateGrantPattern, grantsCover } from "./collection-paths";
+import { acquire as acquireLock, release as releaseLock } from "./locks";
 
 export interface ProgressMessage {
   message: string;
@@ -150,6 +151,27 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
     throw new Error(`Plugin not installed: ${opts.name}`);
   }
 
+  // Single-arbiter check: only one run of this plugin at a time. Schedule,
+  // watch, and manual fires all funnel through the same lock.
+  const lock = await acquireLock(opts.name);
+  if (!lock) {
+    throw new Error(
+      `Plugin '${opts.name}' is already running. Wait for it to finish, or check 'dither status'.`,
+    );
+  }
+
+  try {
+    return await runPluginLocked(opts, home, pluginDir);
+  } finally {
+    await releaseLock(lock);
+  }
+}
+
+async function runPluginLocked(
+  opts: RunOptions,
+  home: string,
+  pluginDir: string,
+): Promise<RunResult> {
   const pkgRaw = JSON.parse(await readFile(join(pluginDir, "package.json"), "utf-8")) as unknown;
   const parsed = parsePackage(pkgRaw);
 

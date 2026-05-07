@@ -521,4 +521,48 @@ await writeEntry({
 
     rmSync(counterDir, { recursive: true, force: true });
   }, 60000);
+
+  it("two concurrent runs of the same plugin: one wins, the other rejects", async () => {
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+
+    await installPlugin({ source: FIXTURE_PATH });
+
+    const [a, b] = await Promise.allSettled([
+      runPlugin({ name: "import-folder" }),
+      runPlugin({ name: "import-folder" }),
+    ]);
+
+    const fulfilled = [a, b].filter((r) => r.status === "fulfilled");
+    const rejected = [a, b].filter((r) => r.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason.message).toMatch(/already running/);
+
+    // Lock file released after the winner finishes.
+    expect(existsSync(join(home, "locks", "import-folder.lock"))).toBe(false);
+  }, 60000);
+
+  it("releases the lock after a failed run", async () => {
+    const failDir = mkdtempSync(join(tmpdir(), "dither-fail-lock-"));
+    mkdirSync(failDir, { recursive: true });
+    writeFileSync(
+      join(failDir, "package.json"),
+      JSON.stringify({
+        name: "lock-fail",
+        version: "0.0.1",
+        dither: { collections: ["x"] },
+      }),
+    );
+    writeFileSync(join(failDir, "plugin.ts"), `throw new Error("boom");\n`);
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+
+    await installPlugin({ source: failDir });
+    await expect(runPlugin({ name: "lock-fail" })).rejects.toThrow();
+    expect(existsSync(join(home, "locks", "lock-fail.lock"))).toBe(false);
+
+    rmSync(failDir, { recursive: true, force: true });
+  }, 60000);
 });

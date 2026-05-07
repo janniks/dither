@@ -75,7 +75,7 @@ When the daemon is running, it ticks scheduled plugins and reacts to file change
   - `events.ndjson` — append-only stream of `{ ts, kind, ... }` lines: `progress`, `stdout`, `stderr`, `promoted`, `error`. Written as the run executes.
   - `result.json` — final terminal record on success.
 - **Run dir is preserved on completion.** Older runs are pruned by a future tool; v1 keeps them all (filesystem grows; user can clean).
-- **Failed runs preserve the run dir** so the user can inspect `events.ndjson`. The recently-introduced run-dir cleanup-on-success in `runPlugin` shifts: success cleans the *scratch* `runs/<id>/` (where the plugin wrote outputs being promoted); the *journal* `runs/<id>/` here is a different role, distinct from the scratch dir. Naming may need to disambiguate; current proposal: scratch lives under `runs/<id>/`, journal under `history/<id>/` (or invert), to avoid mixing concerns.
+- **Failed runs preserve the run dir** so the user can inspect `events.ndjson`. The recently-introduced run-dir cleanup-on-success in `runPlugin` shifts: success cleans the _scratch_ `runs/<id>/` (where the plugin wrote outputs being promoted); the _journal_ `runs/<id>/` here is a different role, distinct from the scratch dir. Naming may need to disambiguate; current proposal: scratch lives under `runs/<id>/`, journal under `history/<id>/` (or invert), to avoid mixing concerns.
 
 ### Status
 
@@ -103,21 +103,21 @@ When the daemon is running, it ticks scheduled plugins and reacts to file change
 
 ### Modules
 
-| module | new/mod | role |
-|---|---|---|
-| `daemon.ts` | new | Long-lived entry point. Loads grants once, spins up scheduler + watcher, writes status snapshot, signal handlers, exits cleanly. |
-| `scheduler.ts` | new | Wraps `croner` + the in-house shorthand parser. `set(entries)` replaces the active schedule; `stop()` cancels everything. |
-| `watcher.ts` | new | Wraps `chokidar`. `set(entries)` replaces watcher set. Debounce + coalesce inside. |
-| `locks.ts` | new | Atomic lock-file primitives via `O_EXCL`. `acquire(name) → handle \| null`, `release(handle)`. Stale-PID recovery. |
-| `run-history.ts` | new | File-format owner for the run-history journal. Writes `manifest.json`, appends `events.ndjson`, finalises `result.json`. Reader helpers for `runs list` / `runs tail`. |
-| `status-snapshot.ts` | new | Daemon-side: writes `~/.dither/status.json` periodically and on event. CLI-side: reader helpers. |
-| `loop-detector.ts` | new | Pure: trigger-chain depth tracker with TTL. `record()` + `shouldHalt()`. |
-| `plugin-run.ts` | mod | Acquire lock before spawn, release in `finally`. Append captured stderr/stdout to run-history `events.ndjson`. |
-| `commands/daemon.ts` | new | `dither daemon start \| stop \| reload \| status \| logs`. PID file + signals. |
-| `commands/runs.ts` | new | `dither runs list \| tail`. Reads run-history dirs. |
-| `commands/plugin.ts` | mod | `install`/`remove` send SIGHUP to a live daemon. `run` integrates with locks. |
-| `commands/status.ts` | mod | Reads `status.json`, walks `~/.dither/locks/`, formats human / `--json`. |
-| `main.ts` | mod | Registers `daemon` and `runs` subcommands. |
+| module               | new/mod | role                                                                                                                                                                   |
+| -------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `daemon.ts`          | new     | Long-lived entry point. Loads grants once, spins up scheduler + watcher, writes status snapshot, signal handlers, exits cleanly.                                       |
+| `scheduler.ts`       | new     | Wraps `croner` + the in-house shorthand parser. `set(entries)` replaces the active schedule; `stop()` cancels everything.                                              |
+| `watcher.ts`         | new     | Wraps `chokidar`. `set(entries)` replaces watcher set. Debounce + coalesce inside.                                                                                     |
+| `locks.ts`           | new     | Atomic lock-file primitives via `O_EXCL`. `acquire(name) → handle \| null`, `release(handle)`. Stale-PID recovery.                                                     |
+| `run-history.ts`     | new     | File-format owner for the run-history journal. Writes `manifest.json`, appends `events.ndjson`, finalises `result.json`. Reader helpers for `runs list` / `runs tail`. |
+| `status-snapshot.ts` | new     | Daemon-side: writes `~/.dither/status.json` periodically and on event. CLI-side: reader helpers.                                                                       |
+| `loop-detector.ts`   | new     | Pure: trigger-chain depth tracker with TTL. `record()` + `shouldHalt()`.                                                                                               |
+| `plugin-run.ts`      | mod     | Acquire lock before spawn, release in `finally`. Append captured stderr/stdout to run-history `events.ndjson`.                                                         |
+| `commands/daemon.ts` | new     | `dither daemon start \| stop \| reload \| status \| logs`. PID file + signals.                                                                                         |
+| `commands/runs.ts`   | new     | `dither runs list \| tail`. Reads run-history dirs.                                                                                                                    |
+| `commands/plugin.ts` | mod     | `install`/`remove` send SIGHUP to a live daemon. `run` integrates with locks.                                                                                          |
+| `commands/status.ts` | mod     | Reads `status.json`, walks `~/.dither/locks/`, formats human / `--json`.                                                                                               |
+| `main.ts`            | mod     | Registers `daemon` and `runs` subcommands.                                                                                                                             |
 
 ### Deep modules (small interface, lots of behaviour hidden, rare to change once right)
 
