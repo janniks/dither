@@ -9,7 +9,8 @@
  *   DITHER_PLUGIN_NAME — the plugin's name; auto-stamped onto entry frontmatter
  *
  * Plugins write markdown entries to DITHER_RUN_DIR; the host validates and
- * promotes them into ~/.dither/entries/<collection>/ after the plugin exits.
+ * promotes them into the configured library at <library>/<collection>/ after
+ * the plugin exits.
  *
  * Plugins talk back to the host through NDJSON control messages on stderr.
  * `progress({ message })` is the only one today; the host overwrites a single
@@ -34,7 +35,7 @@ export interface PluginInput {
 }
 
 export interface EntryOptions {
-  /** Target collection (folder under entries/). Must be in this plugin's grant. */
+  /** Target collection (top-level folder under the library). Must be in this plugin's grant. */
   collection: string;
   /** Markdown body. Frontmatter is added by the SDK; do not include yourself. */
   body: string;

@@ -66,6 +66,14 @@ dither init --force --library ~/Documents/dither
 
 `--force` overwrites the config and rebuilds the index. The old library directory is **not** moved or deleted — it stays on disk for you to handle.
 
+> **If the daemon is running**, send it a reload after the reconfig so it picks up the new library:
+>
+> ```bash
+> dither daemon reload
+> ```
+>
+> Without the reload, the daemon keeps watching the previous library until it next restarts.
+
 ## Examples
 
 Fresh user, default everything:

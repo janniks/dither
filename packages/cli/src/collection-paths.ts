@@ -36,7 +36,7 @@ function validateSegment(seg: string, path: string): void {
   if (/^\.+$/.test(seg)) {
     throw new Error(`collection path '${path}' segment '${seg}' is dot-only`);
   }
-  // Disallow leading `.` to keep dotfiles (`.git`, `.ssh`) out of entries/.
+  // Disallow leading `.` to keep dotfiles (`.git`, `.ssh`) out of the library.
   if (seg.startsWith(".")) {
     throw new Error(`collection path '${path}' segment '${seg}' must not start with '.'`);
   }
