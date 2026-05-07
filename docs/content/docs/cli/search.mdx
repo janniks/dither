@@ -7,7 +7,7 @@ description: Search across your entries.
 dither search <query> [flags]
 ```
 
-Searches the qmd index built from `~/.dither/entries/`. Prints one tab-separated line per hit: `<displayPath>\t<score>\t<title>`.
+Searches the qmd index built from your configured library. Prints one tab-separated line per hit: `<displayPath>\t<score>\t<title>`. Refuses with the standard pre-init error until [`dither init`](/docs/cli/init) has run.
 
 ## Arguments
 
@@ -19,7 +19,7 @@ Searches the qmd index built from `~/.dither/entries/`. Prints one tab-separated
 
 | Flag                      | Description                                                                                                              |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `-c, --collection <name>` | Restrict the search to a single collection (i.e. one folder under `entries/`).                                           |
+| `-c, --collection <name>` | Restrict the search to a single collection (one top-level folder under the library).                                     |
 | `-n, --limit <N>`         | Max results to return. Defaults to qmd's internal default.                                                               |
 | `--rerank`                | Run the LLM reranker over the candidate set. Slower, higher quality. Only meaningful in `hybrid` mode.                   |
 | `--mode <hybrid\|lex>`    | `hybrid` (default) combines BM25 + vector + LLM query expansion. `lex` is pure BM25 — no models, no embeddings, instant. |
@@ -56,8 +56,8 @@ dither search "what did I write about auth" --rerank
 
 ## Notes
 
-- Hybrid mode requires qmd's models. The first hybrid query downloads them (~1–2 GB) into qmd's cache.
-- If `~/.dither/entries/` is empty or missing, `search` returns no results silently.
+- Hybrid mode requires qmd's models. By default, `dither init` pre-downloads them so the first query is fast; pass `--no-download` at init to skip and let them lazy-load instead.
+- If the library is empty, `search` returns no results silently.
 - Make sure the index is current — run [`dither index update`](/docs/cli/index-update) after editing files outside the plugin runner.
 
 See also: [CLI overview](/docs/cli).

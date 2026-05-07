@@ -1,0 +1,110 @@
+---
+title: dither init
+description: Initialize dither home, write config, and choose where the markdown library lives.
+---
+
+`dither init` is the **required first step** before any library-needing command will run. It writes `<dither-home>/config.json`, creates the library directory, and pre-downloads qmd's model weights so the first `dither search` doesn't hang.
+
+```bash
+dither init
+dither init --library ~/Documents/dither
+dither init --no-download
+dither init --force --library ~/Documents/notes
+```
+
+## Arguments
+
+| Flag             | Default                       | Effect                                                                                                  |
+| ---------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `--library <p>`  | `<dither-home>/library`       | Library directory. Created if missing. Canonicalised via `realpath`. Must be a writable directory.      |
+| `--force`        | off                           | Reconfigure: overwrite existing config and rebuild the qmd index against the (possibly new) library.    |
+| `--no-download`  | off                           | Skip qmd model weight prefetch (offline / CI). Search will fall back to lex-only until weights land.    |
+
+## What it does
+
+1. Ensure `<dither-home>/` exists.
+2. If `config.json` already exists and `--force` is not passed: print the current config and exit 0.
+3. Resolve the library path:
+   - If the path doesn't exist, create it (with parents) and report `(created)` in the summary.
+   - If the path exists and is a regular file, error out.
+   - If the path exists and isn't writable, error out.
+   - Resolve symlinks via `realpath` and store the canonical target in config.
+4. With `--force` against existing config: remove the old `qmd-index.sqlite` so the new library's subdirs register cleanly.
+5. Write `<dither-home>/config.json`.
+6. Run `store.update()` once over the library so the qmd SQLite exists with schema applied. (Empty libraries skip this.)
+7. Unless `--no-download`, attempt to pre-download embedding/rerank model weights. Failure is non-fatal — the summary flags it and search degrades to lex-only until weights land.
+
+## Pre-init guardrail
+
+Until init has run, every library-needing command refuses with:
+
+```
+error: dither is not initialized. Run `dither init` to set up your library.
+```
+
+Library-needing commands include `search`, `get`, `index update`, `plugin install`, `plugin run`, `daemon start`. Commands that don't touch the library (`--help`, `--version`, `daemon status`, `init` itself) keep working.
+
+## Where things land
+
+After a successful init:
+
+```
+<dither-home>/config.json            ← schema + library.path
+<dither-home>/qmd-index.sqlite       ← always in dither home, regardless of library
+<library>/                           ← markdown lives here; collections are top-level subdirs
+```
+
+The qmd index always lives in dither home. If you point dither at a folder also indexed by qmd-CLI elsewhere, the two indices are independent.
+
+## Reconfiguring later
+
+There's no `dither config set` in v1. To change the library path or rebuild the index, re-run init with `--force`:
+
+```bash
+dither init --force --library ~/Documents/dither
+```
+
+`--force` overwrites the config and rebuilds the index. The old library directory is **not** moved or deleted — it stays on disk for you to handle.
+
+## Examples
+
+Fresh user, default everything:
+
+```bash
+$ dither init
+initialized dither at /Users/me/.dither
+  library: /Users/me/.dither/library
+```
+
+Adopt an existing folder as the library:
+
+```bash
+$ dither init --library ~/Documents/dither
+initialized dither at /Users/me/.dither
+  library: /Users/me/Documents/dither
+```
+
+CI / offline:
+
+```bash
+$ dither init --no-download
+initialized dither at /Users/me/.dither
+  library: /Users/me/.dither/library (--no-download: weights not prefetched)
+```
+
+Re-run is a no-op:
+
+```bash
+$ dither init
+dither is already initialized at /Users/me/.dither
+  library: /Users/me/.dither/library
+  re-run with --force to reconfigure
+```
+
+Switch to a different library:
+
+```bash
+$ dither init --force --library ~/Documents/dither
+reconfigured dither at /Users/me/.dither
+  library: /Users/me/Documents/dither
+```

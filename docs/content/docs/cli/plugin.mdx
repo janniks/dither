@@ -3,13 +3,13 @@ title: dither plugin
 description: Install, run, list, and remove plugins.
 ---
 
-Plugins are small Deno programs that write markdown into collections you've granted them. The CLI manages four lifecycle actions.
+Plugins are small Deno programs that write markdown into collections you've granted them. The CLI manages four lifecycle actions. All four refuse with the standard pre-init error until [`dither init`](/docs/cli/init) has run.
 
 > **Deno is required** on `PATH` for `plugin run`. The runner spawns `deno` with derived `--allow-*` flags.
 
 ## When to use install vs run
 
-- **`install`** configures: it copies the plugin into `~/.dither/plugins/<name>/`, validates its manifest, and writes a persistent grants record to `~/.dither/grants/<name>.json`. The flags you pass become the grants.
+- **`install`** configures: it copies the plugin into `<dither-home>/plugins/<name>/`, validates its manifest, and writes a persistent grants record to `<dither-home>/grants/<name>.json`. The flags you pass become the grants.
 - **`run <name>`** executes an installed plugin once. Grant flags here are **ephemeral overrides** — they layer on top of grants for this run only and don't mutate `grants/<name>.json`.
 - **`run <path>`** is "install + run" — if the target is a directory containing a `package.json` with a `dither` block, the flags **persist** as grants and the plugin runs immediately. Re-running by path with new flags is the idiomatic way to update grants in-place.
 
@@ -20,7 +20,7 @@ These are identical on `install` and `run`. They map one-to-one to the [grant ki
 | Flag                          | Grants                                                                                                                                                      |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--env KEY=VALUE,...`         | Literal env values written into `input.env` for the plugin to read.                                                                                         |
-| `--allow-env KEY,KEY2`        | Read access to those names in the global env store (`~/.dither/env.json`).                                                                                  |
+| `--allow-env KEY,KEY2`        | Read access to those names in the global env store (`<dither-home>/env.json`).                                                                              |
 | `--file ID=PATH,...`          | A file/folder path. Implies `--allow-read=<path>` for the Deno sandbox.                                                                                     |
 | `--allow-net HOST,HOST2`      | Net access to those hosts. Manifest `net` is the install-time default when this flag is omitted.                                                            |
 | `--allow-collection NAME,...` | Promote into those collections (glob patterns supported, e.g. `messages/**`). Manifest `collections` is the install-time default when this flag is omitted. |
@@ -35,7 +35,7 @@ If a flag is omitted, the corresponding grant defaults to **everything the manif
 dither plugin install <source> [flags]
 ```
 
-Copies the plugin from a local directory into `~/.dither/plugins/<name>/`, validates its manifest, resolves grants, and writes `~/.dither/grants/<name>.json`. Required env (no `default`, not granted via `--allow-env`) must be supplied or install fails before anything is written to disk.
+Copies the plugin from a local directory into `<dither-home>/plugins/<name>/`, validates its manifest, resolves grants, and writes `<dither-home>/grants/<name>.json`. Required env (no `default`, not granted via `--allow-env`) must be supplied or install fails before anything is written to disk.
 
 ```bash
 dither plugin install ./my-plugin \
@@ -65,13 +65,13 @@ dither plugin run <target> [flags]
 
 Executes a plugin once. Trigger is recorded as `manual`. The runner:
 
-1. Resolves grants from `~/.dither/grants/<name>.json`, layering flag values as per-run overrides.
-2. Resolves env: per-run override > grant literal > grant `envRefs` looked up in `~/.dither/env.json` > manifest default > error.
-3. Creates a fresh run dir at `~/.dither/runs/<runId>/`.
+1. Resolves grants from `<dither-home>/grants/<name>.json`, layering flag values as per-run overrides.
+2. Resolves env: per-run override > grant literal > grant `envRefs` looked up in `<dither-home>/env.json` > manifest default > error.
+3. Creates a fresh run dir at `<dither-home>/runs/<runId>/`.
 4. Writes `input.json` (`{ trigger, env, files, targets }`) for the plugin to read.
 5. Spawns `deno` with `--allow-read`, `--allow-write`, `--allow-env=DITHER_*`, and (if granted) `--allow-net`.
-6. Promotes every `*.md` file in the run dir to `~/.dither/entries/<collection>/`, after verifying frontmatter `source` matches the plugin name and `collection` is in `grants.collections`.
-7. Runs `index update` if anything was promoted.
+6. Promotes every `*.md` file in the run dir to `<library>/<collection>/`, after verifying frontmatter `source` matches the plugin name and `collection` is in `grants.collections`.
+7. Refreshes the qmd index for the touched collections only.
 8. Deletes the run dir.
 
 `<target>` is either an **installed plugin name** (flags are ephemeral overrides) or a **path to a plugin directory** (auto-installs/reinstalls; flags persist as grants):
@@ -87,7 +87,7 @@ dither plugin run ./my-plugin --env "FOO=bar"
 | Argument / flag      | Description                                                                                                    |
 | -------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `target`             | Positional. Installed plugin name OR path to a plugin directory. Required.                                     |
-| `--detach`           | Fork the run into the background and return immediately. Stdout/stderr go to `~/.dither/logs/<name>-<ts>.log`. |
+| `--detach`           | Fork the run into the background and return immediately. Stdout/stderr go to `<dither-home>/logs/<name>-<ts>.log`. |
 | `--env`              | Literal env values (override).                                                                                 |
 | `--allow-env`        | Additional global env names this run may read.                                                                 |
 | `--file`             | File path overrides (added to `--allow-read` for this run).                                                    |
@@ -99,9 +99,9 @@ By default, `run` blocks until the plugin exits. While it runs, the host overwri
 ```bash
 $ dither plugin run import-folder
 run 4c0d…  promoted 3 entries:
-  /Users/me/.dither/entries/imported/note-1.md
-  /Users/me/.dither/entries/imported/note-2.md
-  /Users/me/.dither/entries/imported/note-3.md
+  /Users/me/Documents/dither/imported/note-1.md
+  /Users/me/Documents/dither/imported/note-2.md
+  /Users/me/Documents/dither/imported/note-3.md
 
 $ dither plugin run imessage --detach
 detached run for imessage (pid 41210)
@@ -130,7 +130,7 @@ The `schedule` column shows the manifest's declared schedule, but **scheduled ex
 dither plugin remove <name>
 ```
 
-Deletes `~/.dither/plugins/<name>/` and `~/.dither/grants/<name>.json`. Plugin state under the plugin dir goes with it (state preservation across reinstall is a later concern). Already-promoted entries under `~/.dither/entries/` are untouched.
+Deletes `<dither-home>/plugins/<name>/` and `<dither-home>/grants/<name>.json`. Plugin state under the plugin dir goes with it (state preservation across reinstall is a later concern). Already-promoted entries under the library are untouched.
 
 | Argument | Description                                        |
 | -------- | -------------------------------------------------- |

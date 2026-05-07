@@ -63,7 +63,7 @@ You'll see something like:
 installed hello-world@0.0.1
   → /Users/you/.dither/plugins/hello-world
 run 5f1a…  promoted 1 entries:
-  /Users/you/.dither/entries/notes/9c2b….md
+  /Users/you/Documents/dither/notes/9c2b….md
 ```
 
 ## 3. The `dither` block — every field
@@ -100,7 +100,7 @@ User-supplied env values. All values are plain strings; if your plugin needs a n
 A value is resolved in this order at install time:
 
 1. A literal passed via `--env "NAME=VALUE,..."`.
-2. A grant to read from the global `dither env` store, passed via `--allow-env "NAME,..."`. The literal value is **not** copied into the grants file; it's looked up at run time from `~/.dither/env.json`.
+2. A grant to read from the global `dither env` store, passed via `--allow-env "NAME,..."`. The literal value is **not** copied into the grants file; it's looked up at run time from `<dither-home>/env.json`.
 3. The manifest `default`.
 4. Otherwise install fails: `Required env '<name>' was not provided …`.
 
@@ -235,7 +235,7 @@ const buf = await fsReadFile(input.files.SOURCE!); // Buffer, not string
 
 ### 4d. State between runs
 
-`readState(initial)` takes the value the plugin should see on its first run and returns it when no state has been written yet — no `null` branch to handle. `writeState()` persists JSON to `~/.dither/plugins/<name>/state/state.json`:
+`readState(initial)` takes the value the plugin should see on its first run and returns it when no state has been written yet — no `null` branch to handle. `writeState()` persists JSON to `<dither-home>/plugins/<name>/state/state.json`:
 
 ```ts
 import { readState, writeState, writeEntry } from "@dither/plugin";
@@ -284,8 +284,8 @@ What install does:
 - Resolves env: literal → `--allow-env` ref → manifest `default`. Missing required → fails.
 - Resolves files: each path must exist and match its declared `kind`.
 - Resolves `net` and `collections` grants: if you supplied a flag, that's the grant; otherwise the manifest declaration is the default. The manifest is _not_ a ceiling — install grants can widen past or differ from the manifest. The grants file is the source of truth at promote time.
-- Copies the plugin source to `~/.dither/plugins/<name>/`.
-- Writes `~/.dither/grants/<name>.json` with the manifest, env literals, env refs, file paths, net hosts, and collections.
+- Copies the plugin source to `<dither-home>/plugins/<name>/`.
+- Writes `<dither-home>/grants/<name>.json` with the manifest, env literals, env refs, file paths, net hosts, and collections.
 
 Reinstalling overwrites the previous install and grants file.
 
@@ -299,7 +299,7 @@ dither env list
 dither env unset API_TOKEN
 ```
 
-These live in `~/.dither/env.json`. A plugin only sees a name if you grant it via `--allow-env`. The literal value is **not** copied into the grants file; it's read from the global store at run time, so updating it once via `dither env set` is enough for every plugin that has the grant.
+These live in `<dither-home>/env.json`. A plugin only sees a name if you grant it via `--allow-env`. The literal value is **not** copied into the grants file; it's read from the global store at run time, so updating it once via `dither env set` is enough for every plugin that has the grant.
 
 ## 6. Running
 
@@ -320,14 +320,14 @@ dither plugin run hello-world --allow-collection "experiments"
 
 `run` blocks by default. While the plugin executes, the host overwrites a single status line with the latest `progress()` message (see §6a). When the plugin exits, the status line is cleared and promoted entries are printed.
 
-`--detach` forks the run into the background and returns immediately. Stdout and stderr are captured to `~/.dither/logs/<plugin>-<timestamp>.log`. The plugin keeps running after your shell exits; tail the log to watch progress.
+`--detach` forks the run into the background and returns immediately. Stdout and stderr are captured to `<dither-home>/logs/<plugin>-<timestamp>.log`. The plugin keeps running after your shell exits; tail the log to watch progress.
 
 The host:
 
 1. Loads the grants file.
 2. Layers any per-run overrides on top.
 3. Resolves env values: literals → global `dither env` for granted refs → manifest defaults.
-4. Creates `~/.dither/runs/<runId>/` and writes `input.json`:
+4. Creates `<dither-home>/runs/<runId>/` and writes `input.json`:
    ```json
    {
      "trigger": "manual",
@@ -337,7 +337,7 @@ The host:
    }
    ```
 5. Spawns `deno run` with permissions derived from the grant.
-6. After the plugin exits, scans the run dir for `*.md`, validates frontmatter, promotes valid entries to `~/.dither/entries/<collection>/`, refreshes the index, and deletes the run dir.
+6. After the plugin exits, scans the run dir for `*.md`, validates frontmatter, promotes valid entries to `<library>/<collection>/`, refreshes the index for the touched collections, and deletes the run dir.
 
 A plugin process that exits non-zero aborts the run; nothing is promoted.
 
@@ -360,7 +360,7 @@ progress({ message: "done", done: total, total });
 
 ## 7. Inspecting outputs
 
-Promoted entries live at `~/.dither/entries/<collection>/<id>.md`.
+Promoted entries live at `<library>/<collection>/<id>.md`.
 
 The host always overwrites three frontmatter keys, regardless of what your plugin sets:
 
@@ -409,7 +409,7 @@ A plugin cannot read or write outside those paths, cannot reach hosts off the `n
 
 ## 9. Sharp edges
 
-- **Env values are stored plaintext.** `~/.dither/grants/<name>.json` and `~/.dither/env.json` are JSON files in your home directory. Don't store credentials you wouldn't put there. Keychain integration is a later phase.
+- **Env values are stored plaintext.** `<dither-home>/grants/<name>.json` and `<dither-home>/env.json` are JSON files. Don't store credentials you wouldn't put there. Keychain integration is a later phase.
 - **No git/registry installs.** Only local paths. Cloning your plugin yourself first is the workaround.
 - **`schedule` and `watch` don't fire anything yet.** Declare them, but trigger your plugin manually until the daemon and watcher ship.
 - **CLI flag parsing has no escape syntax.** A comma in a value will be treated as a pair separator. If you need a comma in a value, install programmatically via the `installPlugin()` API instead.

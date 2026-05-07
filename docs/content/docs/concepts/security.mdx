@@ -62,7 +62,7 @@ A plugin can:
 
 A plugin **cannot**:
 
-- Read or write anywhere else under `~/.dither/` — including `entries/`, `grants/`, `env.json`, other plugins, or the qmd index.
+- Read or write anywhere else under dither home or the library — including other collections, `grants/`, `env.json`, other plugins, or the qmd index.
 - Read arbitrary user files. File access only extends to paths you explicitly granted.
 - Reach a host that isn't in `grants.net`.
 - Read process environment variables. The `--allow-env` flag is restricted to the `DITHER_*` set used by the SDK to find its run dir. **Granted env values flow through `input.env`, not through `Deno.env`.**
@@ -90,9 +90,9 @@ Any failure throws and stops the promote. The run dir is removed regardless.
 
 ## Honest caveats (real today, not future polish)
 
-- **Env values and globals are stored plaintext.** Both `~/.dither/grants/<name>.json` and `~/.dither/env.json` are plain JSON on local disk, scoped by Unix permissions. The architecture commits to OS keychain integration (macOS Keychain, libsecret on Linux); v0 has none. Anything that can read your home dir can read your secrets.
+- **Env values and globals are stored plaintext.** Both `<dither-home>/grants/<name>.json` and `<dither-home>/env.json` are plain JSON on local disk, scoped by Unix permissions. The architecture commits to OS keychain integration (macOS Keychain, libsecret on Linux); none today. Anything that can read your home dir can read your secrets.
 - **Plugin output filenames are not validated for path traversal.** A malicious plugin can emit a file with a `filename` like `"../foo.md"` and the SDK's `join(runDir, name)` will write outside the run dir. Don't run plugins you don't trust.
-- **Promote does a blind copy.** If a plugin emits `notes.md` for collection `notes` and you already have a hand-authored `entries/notes/notes.md`, the plugin's file overwrites yours with no warning. Back up `entries/` before installing a plugin that writes into a collection you also author into by hand.
+- **Promote does a blind copy.** If a plugin emits `notes.md` for collection `notes` and you already have a hand-authored `<library>/notes/notes.md`, the plugin's file overwrites yours with no warning. Back up the library before installing a plugin that writes into a collection you also author into by hand.
 - **The frontmatter parser used at promote is regex-based** and can be confused by escaped quotes inside YAML string values. The SDK emits well-formed values, but this is brittle and will be replaced with a real YAML parser.
 - **CLI flag values are comma-separated and not escaped.** A grant value containing `,` or `=` cannot be expressed through `--env`/`--file` etc. and needs the programmatic API. The schema doesn't reject pathological values.
 - **`grants.net` accepts the empty string and `*`.** A grant of `[""]` or `["*"]` produces an empty `--allow-net=` flag, which Deno interprets as "all hosts." Audit a manifest before granting; don't rely on the schema.

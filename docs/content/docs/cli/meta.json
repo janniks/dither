@@ -1,4 +1,4 @@
 {
   "title": "CLI reference",
-  "pages": ["index", "search", "get", "index-update", "plugin", "env", "status"]
+  "pages": ["index", "init", "search", "get", "index-update", "plugin", "env", "status"]
 }

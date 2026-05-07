@@ -7,7 +7,7 @@ description: Read an entry by path or docid.
 dither get <ref> [--lines start:end]
 ```
 
-Prints the body of a single entry to stdout. Resolves either a display path (the path under `entries/`, e.g. `notes/auth.md`) or a qmd docid (e.g. `#abc123`).
+Prints the body of a single entry to stdout. Resolves either a display path (the path under the configured library, e.g. `notes/auth.md`) or a qmd docid (e.g. `#abc123`). Refuses with the standard pre-init error until [`dither init`](/docs/cli/init) has run.
 
 ## Arguments
 
@@ -49,7 +49,7 @@ dither get notes/auth.md --lines :20
 
 ## Notes
 
-- If the ref doesn't resolve, the command prints nothing and exits successfully. There is no "not found" error in v0.
+- If the ref doesn't resolve, the command prints nothing and exits successfully. There is no "not found" error.
 - Output is the raw markdown body, including frontmatter.
 
 See also: [CLI overview](/docs/cli), [`dither search`](/docs/cli/search).

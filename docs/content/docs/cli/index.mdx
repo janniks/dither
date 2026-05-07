@@ -13,15 +13,18 @@ dither --help
 
 | Command                                            | What it does                                                           |
 | -------------------------------------------------- | ---------------------------------------------------------------------- |
+| [`dither init`](/docs/cli/init)                    | Required first step: write config, set library path, prefetch weights. |
 | [`dither search <query>`](/docs/cli/search)        | Search across entries (hybrid by default, `--mode lex` for BM25-only). |
 | [`dither get <ref>`](/docs/cli/get)                | Print the body of an entry by display path or docid.                   |
-| [`dither index update`](/docs/cli/index-update)    | Re-scan `~/.dither/entries/` and refresh the qmd index.                |
+| [`dither index update`](/docs/cli/index-update)    | Re-scan the library and refresh the qmd index.                         |
 | [`dither plugin install <path>`](/docs/cli/plugin) | Install a plugin from a local directory.                               |
 | [`dither plugin run <target>`](/docs/cli/plugin)   | Run a plugin once, by name or path, with optional per-run overrides.   |
 | [`dither plugin list`](/docs/cli/plugin)           | List installed plugins.                                                |
 | [`dither plugin remove <name>`](/docs/cli/plugin)  | Uninstall a plugin (deletes code, state, grants).                      |
-| [`dither env set/get/unset/list`](/docs/cli/env)   | Manage the dither global env store at `~/.dither/env.json`.            |
+| [`dither env set/get/unset/list`](/docs/cli/env)   | Manage the dither global env store at `<dither-home>/env.json`.        |
 | [`dither status`](/docs/cli/status)                | Print where dither is installed and what it contains.                  |
+
+Library-needing commands (everything above except `init`, `env`, and `status`) refuse with a clear error until `dither init` has run.
 
 ## Exit codes
 

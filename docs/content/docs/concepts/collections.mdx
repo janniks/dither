@@ -1,16 +1,18 @@
 ---
 title: Collections
-description: Folders under entries/, the frontmatter spec, and how the index picks them up.
+description: Folders under the library, the frontmatter spec, and how the index picks them up.
 ---
 
-A **collection is a folder** under `~/.dither/entries/`. That's the whole definition. There's no registry, no schema, no `meta.json`. If a directory exists at `~/.dither/entries/notes/`, you have a `notes` collection.
+A **collection is a top-level folder** under your configured library. That's the whole definition. There's no registry, no schema, no `meta.json`. If a directory exists at `<library>/notes/`, you have a `notes` collection.
 
 ```
-~/.dither/entries/
+<library>/
   notes/             ← collection "notes"
   twitter/           ← collection "twitter"
   gmail/             ← collection "gmail"
 ```
+
+The library path is recorded in `<dither-home>/config.json` and chosen at `dither init`. By default it's `<dither-home>/library/`; with `dither init --library <path>` it's wherever you point it. See [Storage layout](/docs/concepts/storage) for the dither-home / library split.
 
 To create a new collection, make the directory. To delete one, remove the directory. The next `dither index update` reflects the change.
 
@@ -19,13 +21,13 @@ To create a new collection, make the directory. To delete one, remove the direct
 Inside a collection, the layout is unrestricted. dither doesn't care if you bucket by date, by status, by topic, or not at all:
 
 ```
-~/.dither/entries/gmail/
+<library>/gmail/
   2026/04/25/<thread>.md
   2026/04/26/<thread>.md
 ```
 
 ```
-~/.dither/entries/notes/
+<library>/notes/
   drafts/
   archive/
   pinned.md
@@ -73,9 +75,9 @@ Glob semantics are standard: `notes` matches only the literal `notes` collection
 
 If you pass no flag, the grant defaults to whatever the manifest declared. The manifest is **not** a ceiling — your `--allow-collection` flag is what actually ends up in the grants file, and that's what gates promote. Promote validates each output's `collection:` frontmatter against the grant set; values matching no glob are rejected.
 
-Plugins can write to nested paths: `writeEntry({ collection: "messages/tom" })` lands at `~/.dither/entries/messages/tom/<id>.md`. Path identifiers must use `[a-zA-Z0-9._-]` per segment, joined by `/`, with no `..`, no leading/trailing `/`, and no `.md` suffix.
+Plugins can write to nested paths: `writeEntry({ collection: "messages/tom" })` lands at `<library>/messages/tom/<id>.md`. Path identifiers must use `[a-zA-Z0-9._-]` per segment, joined by `/`, with no `..`, no leading/trailing `/`, and no `.md` suffix.
 
-Plugins do not "auto-create" collections. The directory under `~/.dither/entries/<...path>/` is created lazily on the first promote into it; nothing else changes — collections remain just folders.
+Plugins do not "auto-create" collections. The directory under `<library>/<...path>/` is created lazily on the first promote into it; nothing else changes — collections remain just folders.
 
 ### Optional fields
 
@@ -94,13 +96,13 @@ attachments:
 ---
 ```
 
-> `attachments[]` is reserved in the spec but **not yet promoted to disk by the host in v0** — the field parses but won't move blob files into a content-addressed store. Treat it as forward-compatible: emit it now, attachments will land later without a frontmatter migration.
+> `attachments[]` is reserved in the spec but **not yet promoted to disk by the host** — the field parses but won't move blob files into a content-addressed store. Treat it as forward-compatible: emit it now, attachments will land later without a frontmatter migration.
 
 ## How the index sees collections
 
-dither doesn't store entries in a database. Search is provided by [qmd](https://github.com/tobilu/qmd), which builds a SQLite index over the directory tree. Every top-level subdirectory of `~/.dither/entries/` is registered as a qmd collection on open, and qmd indexes `**/*.md` underneath.
+dither doesn't store entries in a database. Search is provided by [qmd](https://github.com/tobilu/qmd), which builds a SQLite index over the directory tree. Every top-level subdirectory of the library is registered as a qmd collection on open, and qmd indexes `**/*.md` underneath.
 
-The index file lives at `~/.dither/qmd-index.sqlite`. Don't edit it — it's regenerable from your markdown. See [Storage](/docs/concepts/storage).
+The index file lives at `<dither-home>/qmd-index.sqlite` — in dither home, not the library. Don't edit it; it's regenerable from your markdown. See [Storage](/docs/concepts/storage).
 
 To (re)scan the tree after manual edits or external file moves, run:
 
@@ -108,11 +110,11 @@ To (re)scan the tree after manual edits or external file moves, run:
 dither index update
 ```
 
-Plugin runs trigger this automatically when they promote new entries.
+Plugin runs trigger this automatically when they promote new entries (scoped to just the touched collections — a one-collection promote doesn't trigger a full library rescan).
 
 ## Hand-editing entries
 
-dither doesn't fight you. Open any `.md` under `entries/` in your editor, change the body, change the frontmatter, rename the file — it's all fine. The host doesn't lock files, doesn't watch them in v0, and doesn't impose body conventions. After a manual edit, run `dither index update` to refresh the search index.
+dither doesn't fight you. Open any `.md` under your library in your editor, change the body, change the frontmatter, rename the file — it's all fine. The host doesn't lock files, doesn't watch them, and doesn't impose body conventions. After a manual edit, run `dither index update` to refresh the search index.
 
 If you delete or move a file by hand, run `dither index update` to drop stale entries from the index.
 

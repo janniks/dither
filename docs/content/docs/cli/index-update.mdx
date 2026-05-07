@@ -1,19 +1,21 @@
 ---
 title: dither index update
-description: Re-scan entries and refresh the qmd index.
+description: Re-scan the library and refresh the qmd index.
 ---
 
 ```bash
 dither index update
 ```
 
-Re-scans every collection (every directory under `~/.dither/entries/`) and refreshes the qmd search index at `~/.dither/qmd-index.sqlite`. Run this whenever you've edited markdown by hand, dropped in files from elsewhere, or want to make sure the index is current.
+Re-scans every collection (every top-level subdirectory of the configured library) and refreshes the qmd search index at `<dither-home>/qmd-index.sqlite`. Run this whenever you've edited markdown by hand, dropped in files from elsewhere, or want to make sure the index is current.
 
-You don't need to call it after `dither plugin run` — the runner refreshes the index automatically when a plugin promotes new entries.
+You don't need to call it after `dither plugin run` — the runner refreshes the index automatically when a plugin promotes new entries (scoped to the touched collections).
+
+Refuses with the standard pre-init error until [`dither init`](/docs/cli/init) has run.
 
 ## Arguments and flags
 
-None. The command takes no positional arguments and no flags in v0.
+None. The command takes no positional arguments and no flags.
 
 ## Output
 
@@ -21,11 +23,11 @@ None. The command takes no positional arguments and no flags in v0.
 index updated: <N> collection(s), <N> indexed, <N> updated
 ```
 
-- `collection(s)` — number of top-level subdirectories under `entries/`.
+- `collection(s)` — number of top-level subdirectories under the library.
 - `indexed` — entries seen and committed to the index.
 - `updated` — entries whose content changed since the last pass.
 
-When `entries/` doesn't exist or has no subdirectories, the command prints all zeros and exits successfully.
+When the library has no subdirectories, the command prints all zeros and exits successfully.
 
 ## Example
 

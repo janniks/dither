@@ -39,13 +39,13 @@ There is **no ownership concept**. There are just folders and files. The securit
 │  dither daemon                                                     │
 │   ├─ scheduler / file watchers                                 │
 │   ├─ plugin host (spawns Deno with derived flags)              │
-│   ├─ run-dir promoter (validates output, moves to entries/)    │
+│   ├─ run-dir promoter (validates output, moves to library)     │
 │   ├─ MCP server (local; hosted later)                          │
 │   └─ qmd handle (in-process via @tobilu/qmd SDK)               │
 └────────────────────────────┬───────────────────────────────────┘
                              │ writes/reads markdown
 ┌────────────────────────────▼───────────────────────────────────┐
-│  ~/.dither/entries/<collection>/**/*.md   ← canonical store │
+│  <library>/<collection>/**/*.md           ← canonical store │
 │  qmd index (~/.cache/qmd/index.sqlite)       ← derived         │
 └────────────────────────────────────────────────────────────────┘
 ```
@@ -74,33 +74,46 @@ API keys are simultaneously a **grant** (required for remote/synced access) and 
 
 **The entry is a markdown file. Collections are just folders.** qmd indexes the directory tree directly; dither never invents a database for entries.
 
+dither separates two roots on disk:
+
+- **dither home** (`~/.dither/` by default; `$DITHER_HOME` overrides) holds dither's bookkeeping: config, plugins, grants, runs, locks, logs, daemon state, qmd index.
+- **library** is the markdown content. Configurable per-install at `dither init` time; defaults to `<dither-home>/library/`. `dither init --library <path>` adopts an arbitrary directory, canonicalised via `realpath`.
+
 ```
-~/.dither/
-├── entries/                          ← qmd-indexed, canonical
-│   ├── twitter/                      ← collection (a folder)
-│   │   └── 2026/04/<id>.md
-│   ├── gmail/
-│   │   └── 2026/04/25/<thread-id>.md
-│   ├── notes/
-│   └── inbox/
-├── attachments/                      ← raw blobs, content-addressed by UUID
-│   └── 7f3a8c10-…/screenshot.png
+<dither-home>/                        ← bookkeeping
+├── config.json                       ← {schema.version, library.path}
+├── qmd-index.sqlite                  ← derived; always lives in dither home
+├── env.json                          ← global env store
 ├── plugins/<plugin-name>/            ← author-owned, immutable post-install
 │   ├── package.json
 │   ├── plugin.ts
 │   ├── deno.json
 │   └── state/state.json              ← persistent, plugin-writable
 ├── grants/<plugin-name>.json         ← dither-owned: user-chosen ACLs + input values
-├── keys/dither.sqlite                    ← API key store
-├── collections.json                  ← {id, name, created} per collection
-├── dither.sqlite                         ← daemon state (run history, schedules)
-├── dither.sock
-└── dither.pid
+├── runs/<run-id>/                    ← per-run scratch (auto-cleaned)
+├── locks/                            ← per-plugin lockfiles
+├── logs/                             ← daemon and detached-run logs
+├── status.json                       ← daemon status snapshot
+├── dither.pid                        ← daemon pid
+├── keys/dither.sqlite                ← API key store (parked)
+└── dither.sock                       ← daemon IPC (parked)
+
+<library>/                            ← qmd-indexed, canonical (configurable location)
+├── twitter/                          ← collection (a folder)
+│   └── 2026/04/<id>.md
+├── gmail/
+│   └── 2026/04/25/<thread-id>.md
+├── notes/
+├── inbox/
+└── attachments/                      ← raw blobs, content-addressed by UUID (parked)
+    └── 7f3a8c10-…/screenshot.png
 ```
+
+`dither init` is the required first step. Library-needing commands refuse until config exists. See [`specs/qmd-library.md`](./specs/qmd-library.md) for the design and `notes/qmd-index-reuse.md` for the parked "share an index file with qmd-CLI" feature.
 
 ### Collections
 
-A collection is a folder under `entries/`. That's it. Each gets a stable UUID (recorded in `collections.json`) so plugin grants can pin to it across renames; or a grant can pin by name (looser, multi-author convention — e.g. several plugins sharing `twitter`).
+A collection is a top-level folder under the library. That's it. Plugin grants pin to collection paths (glob patterns over names); a future revision adds stable UUIDs for rename-safety.
 
 Subfolders inside a collection are unrestricted. Plugins use whatever path scheme they want (`2026/04/25/…`, `important/…`); the grant covers the collection root and everything beneath.
 
@@ -266,8 +279,8 @@ grants.files    → --allow-read=<resolved file/folder path>, …
 6. Daemon promotes runs/<run-id>/:
    - validates each *.md has source = <this plugin>
    - validates each *.md targets a collection the plugin is granted
-   - assigns/preserves entry id; assigns attachment UUIDs; copies attachments to ~/.dither/attachments/
-   - moves *.md to entries/<collection>/<plugin-chosen-subpath>/<id>.md
+   - assigns/preserves entry id; assigns attachment UUIDs; copies attachments to <library>/attachments/
+   - moves *.md to <library>/<collection>/<plugin-chosen-subpath>/<id>.md
    - re-indexes via qmd
    - persists plugin's state.json
    - rm -rf runs/<run-id>/
@@ -581,6 +594,7 @@ Public boundary = trust boundary. Sandbox and SDK code must be auditable, hence 
 - **2026-04-27** — Switched from pnpm to npm. Public stuff lives in one npm-workspace monorepo (`dither` with `packages/cli`, `packages/plugin`, `packages/plugins/*`, `docs/`). Private stuff (`dither-edge`, `dither-sync`) stays in separate repos.
 - **2026-04-29** — Dropped the `apps/` directory. CLI moved to `packages/cli`. Reasoning: `apps/cli` was the only entry under `apps/`; the docs site went under `docs/` (next to `packages/`). Splitting one binary into a separate top-level dir didn't earn its keep — `packages/*` covers the published-to-npm artifacts uniformly.
 - **2026-04-30** — **Grants redesign**. Plugin permission model rebuilt around one concept: grants. Manifest declares the maximum (what the plugin would like); user-supplied install/run flags grant the actual subset. `inputs[]` → `env[]` (all strings, no `kind`, no `secret` flag — privacy is the user's call). `permissions` block dropped: `host_net` → top-level `net`, `host_env` removed (env is the only env), `permissions.browser` parked for the browser sidebar's own grant surface. `collections.writes/reads/auto_create` → flat `collections: string[]`, validated against grants at promote (not against the manifest). New global env store at `~/.dither/env.json` managed by `dither env set/get/unset/list`. SDK `PluginInput` is now `{ trigger, env, files, targets }` — the `config`/`secrets` split is gone. `plugin run <name|path>` accepts a path and auto-installs (flags persist as grants); `plugin run <name>` with grant flags layers them as ephemeral per-run overrides without mutating the grants file. CLI grant flags (parallel on `install` and `run`): `--env NAME=VALUE`, `--allow-env NAME` (reference a global), `--file ID=PATH`, `--allow-net HOST`, `--allow-collection NAME`. Default-grant-from-manifest if no flag passed; manifest is the ceiling, flags narrow.
-- **2026-05-06** — **Nestable collections + manifest-as-default.** Collections become path identifiers (`messages/tom`); grants become glob patterns over those paths (`messages/**`, `messages/*`, `messages/2026-*`). Standard glob semantics — no implicit subtree from a literal name. Promote validates the entry's frontmatter `collection` (no `..`, no leading/trailing `/`, allowed charset, no `.md` suffix), then matches against the grant glob set; first hit wins. New module `collection-paths.ts` (validateCollectionPath, grantsCover) backed by picomatch. qmd is untouched — top-level dirs under `~/.dither/entries/` remain the only qmd collections; nesting falls out of qmd's existing `**/*.md` recursive glob. Same patch drops the **manifest-as-ceiling** rule for `net` and `collections`: the manifest declaration is now an install-time _default_ only — a `--allow-collection` or `--allow-net` flag at install can grant values absent from the manifest. The grants file is the source of truth at promote.
+- **2026-05-06** — **Nestable collections + manifest-as-default.** Collections become path identifiers (`messages/tom`); grants become glob patterns over those paths (`messages/**`, `messages/*`, `messages/2026-*`). Standard glob semantics — no implicit subtree from a literal name. Promote validates the entry's frontmatter `collection` (no `..`, no leading/trailing `/`, allowed charset, no `.md` suffix), then matches against the grant glob set; first hit wins. New module `collection-paths.ts` (validateCollectionPath, grantsCover) backed by picomatch. qmd is untouched — top-level dirs under the library remain the only qmd collections; nesting falls out of qmd's existing `**/*.md` recursive glob. Same patch drops the **manifest-as-ceiling** rule for `net` and `collections`: the manifest declaration is now an install-time _default_ only — a `--allow-collection` or `--allow-net` flag at install can grant values absent from the manifest. The grants file is the source of truth at promote.
+- **2026-05-07** — **dither home / library split + `dither init`.** Library path is now configurable via `<dither-home>/config.json` (two-level JSON, `library.path` is the only key in v1). `dither init` is the required first step; library-needing commands refuse with a clear error until config exists. Default library is `<dither-home>/library/`; `dither init --library <path>` adopts an external directory (validated, realpath-canonicalised). `dither init --force` reconfigures. `dither init --no-download` skips qmd model weight prefetch. The qmd index always lives in dither home (`<dither-home>/qmd-index.sqlite`) regardless of where the library is — **no index sharing with qmd-CLI** in v1. Plugin promote calls `updateIndex(touchedCollections)` for partial reindex; manual `dither index update` still does a full rescan. Index reuse / adopt-mode (sharing a dbPath with the user's existing qmd-CLI setup) is parked in `notes/qmd-index-reuse.md` with the full design + reasoning. Spec: `specs/qmd-library.md`. Plan: `plans/qmd-library.md`.
 - **2026-04-27** — Formatter: `oxfmt` (not prettier). All-Oxc tooling for lint + format.
 - **2026-04-27** — Renamed product: `openindex`/`oi` → `dither`. NPM package `dither`, scope `@dither`, CLI binary `dither`, env vars `DITHER_*`, runtime dir `~/.dither/`. Repos renamed throughout (`dither`, `dither-edge`, `dither-sync`, `dither-docs`).
