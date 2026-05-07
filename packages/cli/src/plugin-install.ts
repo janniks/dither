@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { resolveHome } from "./home";
 import { parsePackage, type Manifest, type ParsedPackage } from "./manifest";
 import { validateGrantPattern } from "./collection-paths";
+import { maybeWarnInstall } from "./tcc-hint";
 
 export interface InstallOptions {
   source: string;
@@ -161,6 +162,10 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
       2,
     ),
   );
+
+  // macOS-only proactive hint: warn if any granted file path lives under a
+  // TCC-protected prefix (Messages, Mail, Photos, etc.). No-op elsewhere.
+  maybeWarnInstall(files);
 
   return { name: parsed.name, version: parsed.version, dest: destDir };
 }

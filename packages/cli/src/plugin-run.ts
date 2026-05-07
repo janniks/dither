@@ -11,6 +11,7 @@ import { getGlobalEnv } from "./global-env";
 import { validateCollectionPath, validateGrantPattern, grantsCover } from "./collection-paths";
 import { acquire as acquireLock, release as releaseLock } from "./locks";
 import { startRun, type RunJournal } from "./journal";
+import { isMacOS, tccPrefixFor, fdaHint } from "./tcc-hint";
 
 export interface ProgressMessage {
   message: string;
@@ -61,6 +62,17 @@ interface GrantsFile {
 interface ParsedFrontmatter {
   source?: unknown;
   collection?: unknown;
+}
+
+function findProtectedPathInError(stderr: string): string | null {
+  // Heuristic: pull anything that looks like an absolute Library path out of
+  // the Deno error and check it against the TCC prefix list.
+  const matches = stderr.match(/\/[^\s"']*Library[^\s"']*/g);
+  if (!matches) return null;
+  for (const candidate of matches) {
+    if (tccPrefixFor(candidate)) return candidate;
+  }
+  return null;
 }
 
 function parseControl(line: string): ProgressMessage | null {
@@ -341,10 +353,16 @@ async function runPluginLocked(
       child.on("exit", (code) => {
         if (code === 0) res();
         else {
-          const err = new Error(`plugin '${opts.name}' exited with code ${code}`);
+          const tail = stderrLines.join("\n");
+          let message = `plugin '${opts.name}' exited with code ${code}`;
+          if (isMacOS() && /PermissionDenied|EPERM/i.test(tail)) {
+            const protectedPath = findProtectedPathInError(tail);
+            if (protectedPath)
+              message = `${message}\n\n${fdaHint()}\n  (failing path: ${protectedPath})`;
+          }
+          const err = new Error(message);
           (err as Error & { exitCode?: number; stderrTail?: string }).exitCode = code ?? -1;
-          (err as Error & { exitCode?: number; stderrTail?: string }).stderrTail =
-            stderrLines.join("\n");
+          (err as Error & { exitCode?: number; stderrTail?: string }).stderrTail = tail;
           rej(err);
         }
       });
