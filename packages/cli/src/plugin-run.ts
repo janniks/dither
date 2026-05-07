@@ -12,6 +12,7 @@ import { validateCollectionPath, validateGrantPattern, grantsCover } from "./col
 import { acquire as acquireLock, release as releaseLock } from "./locks";
 import { startRun, type RunJournal } from "./journal";
 import { isMacOS, findProtectedPathInError, formatFdaError } from "./tcc-hint";
+import { ensureDeno } from "./deno-bootstrap";
 
 export interface ProgressMessage {
   message: string;
@@ -304,8 +305,9 @@ async function runPluginLocked(
     // into the user's terminal alongside the helpful headline.
     let sawProtectedEpermPath: string | null = null;
 
+    const denoPath = await ensureDeno();
     await new Promise<void>((res, rej) => {
-      const child = spawn("deno", denoArgs, {
+      const child = spawn(denoPath, denoArgs, {
         env,
         stdio: ["inherit", "inherit", "pipe"],
       });
@@ -324,11 +326,7 @@ async function runPluginLocked(
         }
         void journal.append("stderr", { line });
         if (opts.verbose) process.stderr.write(`${line}\n`);
-        if (
-          isMacOS() &&
-          sawProtectedEpermPath === null &&
-          /PermissionDenied|EPERM/i.test(line)
-        ) {
+        if (isMacOS() && sawProtectedEpermPath === null && /PermissionDenied|EPERM/i.test(line)) {
           const path = findProtectedPathInError(line);
           if (path) sawProtectedEpermPath = path;
         }
@@ -352,7 +350,7 @@ async function runPluginLocked(
           return;
         }
         const message = sawProtectedEpermPath
-          ? formatFdaError(sawProtectedEpermPath)
+          ? formatFdaError(sawProtectedEpermPath, denoPath)
           : `plugin '${opts.name}' exited with code ${code}`;
         const err = new Error(message);
         (err as Error & { exitCode?: number; expected?: boolean }).exitCode = code ?? -1;
