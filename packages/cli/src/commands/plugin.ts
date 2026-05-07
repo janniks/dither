@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, openSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { installPlugin } from "../plugin-install";
-import { runPlugin } from "../plugin-run";
+import { runPlugin, PLUGIN_NOT_INSTALLED } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
 import { removePlugin } from "../plugin-remove";
 import { resolveHome } from "../home";
@@ -238,6 +238,11 @@ const runSubcommand = defineCommand({
           await maybeOpenFdaSettings();
         }
         process.exit(e.exitCode ?? 1);
+      }
+      if (e?.code === PLUGIN_NOT_INSTALLED) {
+        process.stderr.write(`error: ${e.message}\n`);
+        process.stderr.write(`hint: run 'dither plugin list' to see installed plugins.\n`);
+        process.exit(1);
       }
       throw err;
     }

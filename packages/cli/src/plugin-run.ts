@@ -47,6 +47,9 @@ export interface RunResult {
   promoted: string[];
 }
 
+/** Error code stamped on errors that signal a known, clean failure path. */
+export const PLUGIN_NOT_INSTALLED = "PLUGIN_NOT_INSTALLED";
+
 const DITHER_ENV_VARS = [
   "DITHER_RUN_DIR",
   "DITHER_INPUT_FILE",
@@ -155,7 +158,9 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
   const home = resolveHome();
   const pluginDir = join(home, "plugins", opts.name);
   if (!existsSync(pluginDir)) {
-    throw new Error(`Plugin not installed: ${opts.name}`);
+    const err = new Error(`plugin not installed: '${opts.name}'`) as Error & { code: string };
+    err.code = PLUGIN_NOT_INSTALLED;
+    throw err;
   }
 
   // Single-arbiter check: only one run of this plugin at a time. Schedule,
