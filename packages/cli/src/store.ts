@@ -11,6 +11,11 @@ import { libraryRoot } from "./paths";
  */
 export async function openStore(): Promise<QMDStore | null> {
   const root = await libraryRoot();
+  // mkdir is intentionally permissive: if the configured library was
+  // physically moved (`mv X Y`) after init, we silently recreate an empty
+  // X here and search will return no results. The realpath
+  // canonicalisation at init covers symlink-swap but not literal-move.
+  // See notes/qmd-library-edge-cases.md (#2).
   mkdirSync(root, { recursive: true });
 
   const collections: Record<string, Collection> = {};

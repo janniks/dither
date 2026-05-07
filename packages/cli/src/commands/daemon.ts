@@ -165,6 +165,10 @@ const runSubcommand = defineCommand({
     description: "(internal) Run the daemon main loop in this process.",
     hidden: true,
   },
+  // Intentionally no assertInitialized() here: this subcommand is the
+  // detached process spawned by daemon-control after `daemon start` already
+  // checked. Direct hand-invocation without init is allowed to fail fast on
+  // the first reconcile() — see notes/qmd-library-edge-cases.md (#4).
   async run() {
     await runDaemon();
   },

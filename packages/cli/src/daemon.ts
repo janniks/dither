@@ -208,6 +208,10 @@ export async function runDaemon(): Promise<void> {
   const scheduler = new Scheduler((name: string) =>
     fireWithSuppress(watcher, detector, name, "scheduled"),
   );
+  // reconcile() loads config + grants fresh on every call, so SIGHUP
+  // (`dither daemon reload`) is the supported way to pick up a library
+  // change after `dither init --force`. We do NOT auto-reload on config
+  // file change — see notes/qmd-library-edge-cases.md (#5).
   async function reconcile(): Promise<void> {
     const [scheduleEntries, watchEntries, libRoot] = await Promise.all([
       loadScheduleEntries(),

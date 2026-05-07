@@ -97,6 +97,12 @@ export const initCommand = defineCommand({
     // On --force, the dbPath is the same but its contents reference the old
     // library's subdirs. Drop it so the next openStore registers the new
     // library's subdirs and store.update() rebuilds from scratch.
+    //
+    // We do NOT lock against in-flight plugin runs here. A run that resolved
+    // its libraryRoot before this point will promote into the old library
+    // and leave its files orphaned of the new index. See
+    // notes/qmd-library-edge-cases.md (#1). Running daemons also need a
+    // SIGHUP-driven reconcile to pick up the new library — see (#5).
     if (existing && args.force) {
       const dbPath = indexDbPath();
       if (existsSync(dbPath)) {
