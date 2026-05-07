@@ -324,11 +324,7 @@ async function runPluginLocked(
         }
         void journal.append("stderr", { line });
         if (opts.verbose) process.stderr.write(`${line}\n`);
-        if (
-          isMacOS() &&
-          sawProtectedEpermPath === null &&
-          /PermissionDenied|EPERM/i.test(line)
-        ) {
+        if (isMacOS() && sawProtectedEpermPath === null && /PermissionDenied|EPERM/i.test(line)) {
           const path = findProtectedPathInError(line);
           if (path) sawProtectedEpermPath = path;
         }

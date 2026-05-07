@@ -2,6 +2,7 @@ import { defineCommand } from "citty";
 import { createReadStream, watch as fsWatch, existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { daemonLogPath } from "../home";
+import { assertInitialized } from "../config";
 import { startDaemon, stopDaemon, getDaemonStatus, reloadDaemon } from "../daemon-control";
 import { runDaemon } from "../daemon";
 
@@ -11,6 +12,7 @@ const startSubcommand = defineCommand({
     description: "Start the dither daemon (detached).",
   },
   async run() {
+    await assertInitialized();
     const result = await startDaemon();
     if (result.alreadyRunning) {
       console.log(`Daemon already running (pid ${result.pid}).`);

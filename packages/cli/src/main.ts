@@ -7,6 +7,7 @@ import { statusCommand } from "./commands/status";
 import { envCommand } from "./commands/env";
 import { runsCommand } from "./commands/runs";
 import { daemonCommand } from "./commands/daemon";
+import { initCommand } from "./commands/init";
 
 export const main = defineCommand({
   meta: {
@@ -15,6 +16,7 @@ export const main = defineCommand({
     description: "Personal index for the agentic era.",
   },
   subCommands: {
+    init: initCommand,
     search: searchCommand,
     get: getCommand,
     plugin: pluginCommand,

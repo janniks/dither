@@ -7,6 +7,7 @@ import { runPlugin } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
 import { removePlugin } from "../plugin-remove";
 import { resolveHome } from "../home";
+import { assertInitialized } from "../config";
 import { reloadDaemon, startDaemon, readDaemonPid } from "../daemon-control";
 import { installAutostart } from "../persistence";
 import { readFileSync } from "node:fs";
@@ -134,6 +135,7 @@ const installSubcommand = defineCommand({
     ...grantArgs,
   },
   async run({ args }) {
+    await assertInitialized();
     const grants = readGrantArgs(args);
     const result = await installPlugin({ source: args.source, ...grants });
     console.log(`installed ${result.name}@${result.version}`);
@@ -177,6 +179,7 @@ const runSubcommand = defineCommand({
     ...grantArgs,
   },
   async run({ args }) {
+    await assertInitialized();
     const grants = readGrantArgs(args);
 
     // If the target is an existing directory, treat as a path: install (or

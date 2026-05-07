@@ -1,5 +1,6 @@
 import { defineCommand } from "citty";
 import { search } from "../search";
+import { assertInitialized } from "../config";
 
 export const searchCommand = defineCommand({
   meta: {
@@ -32,6 +33,7 @@ export const searchCommand = defineCommand({
     },
   },
   async run({ args }) {
+    await assertInitialized();
     const limit = args.limit ? Number.parseInt(args.limit, 10) : undefined;
     const mode = args.mode === "lex" || args.mode === "hybrid" ? args.mode : undefined;
 

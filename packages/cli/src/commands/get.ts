@@ -1,5 +1,6 @@
 import { defineCommand } from "citty";
 import { get } from "../get";
+import { assertInitialized } from "../config";
 
 function parseLineRange(value: string | undefined): {
   fromLine?: number;
@@ -29,6 +30,7 @@ export const getCommand = defineCommand({
     },
   },
   async run({ args }) {
+    await assertInitialized();
     const { fromLine, toLine } = parseLineRange(args.lines);
     const content = await get({ ref: args.ref, fromLine, toLine });
     if (content !== null) {

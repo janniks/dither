@@ -28,10 +28,17 @@ describe("CLI dispatch", () => {
   let home: string;
   let prevHome: string | undefined;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     home = mkdtempSync(join(tmpdir(), "dither-test-"));
     prevHome = process.env.DITHER_HOME;
     process.env.DITHER_HOME = home;
+    // CLI subcommands now refuse without config; write one matching today's
+    // implicit default so the rest of these tests behave unchanged.
+    const { saveConfig } = await import("./config");
+    await saveConfig({
+      schema: { version: 1 },
+      library: { path: join(home, "entries") },
+    });
   });
 
   afterEach(() => {

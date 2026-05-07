@@ -1,12 +1,14 @@
 import { defineCommand } from "citty";
 import { updateIndex } from "../update-index";
+import { assertInitialized } from "../config";
 
 const updateSubcommand = defineCommand({
   meta: {
     name: "update",
-    description: "Re-scan ~/.dither/entries/ and refresh the qmd index.",
+    description: "Re-scan the library and refresh the qmd index.",
   },
   async run() {
+    await assertInitialized();
     const result = await updateIndex();
     console.log(
       `index updated: ${result.collections} collection(s), ` +
