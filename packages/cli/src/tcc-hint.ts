@@ -29,6 +29,9 @@ const TCC_PREFIXES = [
 export const FDA_SETTINGS_URI =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
 
+/** Error code stamped on errors that need the FDA-grant render path. */
+export const FDA_REQUIRED = "FDA_REQUIRED";
+
 export function isMacOS(): boolean {
   return process.platform === "darwin";
 }
