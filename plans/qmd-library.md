@@ -117,3 +117,4 @@ When starting implementation, rename this file to `./plans/qmd-library-RUNNING.m
 | ed8542f | Phase 2: split home.ts into dither-home paths and library paths (new paths.ts). Route store/plugin-run/watcher/status through loaded config. Default library moves to `<dither-home>/library`. New library-resolver.test verifies external library + clean dither home. |
 | f2c227b | Phase 3: `dither init --library <path>` with validation (file → error, unwritable → error, missing → create+report). realpath canonicalisation at init. |
 | 7493511 | Phase 4: partial reindex. `updateIndex(collections?)` plumbs through to `store.update({ collections })`; plugin-run computes the touched-collection set from the candidates and passes it. Manual `dither index update` still full. |
+| ca5dd38 | Phase 5: `--force`, `--no-download`, weight prefetch via `store.embed()`. Reconfig drops old qmd-index.sqlite so subdirs re-register cleanly. `notes/init-command.md` folded in and deleted. |
