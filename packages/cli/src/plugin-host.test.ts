@@ -543,6 +543,26 @@ await writeEntry({
     expect(existsSync(join(home, "locks", "import-folder.lock"))).toBe(false);
   }, 60000);
 
+  it("runPlugin produces a run-history journal with manifest, events, and result", async () => {
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+    const { listRuns, readEvents } = await import("./journal");
+
+    await installPlugin({ source: FIXTURE_PATH });
+    const result = await runPlugin({ name: "import-folder" });
+
+    const runs = await listRuns();
+    const ours = runs.find((r) => r.runId === result.runId);
+    expect(ours).toBeDefined();
+    expect(ours!.status).toBe("ok");
+    expect(ours!.plugin).toBe("import-folder");
+    expect(ours!.promotedCount).toBeGreaterThan(0);
+
+    const events = await readEvents(result.runId);
+    const promoted = events.filter((e) => e.type === "promoted");
+    expect(promoted.length).toBeGreaterThan(0);
+  }, 60000);
+
   it("releases the lock after a failed run", async () => {
     const failDir = mkdtempSync(join(tmpdir(), "dither-fail-lock-"));
     mkdirSync(failDir, { recursive: true });

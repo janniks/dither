@@ -2,7 +2,6 @@ import { mkdir, readFile, writeFile, readdir, copyFile, rm } from "node:fs/promi
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import matter from "gray-matter";
 import { resolveHome } from "./home";
@@ -11,6 +10,7 @@ import { updateIndex } from "./update-index";
 import { getGlobalEnv } from "./global-env";
 import { validateCollectionPath, validateGrantPattern, grantsCover } from "./collection-paths";
 import { acquire as acquireLock, release as releaseLock } from "./locks";
+import { startRun, type RunJournal } from "./journal";
 
 export interface ProgressMessage {
   message: string;
@@ -160,8 +160,32 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
     );
   }
 
+  const trigger = opts.trigger ?? "manual";
+  const { journal, runId } = await startRun(opts.name, trigger);
+
   try {
-    return await runPluginLocked(opts, home, pluginDir);
+    const promoted = await runPluginLocked(opts, home, pluginDir, journal, runId, trigger);
+    await journal.close({
+      status: "ok",
+      finishedAt: new Date().toISOString(),
+      promoted,
+    });
+    return { runId, promoted };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const exitCode = (err as { exitCode?: number }).exitCode;
+    const stderrTail = (err as { stderrTail?: string }).stderrTail;
+    await journal.append("error", { message }).catch(() => {});
+    await journal
+      .close({
+        status: "fail",
+        finishedAt: new Date().toISOString(),
+        error: message,
+        exitCode,
+        stderrTail,
+      })
+      .catch(() => {});
+    throw err;
   } finally {
     await releaseLock(lock);
   }
@@ -171,7 +195,10 @@ async function runPluginLocked(
   opts: RunOptions,
   home: string,
   pluginDir: string,
-): Promise<RunResult> {
+  journal: RunJournal,
+  runId: string,
+  trigger: string,
+): Promise<string[]> {
   const pkgRaw = JSON.parse(await readFile(join(pluginDir, "package.json"), "utf-8")) as unknown;
   const parsed = parsePackage(pkgRaw);
 
@@ -202,7 +229,6 @@ async function runPluginLocked(
     if (def.default !== undefined) resolvedEnv[def.name] = def.default;
   }
 
-  const runId = randomUUID();
   const runDir = join(home, "runs", runId);
   await mkdir(runDir, { recursive: true });
 
@@ -212,7 +238,6 @@ async function runPluginLocked(
     const stateFile = join(stateDir, "state.json");
 
     const inputFile = join(runDir, "input.json");
-    const trigger = opts.trigger ?? "manual";
     await writeFile(
       inputFile,
       JSON.stringify(
@@ -262,6 +287,13 @@ async function runPluginLocked(
       DITHER_PLUGIN_NAME: opts.name,
     };
 
+    const stderrLines: string[] = [];
+    const STDERR_TAIL_MAX = 50;
+    function recordStderr(line: string): void {
+      stderrLines.push(line);
+      if (stderrLines.length > STDERR_TAIL_MAX) stderrLines.shift();
+    }
+
     await new Promise<void>((res, rej) => {
       const child = spawn("deno", denoArgs, {
         env,
@@ -276,20 +308,37 @@ async function runPluginLocked(
           const line = buf.slice(0, nl);
           buf = buf.slice(nl + 1);
           const msg = parseControl(line);
-          if (msg && opts.onProgress) {
-            opts.onProgress(msg);
+          if (msg) {
+            void journal.append("progress", {
+              message: msg.message,
+              done: msg.done,
+              total: msg.total,
+            });
+            if (opts.onProgress) opts.onProgress(msg);
           } else {
+            recordStderr(line);
+            void journal.append("stderr", { line });
             process.stderr.write(`${line}\n`);
           }
         }
       });
       child.stderr!.on("end", () => {
-        if (buf) process.stderr.write(buf);
+        if (buf) {
+          recordStderr(buf);
+          void journal.append("stderr", { line: buf });
+          process.stderr.write(buf);
+        }
       });
       child.on("error", rej);
       child.on("exit", (code) => {
         if (code === 0) res();
-        else rej(new Error(`plugin '${opts.name}' exited with code ${code}`));
+        else {
+          const err = new Error(`plugin '${opts.name}' exited with code ${code}`);
+          (err as Error & { exitCode?: number; stderrTail?: string }).exitCode = code ?? -1;
+          (err as Error & { exitCode?: number; stderrTail?: string }).stderrTail =
+            stderrLines.join("\n");
+          rej(err);
+        }
       });
     });
 
@@ -298,12 +347,15 @@ async function runPluginLocked(
     // promote is impossible.
     const candidates = await planPromotion(runDir, opts.name, home, grantCollections);
     const promoted = await copyPromoted(candidates);
+    for (const path of promoted) {
+      await journal.append("promoted", { path });
+    }
 
     if (promoted.length > 0) {
       await updateIndex();
     }
 
-    return { runId, promoted };
+    return promoted;
   } finally {
     // Always clean up the run dir — failed runs would otherwise leave
     // input.json (containing plaintext env values, possibly secrets) on disk.

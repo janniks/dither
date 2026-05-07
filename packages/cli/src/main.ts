@@ -5,6 +5,7 @@ import { pluginCommand } from "./commands/plugin";
 import { indexCommand } from "./commands/index";
 import { statusCommand } from "./commands/status";
 import { envCommand } from "./commands/env";
+import { runsCommand } from "./commands/runs";
 
 export const main = defineCommand({
   meta: {
@@ -18,6 +19,7 @@ export const main = defineCommand({
     plugin: pluginCommand,
     env: envCommand,
     index: indexCommand,
+    runs: runsCommand,
     status: statusCommand,
   },
 });

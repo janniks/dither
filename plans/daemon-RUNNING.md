@@ -60,12 +60,12 @@ End-to-end behavior: every plugin run — manual today, scheduled and watch in l
 
 **Acceptance:**
 
-- [ ] Run-history dir created on every plugin run start; `manifest.json` written immediately, `events.ndjson` appended as the plugin emits, `result.json` written on completion.
-- [ ] Failed runs preserve the journal (stderr tail, exit code, error event).
-- [ ] `dither runs list` lists the most recent N runs with name, started-at, status, duration.
-- [ ] `dither runs tail <runId>` streams the live `events.ndjson` (chokidar tail of the file); exits when the run completes or the user hits Ctrl-C.
-- [ ] Tests: round-trip read of a completed run; tail against an actively-appended file; failed-run record preserved.
-- [ ] All gates green.
+- [x] Run-history dir created on every plugin run start; `manifest.json` written immediately, `events.ndjson` appended as the plugin emits, `result.json` written on completion.
+- [x] Failed runs preserve the journal (stderr tail, exit code, error event).
+- [x] `dither runs list` lists the most recent N runs with name, started-at, status, duration.
+- [x] `dither runs tail <runId>` streams the live `events.ndjson` (poll-based tail of the file); exits when the run completes or the user hits Ctrl-C.
+- [x] Tests: round-trip read of a completed run; tail against an actively-appended file; failed-run record preserved.
+- [x] All gates green.
 
 ---
 
@@ -188,6 +188,7 @@ Linux and Windows are no-ops in this phase — TCC has no equivalent layer; Unix
 
 When starting implementation, rename this file to `./plans/daemon-RUNNING.md` (signals work in progress so another agent can pick up if interrupted). Work one phase at a time, ticking each phase's acceptance criteria as you satisfy them. Stage and commit only that phase's changes after finishing, then continue to the next phase. Append a row to the log below after every phase. When all phases complete, rename back to `./plans/daemon.md`.
 
-| commit | summary |
-| ------ | ------- |
-| _pending_ | Phase 1: per-plugin lock primitive (`acquire`/`release` in `locks.ts`), wired into `runPlugin` with try/finally; concurrent same-plugin runs reject with "already running"; lock released on success and failure. |
+| commit  | summary                                                                                                                                                                                                           |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a74bedd | Phase 1: per-plugin lock primitive (`acquire`/`release` in `locks.ts`), wired into `runPlugin` with try/finally; concurrent same-plugin runs reject with "already running"; lock released on success and failure. |
+| _pending_ | Phase 2: run-history journal at `~/.dither/history/<runId>/` (manifest, events.ndjson, result); `dither runs list` and `runs tail` subcommands; runPlugin produces journal entries on success and failure (with stderrTail + exitCode). |
