@@ -104,7 +104,7 @@ Prior art: the existing `plugin-host.test.ts` "install + run" integration test i
 
 ## Out of Scope
 
-- The `dither init` / `dither init` command (Finder reveal, Settings deep link, Y/n auto-open prompt). Sibling spec; depends on this one.
+- The `dither init` command (Finder reveal, Settings deep link, Y/n auto-open prompt). Sibling spec; depends on this one.
 - Self-update of Deno without a dither-version PR. Manual, deliberate bumps only.
 - Code-signing dither itself or the daemon.
 - Daemon work (launchd LaunchAgent, self-respawn). Tracked in `notes/fda-and-the-daemon.md`.
