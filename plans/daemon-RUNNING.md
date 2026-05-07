@@ -98,13 +98,13 @@ End-to-end behavior: the daemon, on startup, reads every plugin's grants file, p
 
 **Acceptance:**
 
-- [ ] Scheduler module wraps croner; `set(entries)` replaces, `stop()` cancels; reload doesn't miss or duplicate fires across replacement.
-- [ ] Daemon registers schedules from grants on startup.
-- [ ] Schedule fires call into `runPlugin` with `trigger: "scheduled"`; lock acquire, run-history journal, all integrate correctly.
-- [ ] SIGHUP triggers grants re-read and scheduler reconcile in-place; running plugins are unaffected.
-- [ ] CLI `plugin install` / `plugin remove` send SIGHUP after grants changes (no-op when daemon isn't running).
-- [ ] End-to-end test: install a fixture plugin with `schedule: "every 1s"`, start the daemon, wait 3 s, stop with SIGTERM; assert two scheduled fires landed in run-history with success exit codes; clean shutdown within timeout.
-- [ ] All gates green.
+- [x] Scheduler module wraps croner; `set(entries)` replaces, `stop()` cancels; reload doesn't miss or duplicate fires across replacement.
+- [x] Daemon registers schedules from grants on startup.
+- [x] Schedule fires call into `runPlugin` with `trigger: "scheduled"`; lock acquire, run-history journal, all integrate correctly.
+- [x] SIGHUP triggers grants re-read and scheduler reconcile in-place; running plugins are unaffected.
+- [x] CLI `plugin install` / `plugin remove` send SIGHUP after grants changes (no-op when daemon isn't running).
+- [x] End-to-end test: install a fixture plugin with `schedule: "every 1s"`, start the daemon, wait 3 s, stop with SIGTERM; assert two scheduled fires landed in run-history with success exit codes; clean shutdown within timeout.
+- [x] All gates green.
 
 ---
 
@@ -188,8 +188,9 @@ Linux and Windows are no-ops in this phase — TCC has no equivalent layer; Unix
 
 When starting implementation, rename this file to `./plans/daemon-RUNNING.md` (signals work in progress so another agent can pick up if interrupted). Work one phase at a time, ticking each phase's acceptance criteria as you satisfy them. Stage and commit only that phase's changes after finishing, then continue to the next phase. Append a row to the log below after every phase. When all phases complete, rename back to `./plans/daemon.md`.
 
-| commit  | summary                                                                                                                                                                                                                                 |
-| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| a74bedd | Phase 1: per-plugin lock primitive (`acquire`/`release` in `locks.ts`), wired into `runPlugin` with try/finally; concurrent same-plugin runs reject with "already running"; lock released on success and failure.                       |
-| 327d44c | Phase 2: run-history journal at `~/.dither/history/<runId>/` (manifest, events.ndjson, result); `dither runs list` and `runs tail` subcommands; runPlugin produces journal entries on success and failure (with stderrTail + exitCode). |
-| _pending_ | Phase 3: daemon entrypoint (`runDaemon`), PID file + status snapshot + SIGTERM/SIGHUP handlers; `dither daemon start/stop/status/reload/logs` subcommands; `dither status --json`; in-process lifecycle test. |
+| commit    | summary                                                                                                                                                                                                                                              |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a74bedd   | Phase 1: per-plugin lock primitive (`acquire`/`release` in `locks.ts`), wired into `runPlugin` with try/finally; concurrent same-plugin runs reject with "already running"; lock released on success and failure.                                    |
+| 327d44c   | Phase 2: run-history journal at `~/.dither/history/<runId>/` (manifest, events.ndjson, result); `dither runs list` and `runs tail` subcommands; runPlugin produces journal entries on success and failure (with stderrTail + exitCode).              |
+| 4b47933   | Phase 3: daemon entrypoint (`runDaemon`), PID file + status snapshot + SIGTERM/SIGHUP handlers; `dither daemon start/stop/status/reload/logs` subcommands; `dither status --json`; in-process lifecycle test.                                        |
+| _pending_ | Phase 4: scheduler — `parseSchedule` + `Scheduler.set/stop/stats` over croner; daemon registers schedules from grants on startup and reconciles on SIGHUP; `plugin install/remove` send SIGHUP. End-to-end test: every-1s fixture fires twice in 3s. |

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -54,6 +54,45 @@ describe("daemon lifecycle (in-process)", () => {
     expect(s.running).toBe(false);
     expect(s.pid).toBeNull();
   });
+
+  it("registers schedule from grants and fires runPlugin within ~3s", async () => {
+    // Tiny inline plugin with `schedule: "every 1s"`.
+    const pluginDir = mkdtempSync(join(tmpdir(), "dither-sched-fixture-"));
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(
+      join(pluginDir, "package.json"),
+      JSON.stringify({
+        name: "ticker",
+        version: "0.0.1",
+        dither: {
+          schedule: "every 1s",
+          collections: ["ticks"],
+        },
+      }),
+    );
+    writeFileSync(
+      join(pluginDir, "plugin.ts"),
+      `import { writeEntry } from "@dither/plugin";\nawait writeEntry({ collection: "ticks", filename: "tick-" + Date.now() + ".md", body: "hi" });\n`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    await installPlugin({ source: pluginDir });
+
+    const { runDaemon } = await import("./daemon");
+    const { listRuns } = await import("./journal");
+
+    const exited = runDaemon();
+    await new Promise((r) => setTimeout(r, 3500));
+    process.kill(process.pid, "SIGTERM");
+    await exited;
+
+    const runs = await listRuns(50);
+    const tickerRuns = runs.filter((r) => r.plugin === "ticker");
+    expect(tickerRuns.length).toBeGreaterThanOrEqual(2);
+    expect(tickerRuns.every((r) => r.status === "ok")).toBe(true);
+
+    rmSync(pluginDir, { recursive: true, force: true });
+  }, 30_000);
 });
 
 describe("daemon control (no daemon)", () => {

@@ -2,6 +2,9 @@ import { mkdir, writeFile, readFile, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { pidFilePath, statusSnapshotPath, locksDirPath, resolveHome } from "./home";
 import { listRuns, type RunSummary } from "./journal";
+import { listPlugins } from "./plugin-list";
+import { Scheduler, type ScheduleEntry } from "./scheduler";
+import { runPlugin } from "./plugin-run";
 
 /**
  * Long-lived daemon process. In phase 3 the inner loop is a quiet heartbeat
@@ -34,6 +37,27 @@ interface DaemonState {
   startedAt: string;
   shuttingDown: boolean;
   reloadRequested: boolean;
+  scheduleCount: number;
+}
+
+async function loadScheduleEntries(): Promise<ScheduleEntry[]> {
+  const plugins = await listPlugins();
+  const entries: ScheduleEntry[] = [];
+  for (const p of plugins) {
+    if (p.schedule) entries.push({ name: p.name, schedule: p.schedule });
+  }
+  return entries;
+}
+
+async function fireScheduled(name: string): Promise<void> {
+  try {
+    await runPlugin({ name, trigger: "scheduled" });
+  } catch (err) {
+    // Lock conflicts (already running) and plugin failures both arrive here.
+    // The journal records the failure; just log a single line.
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[daemon] scheduled fire of '${name}' failed: ${message}`);
+  }
 }
 
 async function writePidFile(): Promise<void> {
@@ -90,7 +114,7 @@ async function writeStatusSnapshot(state: DaemonState): Promise<void> {
     startedAt: state.startedAt,
     lastTick: new Date().toISOString(),
     version: "0.0.1",
-    schedules: 0,
+    schedules: state.scheduleCount,
     watches: 0,
     running,
     recentRuns,
@@ -111,9 +135,18 @@ export async function runDaemon(): Promise<void> {
     startedAt: new Date().toISOString(),
     shuttingDown: false,
     reloadRequested: false,
+    scheduleCount: 0,
   };
 
+  const scheduler = new Scheduler(fireScheduled);
+  async function reconcile(): Promise<void> {
+    const entries = await loadScheduleEntries();
+    scheduler.set(entries);
+    state.scheduleCount = scheduler.stats().count;
+  }
+
   await writePidFile();
+  await reconcile();
   await writeStatusSnapshot(state);
 
   let resolveExit: () => void;
@@ -133,8 +166,8 @@ export async function runDaemon(): Promise<void> {
 
   async function shutdown(): Promise<void> {
     clearInterval(tickHandle);
-    // Phase 3: no in-flight plugin children owned by the daemon. Phases 4/5
-    // will gate on running children with the SHUTDOWN_GRACE_MS budget.
+    scheduler.stop();
+    // Wait for in-flight plugin children (manual or scheduled) to finish.
     const start = Date.now();
     while (Date.now() - start < SHUTDOWN_GRACE_MS) {
       const running = await readRunningPlugins();
@@ -146,8 +179,10 @@ export async function runDaemon(): Promise<void> {
   }
 
   function onHup(): void {
-    // Phase 3: reload is just a flag; phases 4+ will reread schedules/grants.
     state.reloadRequested = true;
+    void reconcile().catch((err) => {
+      console.error(`[daemon] reload failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
   }
 
   process.on("SIGTERM", onTerm);

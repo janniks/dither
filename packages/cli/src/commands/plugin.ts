@@ -7,6 +7,7 @@ import { runPlugin } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
 import { removePlugin } from "../plugin-remove";
 import { resolveHome } from "../home";
+import { reloadDaemon } from "../daemon-control";
 
 function parsePairs(value: string | undefined): Record<string, string> {
   if (!value) return {};
@@ -89,6 +90,7 @@ const installSubcommand = defineCommand({
     const result = await installPlugin({ source: args.source, ...grants });
     console.log(`installed ${result.name}@${result.version}`);
     console.log(`  → ${result.dest}`);
+    await reloadDaemon().catch(() => {});
     return result;
   },
 });
@@ -129,6 +131,7 @@ const runSubcommand = defineCommand({
       pluginName = installed.name;
       runOverrides = null;
       console.log(`installed ${installed.name}@${installed.version}`);
+      await reloadDaemon().catch(() => {});
     }
 
     if (args.detach) {
@@ -204,6 +207,7 @@ const removeSubcommand = defineCommand({
   async run({ args }) {
     await removePlugin({ name: args.name });
     console.log(`removed ${args.name}`);
+    await reloadDaemon().catch(() => {});
     return { name: args.name };
   },
 });
