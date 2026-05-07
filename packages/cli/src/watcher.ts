@@ -1,7 +1,6 @@
 import { FSWatcher, watch } from "chokidar";
 import { join } from "node:path";
 import picomatch from "picomatch";
-import { resolveHome } from "./home";
 
 /**
  * File watcher for plugins with a `watch` block. The daemon owns one Watcher
@@ -45,14 +44,16 @@ export class Watcher {
   private fsWatcher: FSWatcher | null = null;
   private plugins = new Map<string, PluginWatcher>();
   private suppress = new Map<string, number>();
+  private libraryRoot = "";
 
   constructor(private readonly onFire: WatchCallback) {}
 
-  set(entries: readonly WatchEntry[]): void {
+  set(libraryRoot: string, entries: readonly WatchEntry[]): void {
     this.stop();
+    this.libraryRoot = libraryRoot;
     if (entries.length === 0) return;
 
-    const entriesRoot = join(resolveHome(), "entries");
+    const entriesRoot = libraryRoot;
     const watchPaths = new Set<string>();
     for (const entry of entries) {
       const matcher = picomatch(entry.glob ?? DEFAULT_GLOB, { dot: false });
@@ -125,8 +126,8 @@ export class Watcher {
     }
 
     for (const plugin of this.plugins.values()) {
-      if (!matchesAnyCollection(path, plugin.entry.collections)) continue;
-      const relative = relativeToCollections(path, plugin.entry.collections);
+      if (!matchesAnyCollection(this.libraryRoot, path, plugin.entry.collections)) continue;
+      const relative = relativeToCollections(this.libraryRoot, path, plugin.entry.collections);
       if (relative === null) continue;
       if (!plugin.matcher(relative)) continue;
 
@@ -153,8 +154,7 @@ export class Watcher {
   }
 }
 
-function matchesAnyCollection(path: string, collections: string[]): boolean {
-  const root = join(resolveHome(), "entries");
+function matchesAnyCollection(root: string, path: string, collections: string[]): boolean {
   for (const c of collections) {
     const prefix = `${join(root, c)}/`;
     if (path.startsWith(prefix) || path === join(root, c)) return true;
@@ -162,8 +162,7 @@ function matchesAnyCollection(path: string, collections: string[]): boolean {
   return false;
 }
 
-function relativeToCollections(path: string, collections: string[]): string | null {
-  const root = join(resolveHome(), "entries");
+function relativeToCollections(root: string, path: string, collections: string[]): string | null {
   for (const c of collections) {
     const prefix = `${join(root, c)}/`;
     if (path.startsWith(prefix)) return path.slice(prefix.length);

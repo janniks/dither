@@ -7,11 +7,14 @@ describe("Watcher", () => {
   let home: string;
   let prevHome: string | undefined;
 
+  let libRoot: string;
+
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "dither-watcher-test-"));
     prevHome = process.env.DITHER_HOME;
     process.env.DITHER_HOME = home;
-    mkdirSync(join(home, "entries", "messages"), { recursive: true });
+    libRoot = join(home, "entries");
+    mkdirSync(join(libRoot, "messages"), { recursive: true });
   });
 
   afterEach(() => {
@@ -27,7 +30,7 @@ describe("Watcher", () => {
       fires.push({ name, targets });
     });
 
-    watcher.set([{ name: "tagger", collections: ["messages"] }]);
+    watcher.set(libRoot, [{ name: "tagger", collections: ["messages"] }]);
     await new Promise((r) => setTimeout(r, 200)); // chokidar warmup
 
     const path1 = join(home, "entries", "messages", "a.md");
@@ -51,7 +54,7 @@ describe("Watcher", () => {
       fires.push({ name, targets });
     });
 
-    watcher.set([{ name: "md-only", collections: ["messages"], glob: "**/*.md" }]);
+    watcher.set(libRoot, [{ name: "md-only", collections: ["messages"], glob: "**/*.md" }]);
     await new Promise((r) => setTimeout(r, 200));
 
     writeFileSync(join(home, "entries", "messages", "ignored.txt"), "x");
@@ -72,7 +75,7 @@ describe("Watcher", () => {
       fires.push({ name, targets });
     });
 
-    watcher.set([{ name: "self", collections: ["messages"] }]);
+    watcher.set(libRoot, [{ name: "self", collections: ["messages"] }]);
     await new Promise((r) => setTimeout(r, 200));
 
     const path = join(home, "entries", "messages", "self.md");

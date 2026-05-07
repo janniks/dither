@@ -1,6 +1,7 @@
 import { mkdir, writeFile, readFile, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { pidFilePath, statusSnapshotPath, locksDirPath, resolveHome } from "./home";
+import { libraryRoot as resolveLibraryRoot } from "./paths";
 import { listRuns, type RunSummary } from "./journal";
 import { listPlugins } from "./plugin-list";
 import { Scheduler, type ScheduleEntry } from "./scheduler";
@@ -208,12 +209,13 @@ export async function runDaemon(): Promise<void> {
     fireWithSuppress(watcher, detector, name, "scheduled"),
   );
   async function reconcile(): Promise<void> {
-    const [scheduleEntries, watchEntries] = await Promise.all([
+    const [scheduleEntries, watchEntries, libRoot] = await Promise.all([
       loadScheduleEntries(),
       loadWatchEntries(),
+      resolveLibraryRoot(),
     ]);
     scheduler.set(scheduleEntries);
-    watcher.set(watchEntries);
+    watcher.set(libRoot, watchEntries);
     state.scheduleCount = scheduler.stats().count;
     state.watchCount = watcher.stats().count;
   }

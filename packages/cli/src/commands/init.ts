@@ -20,11 +20,7 @@ export const initCommand = defineCommand({
       return existing;
     }
 
-    // Phase 1: library path matches the existing implicit default
-    // (`<dither-home>/entries`) so the rest of the codebase keeps working
-    // unchanged. Phase 2 moves the default to `<dither-home>/library` and
-    // routes all callsites through this config.
-    const libraryPath = join(home, "entries");
+    const libraryPath = join(home, "library");
     await mkdir(libraryPath, { recursive: true });
 
     const cfg: DitherConfig = {

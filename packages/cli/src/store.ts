@@ -1,14 +1,16 @@
 import { mkdirSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createStore, type QMDStore, type Collection } from "@tobilu/qmd";
-import { entriesDir, indexDbPath } from "./home";
+import { indexDbPath } from "./home";
+import { libraryRoot } from "./paths";
 
 /**
- * Open a qmd store over `~/.dither/entries/`. Each top-level subdirectory
- * is registered as a collection. Returns null if no collections exist.
+ * Open a qmd store over the configured library. Each top-level subdirectory
+ * of the library is registered as a qmd collection (mirror approach).
+ * Returns null if the library has no collections (subdirs).
  */
 export async function openStore(): Promise<QMDStore | null> {
-  const root = entriesDir();
+  const root = await libraryRoot();
   mkdirSync(root, { recursive: true });
 
   const collections: Record<string, Collection> = {};

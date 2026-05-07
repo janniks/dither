@@ -47,11 +47,11 @@ The home module is split into two clearly-typed surfaces: dither-home paths (no 
 This is the phase where the conceptual split between dither-home and library becomes real on disk.
 
 **Acceptance:**
-- [ ] `home.ts` (or its successor) exposes two non-overlapping surfaces: dither-home paths and library paths. Library helpers take loaded config; dither-home helpers don't.
-- [ ] No call to `<dither-home>/entries` survives in the codebase except as a one-time legacy mention in tests being migrated.
-- [ ] `dither init` (no flags) writes `library.path = <dither-home>/library` and creates that directory.
-- [ ] End-to-end pipeline test: init → plugin install → plugin run → promoted file lands in `<dither-home>/library/<collection>/...` → search finds it.
-- [ ] Test: dither-home paths (pid, status, locks, plugins, grants, runs, env, config) are unaffected by changes to `library.path`.
+- [x] `home.ts` (or its successor) exposes two non-overlapping surfaces: dither-home paths and library paths. Library helpers take loaded config; dither-home helpers don't.
+- [x] No call to `<dither-home>/entries` survives in the codebase except as a one-time legacy mention in tests being migrated.
+- [x] `dither init` (no flags) writes `library.path = <dither-home>/library` and creates that directory.
+- [x] End-to-end pipeline test: init → plugin install → plugin run → promoted file lands in `<dither-home>/library/<collection>/...` → search finds it. (`library-resolver.test.ts` covers this with an external library path; the `<dither-home>/library` default is exercised by `init.test.ts`.)
+- [x] Test: dither-home paths (pid, status, locks, plugins, grants, runs, env, config) are unaffected by changes to `library.path`.
 
 ---
 
@@ -113,4 +113,4 @@ When starting implementation, rename this file to `./plans/qmd-library-RUNNING.m
 
 | commit | summary |
 |--------|---------|
-|        |         |
+| 621dbc8 | Phase 1: config module (load/save/assertInitialized), `dither init` subcommand, pre-init guardrails on search/get/index-update/plugin-install/plugin-run/daemon-start. Init writes `library.path = <dither-home>/entries` (matches existing default). |

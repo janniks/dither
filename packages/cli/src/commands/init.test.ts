@@ -33,7 +33,7 @@ describe("dither init (Phase 1)", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  it("writes config.json with the implicit-default library path", async () => {
+  it("writes config.json with the default library path inside dither home", async () => {
     const { main } = await import("../main");
     await captureLogs(async () => {
       await runCommand(main, { rawArgs: ["init"] });
@@ -44,9 +44,9 @@ describe("dither init (Phase 1)", () => {
     const cfg = await loadConfig();
     expect(cfg).toEqual({
       schema: { version: 1 },
-      library: { path: join(home, "entries") },
+      library: { path: join(home, "library") },
     });
-    expect(existsSync(join(home, "entries"))).toBe(true);
+    expect(existsSync(join(home, "library"))).toBe(true);
   });
 
   it("re-running init prints existing config and does not overwrite", async () => {

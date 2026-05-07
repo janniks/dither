@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import matter from "gray-matter";
 import { resolveHome } from "./home";
+import { libraryRoot as resolveLibraryRoot } from "./paths";
 import { parsePackage } from "./manifest";
 import { updateIndex } from "./update-index";
 import { getGlobalEnv } from "./global-env";
@@ -92,7 +93,7 @@ interface PromoteCandidate {
 async function planPromotion(
   runDir: string,
   pluginName: string,
-  home: string,
+  libraryRoot: string,
   allowedCollections: readonly string[],
 ): Promise<PromoteCandidate[]> {
   const entries = await readdir(runDir);
@@ -120,7 +121,7 @@ async function planPromotion(
       );
     }
 
-    const destDir = join(home, "entries", collection);
+    const destDir = join(libraryRoot, collection);
     const dest = join(destDir, filename);
     if (existsSync(dest)) {
       const existing = await readFile(dest, "utf-8");
@@ -360,9 +361,10 @@ async function runPluginLocked(
     });
 
     // Two-pass promote: validate every output, then copy. Any validation
-    // failure throws before any file is moved into entries/, so a partial
+    // failure throws before any file is moved into the library, so a partial
     // promote is impossible.
-    const candidates = await planPromotion(runDir, opts.name, home, grantCollections);
+    const libRoot = await resolveLibraryRoot();
+    const candidates = await planPromotion(runDir, opts.name, libRoot, grantCollections);
     const promoted = await copyPromoted(candidates);
     for (const path of promoted) {
       await journal.append("promoted", { path });

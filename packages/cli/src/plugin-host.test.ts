@@ -17,10 +17,12 @@ describe("plugin host", () => {
   let home: string;
   let prevHome: string | undefined;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     home = mkdtempSync(join(tmpdir(), "dither-plugin-test-"));
     prevHome = process.env.DITHER_HOME;
     process.env.DITHER_HOME = home;
+    const { writeTestConfig } = await import("../test/helpers/config");
+    await writeTestConfig(join(home, "entries"));
   });
 
   afterEach(() => {

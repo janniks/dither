@@ -1,12 +1,13 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+/**
+ * Dither-home paths only. Library paths (entries, collection dirs) live in
+ * `paths.ts` and route through the config file. The qmd index sqlite stays
+ * here — it's dither-managed bookkeeping, not user content.
+ */
 export function resolveHome(): string {
   return process.env.DITHER_HOME ?? join(homedir(), ".dither");
-}
-
-export function entriesDir(): string {
-  return join(resolveHome(), "entries");
 }
 
 export function indexDbPath(): string {

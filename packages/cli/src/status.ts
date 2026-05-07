@@ -2,6 +2,7 @@ import { readdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { resolveHome } from "./home";
+import { loadConfig } from "./config";
 import { listPlugins } from "./plugin-list";
 import { getDaemonStatus, type DaemonStatus } from "./daemon-control";
 
@@ -49,7 +50,10 @@ async function countMarkdownDeep(dir: string): Promise<number> {
 export async function getStatus(): Promise<DitherStatus> {
   const home = resolveHome();
   const plugins = (await listPlugins()).length;
-  const { collections, entries } = await countMarkdownEntries(join(home, "entries"));
+  const cfg = await loadConfig();
+  const { collections, entries } = cfg
+    ? await countMarkdownEntries(cfg.library.path)
+    : { collections: 0, entries: 0 };
   const daemon = await getDaemonStatus();
   return { home, plugins, collections, entries, daemon };
 }
