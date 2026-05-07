@@ -58,3 +58,5 @@ End-to-end behavior: same flow works on Linux. Two new rows in the hash table; a
 
 | phase | commit | summary |
 | ----- | ------ | ------- |
+| 1 | 58a8470 | mac-only managed-deno bootstrap, ensureDeno() wired into plugin install + run, FDA hint repointed |
+| 2 | 63cc032 | linux x64 + arm64 hashes added, target detection extended |

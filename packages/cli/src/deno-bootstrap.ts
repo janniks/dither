@@ -22,11 +22,17 @@ import { acquire, release } from "./locks";
 
 export const VERSION = "2.7.13";
 
-type Target = "aarch64-apple-darwin" | "x86_64-apple-darwin";
+type Target =
+  | "aarch64-apple-darwin"
+  | "x86_64-apple-darwin"
+  | "x86_64-unknown-linux-gnu"
+  | "aarch64-unknown-linux-gnu";
 
 const HASHES: Record<Target, string> = {
   "aarch64-apple-darwin": "e2e63288d11e3f36855b60d77585844cbc5146600cbc7224e2d9276a35378089",
   "x86_64-apple-darwin": "b4153bee3c24074c83513e1a209ffc982277f88b184caccd4de9ba5113cfa2e5",
+  "x86_64-unknown-linux-gnu": "d7b452de2578742889b70a7e3cf90eb14b8e6b1bca4758380da3630d694f04ff",
+  "aarch64-unknown-linux-gnu": "c017fa8389bd96b6b07b3416bdb8d37074ab2ff1c83a9c94f7b2a6a7da026dac",
 };
 
 const overrideHashes: Partial<Record<Target, string>> = {};
@@ -43,6 +49,8 @@ export function detectTarget(): Target {
   const a = process.arch;
   if (p === "darwin" && a === "arm64") return "aarch64-apple-darwin";
   if (p === "darwin" && a === "x64") return "x86_64-apple-darwin";
+  if (p === "linux" && a === "x64") return "x86_64-unknown-linux-gnu";
+  if (p === "linux" && a === "arm64") return "aarch64-unknown-linux-gnu";
   throw new Error(
     `dither: managed Deno is not supported on ${p}/${a}. ` +
       `Set DITHER_USE_SYSTEM_DENO=1 to use a Deno on PATH instead.`,
