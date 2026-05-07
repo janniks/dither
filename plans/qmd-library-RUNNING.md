@@ -62,13 +62,13 @@ This is the phase where the conceptual split between dither-home and library bec
 `dither init --library <path>` accepts an external directory. Validation: doesn't exist → create with parents; exists as file → error; exists not writable → error. Path is canonicalised via `realpath`. Demo: `dither init --library ~/Documents/dither` and the full pipeline works against an external folder; dither's index sits at `<dither-home>/qmd-index.sqlite` regardless.
 
 **Acceptance:**
-- [ ] `dither init --library <path>` writes that path (canonicalised) into `library.path`.
-- [ ] Non-existent path is created (with parents); a created path is reported in the init output.
-- [ ] Path that's a file → init exits non-zero with a clear error.
-- [ ] Path that's a non-writable directory → init exits non-zero with a clear error.
-- [ ] Symlinked path is canonicalised at init; subsequent moves of the symlink do not silently widen the library scope.
-- [ ] End-to-end pipeline test: init against an external tmp library → plugin promote → file lands in the external library → search finds it.
-- [ ] qmd index lives in dither home (`<dither-home>/qmd-index.sqlite`) regardless of where the library is.
+- [x] `dither init --library <path>` writes that path (canonicalised) into `library.path`.
+- [x] Non-existent path is created (with parents); a created path is reported in the init output.
+- [x] Path that's a file → init exits non-zero with a clear error.
+- [x] Path that's a non-writable directory → init exits non-zero with a clear error.
+- [x] Symlinked path is canonicalised at init; subsequent moves of the symlink do not silently widen the library scope.
+- [x] End-to-end pipeline test: init against an external tmp library → plugin promote → file lands in the external library → search finds it. (Covered by `library-resolver.test.ts` from Phase 2; init-flag entry path covered by `init.test.ts`.)
+- [x] qmd index lives in dither home (`<dither-home>/qmd-index.sqlite`) regardless of where the library is.
 
 ---
 
@@ -114,3 +114,4 @@ When starting implementation, rename this file to `./plans/qmd-library-RUNNING.m
 | commit | summary |
 |--------|---------|
 | 621dbc8 | Phase 1: config module (load/save/assertInitialized), `dither init` subcommand, pre-init guardrails on search/get/index-update/plugin-install/plugin-run/daemon-start. Init writes `library.path = <dither-home>/entries` (matches existing default). |
+| ed8542f | Phase 2: split home.ts into dither-home paths and library paths (new paths.ts). Route store/plugin-run/watcher/status through loaded config. Default library moves to `<dither-home>/library`. New library-resolver.test verifies external library + clean dither home. |
