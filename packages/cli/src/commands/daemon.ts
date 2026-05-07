@@ -67,10 +67,27 @@ const statusSubcommand = defineCommand({
       console.log(`startedAt:   ${s.snapshot.startedAt}`);
       console.log(`lastTick:    ${s.snapshot.lastTick}`);
       console.log(`schedules:   ${s.snapshot.schedules}`);
+      for (const e of s.snapshot.scheduleEntries.slice(0, 3)) {
+        console.log(`  - ${e.name}: ${e.pattern} (next ${e.nextRun ?? "—"})`);
+      }
       console.log(`watches:     ${s.snapshot.watches}`);
+      for (const e of s.snapshot.watchEntries.slice(0, 3)) {
+        console.log(`  - ${e.name}: ${e.collections.join(", ")} ${e.glob}`);
+      }
       console.log(`running:     ${s.snapshot.running.length}`);
       for (const r of s.snapshot.running) {
         console.log(`  - ${r.name} (pid ${r.pid})`);
+      }
+      if (s.snapshot.recentHalts.length) {
+        console.log(`halts:       ${s.snapshot.recentHalts.length}`);
+        for (const h of s.snapshot.recentHalts.slice(0, 3)) {
+          console.log(`  - ${h.pluginName} via ${h.triggerSource} @ depth ${h.depth} (${h.at})`);
+        }
+      }
+      const failures = s.snapshot.recentRuns.filter((r) => r.status === "fail").slice(0, 3);
+      if (failures.length) {
+        console.log(`failures:    ${failures.length} recent`);
+        for (const f of failures) console.log(`  - ${f.plugin} (${f.runId})`);
       }
     } else {
       console.log("snapshot:    (not yet written)");

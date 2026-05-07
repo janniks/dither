@@ -7,6 +7,7 @@ import { Scheduler, type ScheduleEntry } from "./scheduler";
 import { Watcher, type WatchEntry } from "./watcher";
 import { runPlugin } from "./plugin-run";
 import { readFile as readFileAsync } from "node:fs/promises";
+import { LoopDetector, type HaltRecord } from "./loop-detector";
 
 /**
  * Long-lived daemon process. In phase 3 the inner loop is a quiet heartbeat
@@ -28,6 +29,9 @@ export interface StatusSnapshot {
   watches: number;
   running: RunningPlugin[];
   recentRuns: RunSummary[];
+  recentHalts: HaltRecord[];
+  scheduleEntries: Array<{ name: string; pattern: string; nextRun: string | null }>;
+  watchEntries: Array<{ name: string; collections: string[]; glob: string }>;
 }
 
 export interface RunningPlugin {
@@ -85,14 +89,21 @@ async function loadWatchEntries(): Promise<WatchEntry[]> {
 
 async function fireWithSuppress(
   watcher: Watcher,
+  detector: LoopDetector,
   name: string,
   trigger: "scheduled" | "watch",
   targets?: string[],
 ): Promise<void> {
+  const source = `${trigger}:${name}`;
+  if (detector.shouldHalt(source, name)) {
+    detector.record(source, name, false);
+    console.error(`[daemon] halting ${trigger} fire of '${name}' — loop threshold reached`);
+    return;
+  }
+  detector.record(source, name, true);
+
   try {
     const result = await runPlugin({ name, trigger, targets });
-    // Self-trigger suppression: the watcher would otherwise fire every plugin
-    // whose collection just got written to.
     for (const path of result.promoted) watcher.suppressOnce(path);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -146,7 +157,12 @@ export async function readStatusSnapshot(): Promise<StatusSnapshot | null> {
   }
 }
 
-async function writeStatusSnapshot(state: DaemonState): Promise<void> {
+async function writeStatusSnapshot(
+  state: DaemonState,
+  scheduler: Scheduler,
+  watcher: Watcher,
+  detector: LoopDetector,
+): Promise<void> {
   const running = await readRunningPlugins();
   const recentRuns = await listRuns(5).catch(() => []);
   const snapshot: StatusSnapshot = {
@@ -158,6 +174,9 @@ async function writeStatusSnapshot(state: DaemonState): Promise<void> {
     watches: state.watchCount,
     running,
     recentRuns,
+    recentHalts: detector.recentHalts.slice(0, 5),
+    scheduleEntries: scheduler.stats().entries.slice(0, 10),
+    watchEntries: watcher.stats().entries.slice(0, 10),
   };
   await mkdir(resolveHome(), { recursive: true });
   await writeFile(statusSnapshotPath(), JSON.stringify(snapshot, null, 2));
@@ -179,12 +198,15 @@ export async function runDaemon(): Promise<void> {
     watchCount: 0,
   };
 
+  const detector = new LoopDetector();
   // eslint-disable-next-line prefer-const
   let watcher!: Watcher;
   watcher = new Watcher((name: string, targets: string[]) =>
-    fireWithSuppress(watcher, name, "watch", targets),
+    fireWithSuppress(watcher, detector, name, "watch", targets),
   );
-  const scheduler = new Scheduler((name: string) => fireWithSuppress(watcher, name, "scheduled"));
+  const scheduler = new Scheduler((name: string) =>
+    fireWithSuppress(watcher, detector, name, "scheduled"),
+  );
   async function reconcile(): Promise<void> {
     const [scheduleEntries, watchEntries] = await Promise.all([
       loadScheduleEntries(),
@@ -198,7 +220,7 @@ export async function runDaemon(): Promise<void> {
 
   await writePidFile();
   await reconcile();
-  await writeStatusSnapshot(state);
+  await writeStatusSnapshot(state, scheduler, watcher, detector);
 
   let resolveExit: () => void;
   const exited = new Promise<void>((r) => {
@@ -206,7 +228,7 @@ export async function runDaemon(): Promise<void> {
   });
 
   const tickHandle = setInterval(() => {
-    void writeStatusSnapshot(state);
+    void writeStatusSnapshot(state, scheduler, watcher, detector);
   }, HEARTBEAT_MS);
 
   function onTerm(): void {
