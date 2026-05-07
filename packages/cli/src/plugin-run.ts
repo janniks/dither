@@ -12,7 +12,7 @@ import { getGlobalEnv } from "./global-env";
 import { validateCollectionPath, validateGrantPattern, grantsCover } from "./collection-paths";
 import { acquire as acquireLock, release as releaseLock } from "./locks";
 import { startRun, type RunJournal } from "./journal";
-import { isMacOS, findProtectedPathInError, formatFdaError } from "./tcc-hint";
+import { isMacOS, findProtectedPathInError, formatFdaError, FDA_REQUIRED } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
 
 export interface ProgressMessage {
@@ -300,7 +300,7 @@ async function runPluginLocked(
 
     // We sniff stderr only enough to (a) extract `progress()` control lines
     // and (b) detect FDA/EPERM on a protected path so we can throw an
-    // `expected` error with a clean hint. The full stream goes to the run
+    // error tagged `code: FDA_REQUIRED` with a clean hint. The full stream goes to the run
     // journal (`stderr` events). It is *not* mirrored to the host's stderr
     // unless `verbose` is set — otherwise Deno's coloured stack traces leak
     // into the user's terminal alongside the helpful headline.
@@ -353,11 +353,9 @@ async function runPluginLocked(
         const message = sawProtectedEpermPath
           ? formatFdaError(sawProtectedEpermPath, denoPath)
           : `plugin '${opts.name}' exited with code ${code}`;
-        const err = new Error(message);
-        (err as Error & { exitCode?: number; expected?: boolean }).exitCode = code ?? -1;
-        if (sawProtectedEpermPath) {
-          (err as Error & { expected?: boolean }).expected = true;
-        }
+        const err = new Error(message) as Error & { exitCode: number; code?: string };
+        err.exitCode = code ?? -1;
+        if (sawProtectedEpermPath) err.code = FDA_REQUIRED;
         rej(err);
       });
     });

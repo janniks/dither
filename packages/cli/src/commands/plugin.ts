@@ -11,7 +11,7 @@ import { assertInitialized } from "../config";
 import { reloadDaemon, startDaemon, readDaemonPid } from "../daemon-control";
 import { installAutostart } from "../persistence";
 import { readFileSync } from "node:fs";
-import { FDA_SETTINGS_URI } from "../tcc-hint";
+import { FDA_SETTINGS_URI, FDA_REQUIRED } from "../tcc-hint";
 
 async function ensureDaemonForPlugin(name: string): Promise<void> {
   // Read the just-written grants file to see if the plugin has schedule or watch.
@@ -231,8 +231,8 @@ const runSubcommand = defineCommand({
       });
     } catch (err) {
       if (tty) process.stderr.write("\r\x1b[K");
-      const e = err as Error & { expected?: boolean; exitCode?: number };
-      if (e?.expected === true) {
+      const e = err as Error & { code?: string; exitCode?: number };
+      if (e?.code === FDA_REQUIRED) {
         process.stderr.write(`${e.message}\n`);
         if (!args["no-auto-open"] && process.stdin.isTTY && process.stderr.isTTY) {
           await maybeOpenFdaSettings();
