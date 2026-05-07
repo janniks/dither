@@ -10,6 +10,7 @@ import { resolveHome } from "../home";
 import { reloadDaemon, startDaemon, readDaemonPid } from "../daemon-control";
 import { installAutostart } from "../persistence";
 import { readFileSync } from "node:fs";
+import { FDA_SETTINGS_URI } from "../tcc-hint";
 
 async function ensureDaemonForPlugin(name: string): Promise<void> {
   // Read the just-written grants file to see if the plugin has schedule or watch.
@@ -160,6 +161,19 @@ const runSubcommand = defineCommand({
         "Fork the run into the background and return immediately. Stdout/stderr are captured to a log file.",
       default: false,
     },
+    verbose: {
+      type: "boolean",
+      alias: "v",
+      description:
+        "Forward plugin stderr (Deno output, console.log/error) to your terminal in real time.",
+      default: false,
+    },
+    "no-auto-open": {
+      type: "boolean",
+      description:
+        "Suppress the 'Open System Settings now? [Y/n]' prompt on a recognized FDA failure.",
+      default: false,
+    },
     ...grantArgs,
   },
   async run({ args }) {
@@ -198,17 +212,32 @@ const runSubcommand = defineCommand({
     }
 
     const tty = process.stderr.isTTY;
-    const result = await runPlugin({
-      name: pluginName,
-      ...runOverrides,
-      onProgress: (msg) => {
-        if (tty) {
-          process.stderr.write(`\r\x1b[K${msg.message}`);
-        } else {
-          process.stderr.write(`${msg.message}\n`);
+    let result;
+    try {
+      result = await runPlugin({
+        name: pluginName,
+        ...runOverrides,
+        verbose: args.verbose,
+        onProgress: (msg) => {
+          if (tty) {
+            process.stderr.write(`\r\x1b[K${msg.message}`);
+          } else {
+            process.stderr.write(`${msg.message}\n`);
+          }
+        },
+      });
+    } catch (err) {
+      if (tty) process.stderr.write("\r\x1b[K");
+      const e = err as Error & { expected?: boolean; exitCode?: number };
+      if (e?.expected === true) {
+        process.stderr.write(`${e.message}\n`);
+        if (!args["no-auto-open"] && process.stdin.isTTY && process.stderr.isTTY) {
+          await maybeOpenFdaSettings();
         }
-      },
-    });
+        process.exit(e.exitCode ?? 1);
+      }
+      throw err;
+    }
     if (tty) process.stderr.write("\r\x1b[K");
 
     console.log(`run ${result.runId} promoted ${result.promoted.length} entries:`);
@@ -218,6 +247,33 @@ const runSubcommand = defineCommand({
     return result;
   },
 });
+
+/**
+ * Y/n prompt — bare Enter or Y/y opens the System Settings → Full Disk
+ * Access pane. Anything starting with N/n skips. Best-effort; failures to
+ * spawn `open` are swallowed (the URI is already in the printed hint).
+ */
+async function maybeOpenFdaSettings(): Promise<void> {
+  process.stderr.write("\nOpen System Settings now? [Y/n]: ");
+  const answer = await new Promise<string>((res) => {
+    let buf = "";
+    const onData = (chunk: Buffer) => {
+      buf += chunk.toString("utf-8");
+      const nl = buf.indexOf("\n");
+      if (nl !== -1) {
+        process.stdin.off("data", onData);
+        res(buf.slice(0, nl).trim());
+      }
+    };
+    process.stdin.on("data", onData);
+  });
+  if (/^n/i.test(answer)) return;
+  await new Promise<void>((res) => {
+    const child = spawn("open", [FDA_SETTINGS_URI], { stdio: "ignore", detached: true });
+    child.on("error", () => res());
+    child.on("exit", () => res());
+  });
+}
 
 const listSubcommand = defineCommand({
   meta: {

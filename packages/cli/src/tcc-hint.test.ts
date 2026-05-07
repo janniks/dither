@@ -1,7 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { tccPrefixFor, fdaHint, maybeWarnInstall, isMacOS, wrapRuntimeError } from "./tcc-hint";
+import {
+  FDA_SETTINGS_URI,
+  findProtectedPathInError,
+  formatFdaError,
+  isMacOS,
+  maybeWarnInstall,
+  tccPrefixFor,
+} from "./tcc-hint";
 
 const runOnMac = isMacOS() ? describe : describe.skip;
 const runOffMac = isMacOS() ? describe.skip : describe;
@@ -19,10 +26,29 @@ runOnMac("TCC hint (macOS)", () => {
     expect(tccPrefixFor("/etc/passwd")).toBeNull();
   });
 
-  it("fdaHint mentions the binary path", () => {
-    const hint = fdaHint("/usr/local/bin/dither");
-    expect(hint).toContain("Full Disk Access");
-    expect(hint).toContain("/usr/local/bin/dither");
+  it("findProtectedPathInError extracts the path from a Deno-style error blob", () => {
+    const blob = `error: Uncaught (in promise) Error: EPERM: operation not permitted, open '${join(
+      home,
+      "Library/Messages/chat.db",
+    )}'\n    at node:fs:320:24`;
+    expect(findProtectedPathInError(blob)).toBe(join(home, "Library/Messages/chat.db"));
+  });
+
+  it("findProtectedPathInError returns null for unprotected paths", () => {
+    expect(findProtectedPathInError("EPERM: opening /etc/passwd")).toBeNull();
+    expect(findProtectedPathInError("nothing to see here")).toBeNull();
+  });
+
+  it("formatFdaError produces a clean message — no terminal recommendation, no stack", () => {
+    const msg = formatFdaError(join(home, "Library/Messages/chat.db"), "/usr/local/bin/node");
+    expect(msg).toContain("FDA_REQUIRED");
+    expect(msg).toContain("EPERM");
+    expect(msg).toContain("/usr/local/bin/node");
+    expect(msg).toContain(FDA_SETTINGS_URI);
+    // We deliberately do not recommend granting FDA to a terminal app.
+    expect(msg).not.toMatch(/terminal app|iTerm|Terminal\.app|Ghostty|Warp/);
+    // No stack-trace style file:line refs.
+    expect(msg).not.toMatch(/\.ts:\d+:\d+|\.mjs:\d+:\d+|\.js:\d+:\d+|node:fs/);
   });
 
   it("maybeWarnInstall prints when a granted path is protected", () => {
@@ -35,6 +61,7 @@ runOnMac("TCC hint (macOS)", () => {
       });
       expect(fired).toBe(true);
       expect(errs.join("\n")).toContain("Full Disk Access");
+      expect(errs.join("\n")).toContain(FDA_SETTINGS_URI);
     } finally {
       console.error = orig;
     }
@@ -51,21 +78,6 @@ runOnMac("TCC hint (macOS)", () => {
     } finally {
       console.error = orig;
     }
-  });
-
-  it("wrapRuntimeError attaches hint for EPERM on protected path", () => {
-    const err = Object.assign(new Error("EPERM: operation not permitted"), {
-      code: "EPERM",
-      path: join(home, "Library", "Messages", "chat.db"),
-    });
-    const wrapped = wrapRuntimeError(err);
-    expect(wrapped.message).toContain("Full Disk Access");
-  });
-
-  it("wrapRuntimeError leaves non-EPERM errors alone", () => {
-    const err = new Error("ENOENT no such file");
-    const wrapped = wrapRuntimeError(err);
-    expect(wrapped).toBe(err);
   });
 });
 

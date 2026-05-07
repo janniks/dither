@@ -11,7 +11,7 @@ import { getGlobalEnv } from "./global-env";
 import { validateCollectionPath, validateGrantPattern, grantsCover } from "./collection-paths";
 import { acquire as acquireLock, release as releaseLock } from "./locks";
 import { startRun, type RunJournal } from "./journal";
-import { isMacOS, tccPrefixFor, fdaHint } from "./tcc-hint";
+import { isMacOS, findProtectedPathInError, formatFdaError } from "./tcc-hint";
 
 export interface ProgressMessage {
   message: string;
@@ -36,6 +36,8 @@ export interface RunOptions {
   targets?: string[];
   /** Called for every `progress()` NDJSON message the plugin emits on stderr. */
   onProgress?: (msg: ProgressMessage) => void;
+  /** Forward plugin stderr (Deno output, console.log/error) to the host's stderr in real time. */
+  verbose?: boolean;
 }
 
 export interface RunResult {
@@ -62,17 +64,6 @@ interface GrantsFile {
 interface ParsedFrontmatter {
   source?: unknown;
   collection?: unknown;
-}
-
-function findProtectedPathInError(stderr: string): string | null {
-  // Heuristic: pull anything that looks like an absolute Library path out of
-  // the Deno error and check it against the TCC prefix list.
-  const matches = stderr.match(/\/[^\s"']*Library[^\s"']*/g);
-  if (!matches) return null;
-  for (const candidate of matches) {
-    if (tccPrefixFor(candidate)) return candidate;
-  }
-  return null;
 }
 
 function parseControl(line: string): ProgressMessage | null {
@@ -188,7 +179,6 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const exitCode = (err as { exitCode?: number }).exitCode;
-    const stderrTail = (err as { stderrTail?: string }).stderrTail;
     await journal.append("error", { message }).catch(() => {});
     await journal
       .close({
@@ -196,7 +186,6 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
         finishedAt: new Date().toISOString(),
         error: message,
         exitCode,
-        stderrTail,
       })
       .catch(() => {});
     throw err;
@@ -307,12 +296,13 @@ async function runPluginLocked(
       DITHER_PLUGIN_NAME: opts.name,
     };
 
-    const stderrLines: string[] = [];
-    const STDERR_TAIL_MAX = 50;
-    function recordStderr(line: string): void {
-      stderrLines.push(line);
-      if (stderrLines.length > STDERR_TAIL_MAX) stderrLines.shift();
-    }
+    // We sniff stderr only enough to (a) extract `progress()` control lines
+    // and (b) detect FDA/EPERM on a protected path so we can throw an
+    // `expected` error with a clean hint. The full stream goes to the run
+    // journal (`stderr` events). It is *not* mirrored to the host's stderr
+    // unless `verbose` is set — otherwise Deno's coloured stack traces leak
+    // into the user's terminal alongside the helpful headline.
+    let sawProtectedEpermPath: string | null = null;
 
     await new Promise<void>((res, rej) => {
       const child = spawn("deno", denoArgs, {
@@ -321,50 +311,55 @@ async function runPluginLocked(
       });
       let buf = "";
       child.stderr!.setEncoding("utf-8");
+      const handleLine = (line: string): void => {
+        const msg = parseControl(line);
+        if (msg) {
+          void journal.append("progress", {
+            message: msg.message,
+            done: msg.done,
+            total: msg.total,
+          });
+          if (opts.onProgress) opts.onProgress(msg);
+          return;
+        }
+        void journal.append("stderr", { line });
+        if (opts.verbose) process.stderr.write(`${line}\n`);
+        if (
+          isMacOS() &&
+          sawProtectedEpermPath === null &&
+          /PermissionDenied|EPERM/i.test(line)
+        ) {
+          const path = findProtectedPathInError(line);
+          if (path) sawProtectedEpermPath = path;
+        }
+      };
       child.stderr!.on("data", (chunk: string) => {
         buf += chunk;
         let nl: number;
         while ((nl = buf.indexOf("\n")) !== -1) {
           const line = buf.slice(0, nl);
           buf = buf.slice(nl + 1);
-          const msg = parseControl(line);
-          if (msg) {
-            void journal.append("progress", {
-              message: msg.message,
-              done: msg.done,
-              total: msg.total,
-            });
-            if (opts.onProgress) opts.onProgress(msg);
-          } else {
-            recordStderr(line);
-            void journal.append("stderr", { line });
-            process.stderr.write(`${line}\n`);
-          }
+          handleLine(line);
         }
       });
       child.stderr!.on("end", () => {
-        if (buf) {
-          recordStderr(buf);
-          void journal.append("stderr", { line: buf });
-          process.stderr.write(buf);
-        }
+        if (buf) handleLine(buf);
       });
       child.on("error", rej);
       child.on("exit", (code) => {
-        if (code === 0) res();
-        else {
-          const tail = stderrLines.join("\n");
-          let message = `plugin '${opts.name}' exited with code ${code}`;
-          if (isMacOS() && /PermissionDenied|EPERM/i.test(tail)) {
-            const protectedPath = findProtectedPathInError(tail);
-            if (protectedPath)
-              message = `${message}\n\n${fdaHint()}\n  (failing path: ${protectedPath})`;
-          }
-          const err = new Error(message);
-          (err as Error & { exitCode?: number; stderrTail?: string }).exitCode = code ?? -1;
-          (err as Error & { exitCode?: number; stderrTail?: string }).stderrTail = tail;
-          rej(err);
+        if (code === 0) {
+          res();
+          return;
         }
+        const message = sawProtectedEpermPath
+          ? formatFdaError(sawProtectedEpermPath)
+          : `plugin '${opts.name}' exited with code ${code}`;
+        const err = new Error(message);
+        (err as Error & { exitCode?: number; expected?: boolean }).exitCode = code ?? -1;
+        if (sawProtectedEpermPath) {
+          (err as Error & { expected?: boolean }).expected = true;
+        }
+        rej(err);
       });
     });
 

@@ -2,17 +2,14 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 /**
- * macOS Transparency, Consent, and Control (TCC) hint surface. Several
- * `~/Library/...` subtrees are guarded by macOS so that even reading them
- * with the user's own UID returns `EPERM` until the *parent process* has
- * been granted Full Disk Access (or the specific TCC-class entitlement) in
- * System Settings → Privacy & Security.
+ * macOS Transparency, Consent, and Control (TCC). Several `~/Library/...`
+ * subtrees are guarded so that even reading them with the user's own UID
+ * returns `EPERM` until the calling binary has been granted Full Disk
+ * Access in System Settings → Privacy & Security.
  *
- * Plugins run as Deno children of the dither binary and inherit the parent's
- * TCC grants — the user has to add `node` (or whatever execPath this build
- * runs under) to FDA, not the plugin script. We can't request FDA
- * programmatically; the best we can do is detect when a grant or a runtime
- * error lands inside a protected prefix and tell the user where to look.
+ * We can't request FDA programmatically; the best we can do is detect when
+ * an error landed inside a protected prefix and surface a clean hint
+ * pointing the user at the right setting.
  */
 
 const TCC_PREFIXES = [
@@ -28,14 +25,15 @@ const TCC_PREFIXES = [
   "Library/Safari",
 ];
 
+/** Deep link to the FDA settings pane. Most modern terminals render it as clickable. */
+export const FDA_SETTINGS_URI =
+  "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
+
 export function isMacOS(): boolean {
   return process.platform === "darwin";
 }
 
-/**
- * Return the matching TCC prefix (relative to $HOME) if `path` is inside a
- * protected location, else null.
- */
+/** Return the matching TCC prefix (relative to $HOME) if `path` is inside a protected location. */
 export function tccPrefixFor(path: string, home = homedir()): string | null {
   if (!isMacOS()) return null;
   for (const rel of TCC_PREFIXES) {
@@ -46,44 +44,62 @@ export function tccPrefixFor(path: string, home = homedir()): string | null {
 }
 
 /**
- * Build the user-facing hint string used both at install time (proactive)
- * and at runtime (reactive when EPERM lands).
+ * Pull the first protected path out of an error / stderr blob, if any.
+ * Used at runtime to detect that a non-zero exit was an FDA failure.
  */
-export function fdaHint(execPath = process.execPath): string {
-  return [
-    "macOS Full Disk Access required.",
-    "  Open System Settings → Privacy & Security → Full Disk Access,",
-    "  click +, and add this binary:",
-    `    ${execPath}`,
-    "  Then re-run dither. Plugins inherit FDA from the dither binary.",
-  ].join("\n");
+export function findProtectedPathInError(blob: string): string | null {
+  const matches = blob.match(/\/[^\s"']*Library[^\s"']*/g);
+  if (!matches) return null;
+  for (const candidate of matches) {
+    if (tccPrefixFor(candidate)) return candidate;
+  }
+  return null;
 }
 
 /**
- * Scan `files` grants for TCC-protected paths and emit the hint once if any
- * matched. Returns true if a hint was printed.
+ * The user-facing FDA error block. Facts only — no prescriptions about
+ * where to grant FDA beyond the calling binary, and no terminal-app
+ * recommendations (granting a terminal FDA is too broad).
  */
+export function formatFdaError(failingPath: string, callerBinary = process.execPath): string {
+  return [
+    `error [FDA_REQUIRED]: EPERM opening ${failingPath}`,
+    "",
+    "This path is protected by macOS Full Disk Access (TCC). The calling",
+    "binary needs Full Disk Access before the plugin can read it. Plugins",
+    "inherit this grant from whichever binary launched the dither CLI;",
+    "today that is:",
+    "",
+    `  ${callerBinary}`,
+    "",
+    "To grant it, open the Settings pane and add the binary above:",
+    "",
+    `  ${FDA_SETTINGS_URI}`,
+    `  open -R ${callerBinary}`,
+    "",
+    "Heads-up: granting FDA to a Node binary is broader than ideal —",
+    "every Node tool you run inherits the grant, and `nvm install …`",
+    "will silently revoke it. A standalone signed dither binary is on",
+    "the roadmap (see notes/fda-and-the-daemon.md); until then this is",
+    "the available path.",
+  ].join("\n");
+}
+
+/** Proactive install-time warning when a granted file path is TCC-protected. */
 export function maybeWarnInstall(files: Record<string, string>): boolean {
   if (!isMacOS()) return false;
   const matched = Object.values(files).find((p) => tccPrefixFor(p) !== null);
   if (!matched) return false;
-  console.error(`\n${fdaHint()}\n  (triggered by grant on ${matched})\n`);
+  console.error(
+    [
+      "",
+      `note: '${matched}' is a macOS-protected location.`,
+      `      The plugin will only be able to read it if Full Disk Access`,
+      `      has been granted to:`,
+      `        ${process.execPath}`,
+      `      Open Settings: ${FDA_SETTINGS_URI}`,
+      "",
+    ].join("\n"),
+  );
   return true;
-}
-
-/**
- * Wrap an error message at runtime: if the underlying error is EPERM-ish and
- * its path lives under a TCC-protected prefix, prepend the hint.
- */
-export function wrapRuntimeError(err: Error & { path?: string; code?: string }): Error {
-  if (!isMacOS()) return err;
-  if (err.code !== "EPERM" && err.code !== "EACCES" && !/EPERM|EACCES/.test(err.message)) {
-    return err;
-  }
-  const path = err.path;
-  if (!path || tccPrefixFor(path) === null) return err;
-  const wrapped = new Error(`${err.message}\n\n${fdaHint()}`);
-  (wrapped as Error & { code?: string; path?: string }).code = err.code;
-  (wrapped as Error & { code?: string; path?: string }).path = path;
-  return wrapped;
 }
