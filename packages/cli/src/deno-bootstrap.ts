@@ -70,8 +70,53 @@ export type Fetcher = (url: string) => Promise<Uint8Array>;
 const defaultFetcher: Fetcher = async (url) => {
   const res = await fetch(url, { redirect: "follow" });
   if (!res.ok) throw new Error(`download failed: ${res.status} ${res.statusText} (${url})`);
-  return new Uint8Array(await res.arrayBuffer());
+  const total = Number(res.headers.get("content-length")) || 0;
+  const body = res.body;
+  if (!body) return new Uint8Array(await res.arrayBuffer());
+
+  const tty = process.stderr.isTTY;
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  let lastDraw = 0;
+  const reader = body.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.length;
+    const now = Date.now();
+    if (tty && now - lastDraw > 100) {
+      lastDraw = now;
+      drawProgress(received, total);
+    }
+  }
+  if (tty) {
+    drawProgress(received, total);
+    process.stderr.write("\n");
+  }
+
+  const out = new Uint8Array(received);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.length;
+  }
+  return out;
 };
+
+function drawProgress(received: number, total: number): void {
+  const mb = (received / 1_048_576).toFixed(1);
+  if (total > 0) {
+    const pct = Math.min(100, Math.floor((received / total) * 100));
+    const totalMb = (total / 1_048_576).toFixed(1);
+    const width = 24;
+    const filled = Math.floor((pct / 100) * width);
+    const bar = "█".repeat(filled) + "░".repeat(width - filled);
+    process.stderr.write(`\rdither: ${bar} ${pct}% (${mb}/${totalMb} MB)`);
+    return;
+  }
+  process.stderr.write(`\rdither: downloaded ${mb} MB`);
+}
 
 let fetcher: Fetcher = defaultFetcher;
 
