@@ -26,7 +26,7 @@ Lazy bootstrap means today's call sites (`plugin install`, `plugin run`) trigger
 4. As a user, I want Deno version bumps in dither to be deliberate, code-reviewed events so a transparent compromise of the upstream release page can't silently install a tampered binary on my machine.
 5. As a developer or CI environment, I want an env-var escape hatch to use the system Deno (skipping the bootstrap) so I'm not downloading a 30 MB binary in unrelated tests.
 6. As a user, I want lazy bootstrap so I don't pay the download cost until I actually try to run a plugin.
-7. As a future-me building the `dither init` command, I want the bootstrap factored into one idempotent function that the setup command can call eagerly without any code duplication.
+7. As a future-me building the `dither init` command, I want the bootstrap factored into one idempotent function that init can call eagerly without any code duplication.
 8. As a user, I want concurrent `dither plugin install` calls to coordinate and download Deno once, not race and download it twice.
 9. As a user on a flaky network, I want a failed download to leave no half-installed binary on disk; re-running the same command should retry cleanly.
 10. As a user on Linux, I want managed Deno to work for the reproducibility and "no Deno install required" benefits, even though Linux has no FDA equivalent.
