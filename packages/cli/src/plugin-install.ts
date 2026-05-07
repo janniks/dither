@@ -5,6 +5,7 @@ import { resolveHome } from "./home";
 import { parsePackage, type Manifest, type ParsedPackage } from "./manifest";
 import { validateGrantPattern } from "./collection-paths";
 import { maybeWarnInstall } from "./tcc-hint";
+import { ensureDeno } from "./deno-bootstrap";
 
 export interface InstallOptions {
   source: string;
@@ -106,6 +107,10 @@ function resolveAllowList(
 }
 
 export async function installPlugin(opts: InstallOptions): Promise<InstalledPlugin> {
+  // Trigger the managed-deno bootstrap on first install so the user pays the
+  // download cost here rather than mid-run. Idempotent; cheap on later calls.
+  await ensureDeno();
+
   const sourcePath = resolve(opts.source);
   if (!existsSync(sourcePath)) {
     throw new Error(`Plugin source not found: ${sourcePath}`);

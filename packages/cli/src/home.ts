@@ -33,3 +33,7 @@ export function statusSnapshotPath(): string {
 export function locksDirPath(): string {
   return join(resolveHome(), "locks");
 }
+
+export function binDir(): string {
+  return join(resolveHome(), "bin");
+}

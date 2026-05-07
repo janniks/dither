@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { managedDenoPath } from "./deno-bootstrap";
 
 /**
  * macOS Transparency, Consent, and Control (TCC). Several `~/Library/...`
@@ -61,14 +62,13 @@ export function findProtectedPathInError(blob: string): string | null {
  * where to grant FDA beyond the calling binary, and no terminal-app
  * recommendations (granting a terminal FDA is too broad).
  */
-export function formatFdaError(failingPath: string, callerBinary = process.execPath): string {
+export function formatFdaError(failingPath: string, callerBinary = managedDenoPath()): string {
   return [
     `error [FDA_REQUIRED]: EPERM opening ${failingPath}`,
     "",
-    "This path is protected by macOS Full Disk Access (TCC). The calling",
-    "binary needs Full Disk Access before the plugin can read it. Plugins",
-    "inherit this grant from whichever binary launched the dither CLI;",
-    "today that is:",
+    "This path is protected by macOS Full Disk Access (TCC). The plugin",
+    "runtime needs Full Disk Access before the plugin can read it. Dither",
+    "manages its own pinned Deno at a stable path; grant FDA to:",
     "",
     `  ${callerBinary}`,
     "",
@@ -77,11 +77,10 @@ export function formatFdaError(failingPath: string, callerBinary = process.execP
     `  ${FDA_SETTINGS_URI}`,
     `  open -R ${callerBinary}`,
     "",
-    "Heads-up: granting FDA to a Node binary is broader than ideal —",
-    "every Node tool you run inherits the grant, and `nvm install …`",
-    "will silently revoke it. A standalone signed dither binary is on",
-    "the roadmap (see notes/fda-and-the-daemon.md); until then this is",
-    "the available path.",
+    "Granting FDA to the dither-managed Deno (rather than your terminal",
+    "or system Deno) keeps the grant narrow and stable across Homebrew /",
+    "nvm churn. The path stays valid until dither bumps its pinned Deno",
+    "version, which is a deliberate, reviewed event.",
   ].join("\n");
 }
 
@@ -95,8 +94,8 @@ export function maybeWarnInstall(files: Record<string, string>): boolean {
       "",
       `note: '${matched}' is a macOS-protected location.`,
       `      The plugin will only be able to read it if Full Disk Access`,
-      `      has been granted to:`,
-      `        ${process.execPath}`,
+      `      has been granted to the dither-managed Deno:`,
+      `        ${managedDenoPath()}`,
       `      Open Settings: ${FDA_SETTINGS_URI}`,
       "",
     ].join("\n"),
