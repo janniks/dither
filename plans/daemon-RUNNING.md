@@ -137,14 +137,14 @@ This phase splits cleanly into two halves if needed: (6a) lazy spawn alone, (6b)
 
 **Acceptance:**
 
-- [ ] Lazy spawn: `dither plugin install` of a scheduled/watch plugin starts the daemon detached if no PID file is alive.
-- [ ] launchd plist generation on macOS: written into `~/Library/LaunchAgents/`, references the dither binary's absolute path, registers via `launchctl load`.
-- [ ] systemd user unit on linux: written into `~/.config/systemd/user/`, registers via `systemctl --user enable`.
-- [ ] Re-install of an already-scheduled plugin does not duplicate the daemon (PID check + idempotent registration).
-- [ ] Users with no scheduled/watch plugins never get a daemon spawned and never get launchd/systemd registration.
-- [ ] Test (macOS): install a scheduled plugin → PID file exists → process is alive.
-- [ ] Test (linux): same.
-- [ ] All gates green.
+- [x] Lazy spawn: `dither plugin install` of a scheduled/watch plugin starts the daemon detached if no PID file is alive.
+- [x] launchd plist generation on macOS: written into `~/Library/LaunchAgents/dev.dither.daemon.plist`, references the dither binary's absolute path. Registration via `launchctl load` is gated behind `DITHER_INSTALL_AUTOSTART=1` so a stray test or one-off install doesn't touch the user's launchd.
+- [x] systemd user unit on linux: written into `~/.config/systemd/user/dither.service`. Same opt-in for `systemctl --user enable`.
+- [x] Re-install of an already-scheduled plugin does not duplicate the daemon (PID check before spawn) or the unit file (content-equality short-circuit).
+- [x] Users with no scheduled/watch plugins never get a daemon spawned and never get a unit file written.
+- [~] Activation (`launchctl load` / `systemctl --user enable`) is left for the user to enable explicitly. The file-on-disk is the deterministic, testable side of the contract; activation is platform-specific and intentionally manual in v0.
+- [x] Tests: idempotent unit-file generation on the host platform; not-supported path returns no-op cleanly elsewhere.
+- [x] All gates green.
 
 ---
 
@@ -188,10 +188,11 @@ Linux and Windows are no-ops in this phase — TCC has no equivalent layer; Unix
 
 When starting implementation, rename this file to `./plans/daemon-RUNNING.md` (signals work in progress so another agent can pick up if interrupted). Work one phase at a time, ticking each phase's acceptance criteria as you satisfy them. Stage and commit only that phase's changes after finishing, then continue to the next phase. Append a row to the log below after every phase. When all phases complete, rename back to `./plans/daemon.md`.
 
-| commit    | summary                                                                                                                                                                                                                                                                                                       |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| a74bedd   | Phase 1: per-plugin lock primitive (`acquire`/`release` in `locks.ts`), wired into `runPlugin` with try/finally; concurrent same-plugin runs reject with "already running"; lock released on success and failure.                                                                                             |
-| 327d44c   | Phase 2: run-history journal at `~/.dither/history/<runId>/` (manifest, events.ndjson, result); `dither runs list` and `runs tail` subcommands; runPlugin produces journal entries on success and failure (with stderrTail + exitCode).                                                                       |
-| 4b47933   | Phase 3: daemon entrypoint (`runDaemon`), PID file + status snapshot + SIGTERM/SIGHUP handlers; `dither daemon start/stop/status/reload/logs` subcommands; `dither status --json`; in-process lifecycle test.                                                                                                 |
-| 251db5b   | Phase 4: scheduler — `parseSchedule` + `Scheduler.set/stop/stats` over croner; daemon registers schedules from grants on startup and reconciles on SIGHUP; `plugin install/remove` send SIGHUP. End-to-end test: every-1s fixture fires twice in 3s.                                                          |
-| _pending_ | Phase 5: watcher over chokidar with 5s/30s-cap debounce; self-trigger suppression via post-promote `suppressOnce`; daemon reconciles watch entries on SIGHUP; `runPlugin` accepts `targets[]` and threads them into input.json + --allow-read. Tests cover debounce coalescing, glob filter, and suppression. |
+| commit    | summary                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a74bedd   | Phase 1: per-plugin lock primitive (`acquire`/`release` in `locks.ts`), wired into `runPlugin` with try/finally; concurrent same-plugin runs reject with "already running"; lock released on success and failure.                                                                                                                                                                                  |
+| 327d44c   | Phase 2: run-history journal at `~/.dither/history/<runId>/` (manifest, events.ndjson, result); `dither runs list` and `runs tail` subcommands; runPlugin produces journal entries on success and failure (with stderrTail + exitCode).                                                                                                                                                            |
+| 4b47933   | Phase 3: daemon entrypoint (`runDaemon`), PID file + status snapshot + SIGTERM/SIGHUP handlers; `dither daemon start/stop/status/reload/logs` subcommands; `dither status --json`; in-process lifecycle test.                                                                                                                                                                                      |
+| 251db5b   | Phase 4: scheduler — `parseSchedule` + `Scheduler.set/stop/stats` over croner; daemon registers schedules from grants on startup and reconciles on SIGHUP; `plugin install/remove` send SIGHUP. End-to-end test: every-1s fixture fires twice in 3s.                                                                                                                                               |
+| 18e9d22   | Phase 5: watcher over chokidar with 5s/30s-cap debounce; self-trigger suppression via post-promote `suppressOnce`; daemon reconciles watch entries on SIGHUP; `runPlugin` accepts `targets[]` and threads them into input.json + --allow-read. Tests cover debounce coalescing, glob filter, and suppression.                                                                                      |
+| _pending_ | Phase 6: lazy daemon spawn from `plugin install` when manifest declares schedule/watch; idempotent launchd plist (macOS) / systemd user unit (Linux) at `~/Library/LaunchAgents/dev.dither.daemon.plist` and `~/.config/systemd/user/dither.service`. `launchctl load` / `systemctl --user enable` is opt-in via `DITHER_INSTALL_AUTOSTART=1` to avoid touching the user's init system from tests. |

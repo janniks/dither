@@ -47,7 +47,9 @@ describe("Watcher", () => {
   it("respects the glob filter", async () => {
     const { Watcher } = await import("./watcher");
     const fires: Array<{ name: string; targets: string[] }> = [];
-    const watcher = new Watcher((name, targets) => fires.push({ name, targets }));
+    const watcher = new Watcher((name, targets) => {
+      fires.push({ name, targets });
+    });
 
     watcher.set([{ name: "md-only", collections: ["messages"], glob: "**/*.md" }]);
     await new Promise((r) => setTimeout(r, 200));
@@ -66,7 +68,9 @@ describe("Watcher", () => {
   it("suppressOnce drops the matching event", async () => {
     const { Watcher } = await import("./watcher");
     const fires: Array<{ name: string; targets: string[] }> = [];
-    const watcher = new Watcher((name, targets) => fires.push({ name, targets }));
+    const watcher = new Watcher((name, targets) => {
+      fires.push({ name, targets });
+    });
 
     watcher.set([{ name: "self", collections: ["messages"] }]);
     await new Promise((r) => setTimeout(r, 200));

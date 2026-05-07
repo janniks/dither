@@ -7,7 +7,54 @@ import { runPlugin } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
 import { removePlugin } from "../plugin-remove";
 import { resolveHome } from "../home";
-import { reloadDaemon } from "../daemon-control";
+import { reloadDaemon, startDaemon, readDaemonPid } from "../daemon-control";
+import { installAutostart } from "../persistence";
+import { readFileSync } from "node:fs";
+
+async function ensureDaemonForPlugin(name: string): Promise<void> {
+  // Read the just-written grants file to see if the plugin has schedule or watch.
+  const grantsPath = join(resolveHome(), "grants", `${name}.json`);
+  let needsDaemon = false;
+  try {
+    const blob = JSON.parse(readFileSync(grantsPath, "utf-8")) as {
+      manifest?: { schedule?: string; watch?: { collections?: string[] } };
+    };
+    needsDaemon =
+      Boolean(blob.manifest?.schedule) ||
+      Boolean(blob.manifest?.watch?.collections && blob.manifest.watch.collections.length > 0);
+  } catch {
+    return;
+  }
+  if (!needsDaemon) return;
+
+  // Lazy spawn if not already running.
+  const alive = await readDaemonPid();
+  if (!alive) {
+    try {
+      await startDaemon();
+    } catch (err) {
+      console.error(
+        `note: could not start daemon automatically (${err instanceof Error ? err.message : String(err)}). ` +
+          `run 'dither daemon start' to bring it up.`,
+      );
+      return;
+    }
+  } else {
+    // Already running — let it pick up the new plugin.
+    await reloadDaemon().catch(() => {});
+  }
+
+  // Best-effort autostart unit. Opt-in registration via DITHER_INSTALL_AUTOSTART=1.
+  if (process.env.DITHER_INSTALL_AUTOSTART === "1") {
+    try {
+      await installAutostart();
+    } catch (err) {
+      console.error(
+        `note: autostart unit not installed (${err instanceof Error ? err.message : String(err)}).`,
+      );
+    }
+  }
+}
 
 function parsePairs(value: string | undefined): Record<string, string> {
   if (!value) return {};
@@ -90,7 +137,7 @@ const installSubcommand = defineCommand({
     const result = await installPlugin({ source: args.source, ...grants });
     console.log(`installed ${result.name}@${result.version}`);
     console.log(`  → ${result.dest}`);
-    await reloadDaemon().catch(() => {});
+    await ensureDaemonForPlugin(result.name).catch(() => {});
     return result;
   },
 });
@@ -131,7 +178,7 @@ const runSubcommand = defineCommand({
       pluginName = installed.name;
       runOverrides = null;
       console.log(`installed ${installed.name}@${installed.version}`);
-      await reloadDaemon().catch(() => {});
+      await ensureDaemonForPlugin(installed.name).catch(() => {});
     }
 
     if (args.detach) {
