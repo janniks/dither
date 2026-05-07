@@ -19,7 +19,7 @@ my-plugin/
 
 The plugin imports from `@dither/plugin` and writes markdown entries via `writeEntry()`. The host stamps the resulting files with their `id`, `source`, and `collection` and copies them into the configured library at `<library>/<collection>/`.
 
-> **Deno is required.** The host spawns plugins with `deno run`. You need Deno (v2.x tested) on any machine that runs plugins, including your dev box. Plugins do not run under Node.
+> **Plugins run under Deno**, not Node. dither downloads and pins its own Deno at `<dither-home>/bin/deno-<version>` on first plugin install/run, so you don't need Deno on `PATH`. Set `DITHER_USE_SYSTEM_DENO=1` to opt out and use the system `deno` (e.g. in CI).
 
 ## What a plugin can do
 

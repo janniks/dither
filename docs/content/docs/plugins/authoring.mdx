@@ -7,7 +7,7 @@ This page walks from a one-file "Hello world" plugin to one with env values, fil
 
 ## Prerequisites
 
-- **Deno v2.x** on your `PATH`. The host spawns plugins via `spawn("deno", ...)`; there is no embedded runtime.
+- **Deno** — dither downloads and pins its own Deno on first plugin install/run, so you don't need it on `PATH`. Set `DITHER_USE_SYSTEM_DENO=1` to use a system `deno` (CI / dev escape hatch).
 - **dither** installed and on your `PATH`.
 
 ## 1. Directory layout

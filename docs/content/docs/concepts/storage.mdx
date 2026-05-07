@@ -27,6 +27,7 @@ The split keeps "your stuff" (markdown) cleanly separated from "dither's bookkee
 | `<dither-home>/runs/<run-id>/`                  | Per-run scratch dir. The plugin writes its `*.md` output here.             | `dither plugin run` (auto-cleaned) |
 | `<dither-home>/logs/<name>-<ts>.log`            | Captured stdout/stderr of `dither plugin run --detach`.                    | `dither plugin run --detach`       |
 | `<dither-home>/locks/`                          | Per-plugin lock files used to serialise concurrent runs.                   | `dither plugin run`, daemon        |
+| `<dither-home>/bin/deno-<version>`              | dither-managed Deno binary used to spawn plugins. SHA-verified at install. | `dither plugin install` / `run` (lazy bootstrap) |
 
 `runs/<run-id>/` is ephemeral. After a successful promote the host removes it. Don't put anything you care about in there.
 

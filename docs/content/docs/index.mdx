@@ -28,7 +28,7 @@ node packages/cli/dist/cli.mjs --help
 ### Requirements
 
 - **Node 20+** to run the CLI itself.
-- **Deno on `PATH`** — the plugin runner spawns `deno` to execute plugin code in a sandbox. Plugin commands will fail without it.
+- **Deno** — dither downloads and pins its own Deno on first plugin install or run; you don't need it on `PATH`. Set `DITHER_USE_SYSTEM_DENO=1` to opt out and use the system `deno` instead (CI / dev escape hatch).
 - On the first hybrid search, qmd downloads its embedding + reranker models (~1–2 GB). `dither init` pre-fetches them by default; pass `--no-download` to skip and let them lazy-load instead.
 
 ### Where dither stores things

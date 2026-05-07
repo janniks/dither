@@ -5,7 +5,7 @@ description: Install, run, list, and remove plugins.
 
 Plugins are small Deno programs that write markdown into collections you've granted them. The CLI manages four lifecycle actions. All four refuse with the standard pre-init error until [`dither init`](/docs/cli/init) has run.
 
-> **Deno is required** on `PATH` for `plugin run`. The runner spawns `deno` with derived `--allow-*` flags.
+> Plugins run under Deno. dither downloads and pins its own Deno at `<dither-home>/bin/deno-<version>` on first need; no `PATH` install required. Set `DITHER_USE_SYSTEM_DENO=1` to use the system `deno` instead.
 
 ## When to use install vs run
 
