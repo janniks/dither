@@ -1,10 +1,11 @@
 import { defineCommand } from "citty";
 import { existsSync } from "node:fs";
-import { access, lstat, mkdir, realpath } from "node:fs/promises";
+import { access, lstat, mkdir, realpath, rm } from "node:fs/promises";
 import { constants } from "node:fs";
 import { join, resolve } from "node:path";
-import { resolveHome } from "../home";
+import { resolveHome, indexDbPath } from "../home";
 import { loadConfig, saveConfig, type DitherConfig } from "../config";
+import { openStore } from "../store";
 
 /**
  * Resolve a `--library <path>` value into a canonical, writable directory
@@ -21,8 +22,6 @@ async function resolveLibraryPath(input: string): Promise<{ path: string; create
 
   if (existsSync(absolute)) {
     const stat = await lstat(absolute);
-    // If the path is a symlink, resolve to the real target before checking
-    // type — a symlink to a directory is fine, a symlink to a file is not.
     const targetForCheck = stat.isSymbolicLink() ? await realpath(absolute) : absolute;
     const targetStat = await lstat(targetForCheck);
     if (!targetStat.isDirectory()) {
@@ -41,6 +40,24 @@ async function resolveLibraryPath(input: string): Promise<{ path: string; create
   return { path: await realpath(absolute), created };
 }
 
+/**
+ * Best-effort model weight prefetch. qmd's embedding/rerank models are
+ * downloaded lazily on first use — calling `embed()` here triggers that
+ * load now so the first `dither search` doesn't hang on a surprise
+ * download. Failure is non-fatal: search degrades to lex-only until the
+ * models land on a later attempt.
+ */
+async function prefetchWeights(): Promise<{ ok: boolean; reason?: string }> {
+  try {
+    const store = await openStore();
+    if (!store) return { ok: true }; // empty library — nothing to do
+    await store.embed();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export const initCommand = defineCommand({
   meta: {
     name: "init",
@@ -51,20 +68,41 @@ export const initCommand = defineCommand({
       type: "string",
       description: "Library directory (default: <dither-home>/library).",
     },
+    force: {
+      type: "boolean",
+      description: "Overwrite an existing config; rebuild the qmd index.",
+      default: false,
+    },
+    download: {
+      type: "boolean",
+      description: "Pre-download qmd model weights at init (--no-download to skip).",
+      default: true,
+    },
   },
   async run({ args }) {
     const home = resolveHome();
     await mkdir(home, { recursive: true });
 
     const existing = await loadConfig();
-    if (existing) {
+    if (existing && !args.force) {
       console.log(`dither is already initialized at ${home}`);
       console.log(`  library: ${existing.library.path}`);
+      console.log("  re-run with --force to reconfigure");
       return existing;
     }
 
     const requested = args.library ?? join(home, "library");
     const { path: libraryPath, created } = await resolveLibraryPath(requested);
+
+    // On --force, the dbPath is the same but its contents reference the old
+    // library's subdirs. Drop it so the next openStore registers the new
+    // library's subdirs and store.update() rebuilds from scratch.
+    if (existing && args.force) {
+      const dbPath = indexDbPath();
+      if (existsSync(dbPath)) {
+        await rm(dbPath, { force: true });
+      }
+    }
 
     const cfg: DitherConfig = {
       schema: { version: 1 },
@@ -72,8 +110,24 @@ export const initCommand = defineCommand({
     };
     await saveConfig(cfg);
 
-    console.log(`initialized dither at ${home}`);
-    console.log(`  library: ${libraryPath}${created ? " (created)" : ""}`);
+    // Initialize / rebuild the qmd index over the new library's subdirs.
+    // Empty library → openStore returns null and no SQLite is created until
+    // a plugin promotes content; that's fine, schema is created lazily then.
+    const store = await openStore();
+    if (store) await store.update();
+
+    let weightsNote = "";
+    if (args.download) {
+      const result = await prefetchWeights();
+      if (!result.ok) {
+        weightsNote = ` (weight prefetch failed: ${result.reason}; search will fall back to lex-only)`;
+      }
+    } else {
+      weightsNote = " (--no-download: weights not prefetched)";
+    }
+
+    console.log(`${existing ? "reconfigured" : "initialized"} dither at ${home}`);
+    console.log(`  library: ${libraryPath}${created ? " (created)" : ""}${weightsNote}`);
     return cfg;
   },
 });

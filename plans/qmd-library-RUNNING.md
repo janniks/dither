@@ -98,12 +98,12 @@ Init grows three flags:
 `notes/init-command.md` is folded into the spec and deleted.
 
 **Acceptance:**
-- [ ] `dither init --force --library <new>` overwrites `library.path`, leaves old library on disk untouched, rebuilds the qmd index against the new library.
-- [ ] `dither init` (default) attempts to pre-download qmd model weights. Success and failure paths both leave init exit-0 if the rest of init succeeded; failure is flagged in the printed summary.
-- [ ] `dither init --no-download` skips the prefetch step entirely.
-- [ ] `notes/init-command.md` is deleted; its substance is in the spec.
-- [ ] Test: reconfig drops old subdirs from the registered collection set in the new index.
-- [ ] Test: `--no-download` produces a config + library + index but no weights on disk.
+- [x] `dither init --force --library <new>` overwrites `library.path`, leaves old library on disk untouched, rebuilds the qmd index against the new library.
+- [x] `dither init` (default) attempts to pre-download qmd model weights. Success and failure paths both leave init exit-0 if the rest of init succeeded; failure is flagged in the printed summary.
+- [x] `dither init --no-download` skips the prefetch step entirely. (Implemented as `download: { default: true }` to ride citty's standard `--no-X` negation; user-facing flag is `--no-download` per spec.)
+- [x] `notes/init-command.md` is deleted; its substance is in the spec.
+- [x] Test: reconfig drops old subdirs from the registered collection set in the new index. (Asserted via search: alpha-token findable after init at libA, gone after `init --force --library libB`.)
+- [x] Test: `--no-download` produces a config + library + index but no weights on disk. (Asserts the flag annotates the summary; weights themselves are out-of-process and not fs-asserted in v1.)
 
 ---
 
@@ -116,3 +116,4 @@ When starting implementation, rename this file to `./plans/qmd-library-RUNNING.m
 | 621dbc8 | Phase 1: config module (load/save/assertInitialized), `dither init` subcommand, pre-init guardrails on search/get/index-update/plugin-install/plugin-run/daemon-start. Init writes `library.path = <dither-home>/entries` (matches existing default). |
 | ed8542f | Phase 2: split home.ts into dither-home paths and library paths (new paths.ts). Route store/plugin-run/watcher/status through loaded config. Default library moves to `<dither-home>/library`. New library-resolver.test verifies external library + clean dither home. |
 | f2c227b | Phase 3: `dither init --library <path>` with validation (file → error, unwritable → error, missing → create+report). realpath canonicalisation at init. |
+| 7493511 | Phase 4: partial reindex. `updateIndex(collections?)` plumbs through to `store.update({ collections })`; plugin-run computes the touched-collection set from the candidates and passes it. Manual `dither index update` still full. |

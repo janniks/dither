@@ -7,6 +7,7 @@ import {
   chmodSync,
   symlinkSync,
   realpathSync,
+  mkdirSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -198,5 +199,98 @@ describe("dither init (Phase 1)", () => {
     } finally {
       rmSync(externalLib, { recursive: true, force: true });
     }
+  });
+
+  it("--force --library <new> overwrites config, rebuilds index against new library", async () => {
+    const libA = mkdtempSync(join(tmpdir(), "dither-init-libA-"));
+    const libB = mkdtempSync(join(tmpdir(), "dither-init-libB-"));
+    mkdirSync(join(libA, "alpha"), { recursive: true });
+    writeFileSync(
+      join(libA, "alpha", "doc.md"),
+      "---\ntitle: alpha-doc\n---\n\nalpha-token unique content.\n",
+    );
+    mkdirSync(join(libB, "beta"), { recursive: true });
+    writeFileSync(
+      join(libB, "beta", "doc.md"),
+      "---\ntitle: beta-doc\n---\n\nbeta-token unique content.\n",
+    );
+
+    try {
+      const { main } = await import("../main");
+
+      // First init points at libA → alpha gets indexed.
+      await captureLogs(async () => {
+        await runCommand(main, {
+          rawArgs: ["init", "--library", libA, "--no-download"],
+        });
+      });
+
+      const { search } = await import("../search");
+      let alphaHits = await search({ query: "alpha-token", mode: "lex" });
+      expect(alphaHits.length).toBeGreaterThan(0);
+
+      // Reconfig to libB with --force.
+      await captureLogs(async () => {
+        await runCommand(main, {
+          rawArgs: ["init", "--force", "--library", libB, "--no-download"],
+        });
+      });
+
+      const { loadConfig } = await import("../config");
+      const cfg = await loadConfig();
+      expect(cfg?.library.path).toBe(realpathSync(libB));
+
+      // Old alpha content is no longer in the index (rebuilt from scratch
+      // against libB). Beta content is now searchable.
+      alphaHits = await search({ query: "alpha-token", mode: "lex" });
+      expect(alphaHits).toEqual([]);
+
+      const betaHits = await search({ query: "beta-token", mode: "lex" });
+      expect(betaHits.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(libA, { recursive: true, force: true });
+      rmSync(libB, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("--force without --library rebuilds against same library cleanly", async () => {
+    const lib = mkdtempSync(join(tmpdir(), "dither-init-libsame-"));
+    try {
+      const { main } = await import("../main");
+      await captureLogs(async () => {
+        await runCommand(main, {
+          rawArgs: ["init", "--library", lib, "--no-download"],
+        });
+      });
+
+      // --force with same library - should reconfigure cleanly.
+      const out = await captureLogs(async () => {
+        await runCommand(main, { rawArgs: ["init", "--force", "--no-download"] });
+      });
+      expect(out).toContain("reconfigured");
+    } finally {
+      rmSync(lib, { recursive: true, force: true });
+    }
+  });
+
+  it("re-running without --force prints hint about --force", async () => {
+    const { main } = await import("../main");
+    await captureLogs(async () => {
+      await runCommand(main, { rawArgs: ["init", "--no-download"] });
+    });
+
+    const out = await captureLogs(async () => {
+      await runCommand(main, { rawArgs: ["init"] });
+    });
+    expect(out).toContain("--force");
+  });
+
+  it("--no-download annotates the summary and skips prefetch", async () => {
+    const { main } = await import("../main");
+    const out = await captureLogs(async () => {
+      await runCommand(main, { rawArgs: ["init", "--no-download"] });
+    });
+    expect(out).toContain("--no-download");
+    expect(existsSync(join(home, "config.json"))).toBe(true);
   });
 });
