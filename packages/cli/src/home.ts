@@ -16,3 +16,19 @@ export function indexDbPath(): string {
 export function globalEnvPath(): string {
   return join(resolveHome(), "env.json");
 }
+
+export function pidFilePath(): string {
+  return join(resolveHome(), "dither.pid");
+}
+
+export function daemonLogPath(): string {
+  return join(resolveHome(), "logs", "daemon.log");
+}
+
+export function statusSnapshotPath(): string {
+  return join(resolveHome(), "status.json");
+}
+
+export function locksDirPath(): string {
+  return join(resolveHome(), "locks");
+}

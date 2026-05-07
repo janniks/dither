@@ -79,14 +79,14 @@ The empty inner loop is the point: phase 3 ships the lifecycle and the cross-pro
 
 **Acceptance:**
 
-- [ ] Daemon entrypoint runs detached with PID file at the known path; daemon log at the known path.
-- [ ] SIGTERM handler: stops accepting new triggers, waits up to 30 s for in-flight plugin children (none in this phase), exits.
-- [ ] SIGHUP handler is registered (no-op in this phase; reload semantics arrive in phase 4).
-- [ ] Status snapshot file written periodically and on event (event surface trivial in this phase: just up/down).
-- [ ] CLI subcommands `dither daemon start | stop | status | logs` work end-to-end.
-- [ ] `dither status` reads the snapshot and the lock dir; `--json` flag emits structured output.
-- [ ] Tests: daemon start → snapshot present; SIGTERM during quiet daemon → clean exit within timeout; status reads the snapshot correctly.
-- [ ] All gates green.
+- [x] Daemon entrypoint runs detached with PID file at the known path; daemon log at the known path.
+- [x] SIGTERM handler: stops accepting new triggers, waits up to 30 s for in-flight plugin children (none in this phase), exits.
+- [x] SIGHUP handler is registered (no-op in this phase; reload semantics arrive in phase 4).
+- [x] Status snapshot file written periodically and on event (event surface trivial in this phase: just up/down).
+- [x] CLI subcommands `dither daemon start | stop | status | logs` work end-to-end.
+- [x] `dither status` reads the snapshot and the lock dir; `--json` flag emits structured output.
+- [x] Tests: daemon start → snapshot present; SIGTERM during quiet daemon → clean exit within timeout; status reads the snapshot correctly.
+- [x] All gates green.
 
 ---
 
@@ -188,7 +188,8 @@ Linux and Windows are no-ops in this phase — TCC has no equivalent layer; Unix
 
 When starting implementation, rename this file to `./plans/daemon-RUNNING.md` (signals work in progress so another agent can pick up if interrupted). Work one phase at a time, ticking each phase's acceptance criteria as you satisfy them. Stage and commit only that phase's changes after finishing, then continue to the next phase. Append a row to the log below after every phase. When all phases complete, rename back to `./plans/daemon.md`.
 
-| commit  | summary                                                                                                                                                                                                           |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| a74bedd | Phase 1: per-plugin lock primitive (`acquire`/`release` in `locks.ts`), wired into `runPlugin` with try/finally; concurrent same-plugin runs reject with "already running"; lock released on success and failure. |
-| _pending_ | Phase 2: run-history journal at `~/.dither/history/<runId>/` (manifest, events.ndjson, result); `dither runs list` and `runs tail` subcommands; runPlugin produces journal entries on success and failure (with stderrTail + exitCode). |
+| commit  | summary                                                                                                                                                                                                                                 |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a74bedd | Phase 1: per-plugin lock primitive (`acquire`/`release` in `locks.ts`), wired into `runPlugin` with try/finally; concurrent same-plugin runs reject with "already running"; lock released on success and failure.                       |
+| 327d44c | Phase 2: run-history journal at `~/.dither/history/<runId>/` (manifest, events.ndjson, result); `dither runs list` and `runs tail` subcommands; runPlugin produces journal entries on success and failure (with stderrTail + exitCode). |
+| _pending_ | Phase 3: daemon entrypoint (`runDaemon`), PID file + status snapshot + SIGTERM/SIGHUP handlers; `dither daemon start/stop/status/reload/logs` subcommands; `dither status --json`; in-process lifecycle test. |

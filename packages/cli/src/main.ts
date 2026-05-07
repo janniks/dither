@@ -6,6 +6,7 @@ import { indexCommand } from "./commands/index";
 import { statusCommand } from "./commands/status";
 import { envCommand } from "./commands/env";
 import { runsCommand } from "./commands/runs";
+import { daemonCommand } from "./commands/daemon";
 
 export const main = defineCommand({
   meta: {
@@ -20,6 +21,7 @@ export const main = defineCommand({
     env: envCommand,
     index: indexCommand,
     runs: runsCommand,
+    daemon: daemonCommand,
     status: statusCommand,
   },
 });

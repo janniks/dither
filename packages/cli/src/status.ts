@@ -3,12 +3,14 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { resolveHome } from "./home";
 import { listPlugins } from "./plugin-list";
+import { getDaemonStatus, type DaemonStatus } from "./daemon-control";
 
 export interface DitherStatus {
   home: string;
   plugins: number;
   collections: number;
   entries: number;
+  daemon: DaemonStatus;
 }
 
 async function countMarkdownEntries(root: string): Promise<{
@@ -48,5 +50,6 @@ export async function getStatus(): Promise<DitherStatus> {
   const home = resolveHome();
   const plugins = (await listPlugins()).length;
   const { collections, entries } = await countMarkdownEntries(join(home, "entries"));
-  return { home, plugins, collections, entries };
+  const daemon = await getDaemonStatus();
+  return { home, plugins, collections, entries, daemon };
 }
