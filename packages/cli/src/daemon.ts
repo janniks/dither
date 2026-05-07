@@ -4,7 +4,9 @@ import { pidFilePath, statusSnapshotPath, locksDirPath, resolveHome } from "./ho
 import { listRuns, type RunSummary } from "./journal";
 import { listPlugins } from "./plugin-list";
 import { Scheduler, type ScheduleEntry } from "./scheduler";
+import { Watcher, type WatchEntry } from "./watcher";
 import { runPlugin } from "./plugin-run";
+import { readFile as readFileAsync } from "node:fs/promises";
 
 /**
  * Long-lived daemon process. In phase 3 the inner loop is a quiet heartbeat
@@ -38,6 +40,16 @@ interface DaemonState {
   shuttingDown: boolean;
   reloadRequested: boolean;
   scheduleCount: number;
+  watchCount: number;
+}
+
+interface GrantsManifest {
+  schedule?: string;
+  watch?: { collections: string[]; glob?: string };
+}
+
+interface GrantsBlob {
+  manifest?: GrantsManifest;
 }
 
 async function loadScheduleEntries(): Promise<ScheduleEntry[]> {
@@ -49,14 +61,42 @@ async function loadScheduleEntries(): Promise<ScheduleEntry[]> {
   return entries;
 }
 
-async function fireScheduled(name: string): Promise<void> {
+async function loadWatchEntries(): Promise<WatchEntry[]> {
+  const plugins = await listPlugins();
+  const out: WatchEntry[] = [];
+  for (const p of plugins) {
+    const grantsPath = join(resolveHome(), "grants", `${p.name}.json`);
+    try {
+      const blob = JSON.parse(await readFileAsync(grantsPath, "utf-8")) as GrantsBlob;
+      const watch = blob.manifest?.watch;
+      if (watch && Array.isArray(watch.collections) && watch.collections.length > 0) {
+        out.push({
+          name: p.name,
+          collections: watch.collections,
+          ...(watch.glob ? { glob: watch.glob } : {}),
+        });
+      }
+    } catch {
+      // skip unreadable grants files
+    }
+  }
+  return out;
+}
+
+async function fireWithSuppress(
+  watcher: Watcher,
+  name: string,
+  trigger: "scheduled" | "watch",
+  targets?: string[],
+): Promise<void> {
   try {
-    await runPlugin({ name, trigger: "scheduled" });
+    const result = await runPlugin({ name, trigger, targets });
+    // Self-trigger suppression: the watcher would otherwise fire every plugin
+    // whose collection just got written to.
+    for (const path of result.promoted) watcher.suppressOnce(path);
   } catch (err) {
-    // Lock conflicts (already running) and plugin failures both arrive here.
-    // The journal records the failure; just log a single line.
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[daemon] scheduled fire of '${name}' failed: ${message}`);
+    console.error(`[daemon] ${trigger} fire of '${name}' failed: ${message}`);
   }
 }
 
@@ -115,7 +155,7 @@ async function writeStatusSnapshot(state: DaemonState): Promise<void> {
     lastTick: new Date().toISOString(),
     version: "0.0.1",
     schedules: state.scheduleCount,
-    watches: 0,
+    watches: state.watchCount,
     running,
     recentRuns,
   };
@@ -136,13 +176,24 @@ export async function runDaemon(): Promise<void> {
     shuttingDown: false,
     reloadRequested: false,
     scheduleCount: 0,
+    watchCount: 0,
   };
 
-  const scheduler = new Scheduler(fireScheduled);
+  // eslint-disable-next-line prefer-const
+  let watcher!: Watcher;
+  watcher = new Watcher((name: string, targets: string[]) =>
+    fireWithSuppress(watcher, name, "watch", targets),
+  );
+  const scheduler = new Scheduler((name: string) => fireWithSuppress(watcher, name, "scheduled"));
   async function reconcile(): Promise<void> {
-    const entries = await loadScheduleEntries();
-    scheduler.set(entries);
+    const [scheduleEntries, watchEntries] = await Promise.all([
+      loadScheduleEntries(),
+      loadWatchEntries(),
+    ]);
+    scheduler.set(scheduleEntries);
+    watcher.set(watchEntries);
     state.scheduleCount = scheduler.stats().count;
+    state.watchCount = watcher.stats().count;
   }
 
   await writePidFile();
@@ -167,6 +218,7 @@ export async function runDaemon(): Promise<void> {
   async function shutdown(): Promise<void> {
     clearInterval(tickHandle);
     scheduler.stop();
+    watcher.stop();
     // Wait for in-flight plugin children (manual or scheduled) to finish.
     const start = Date.now();
     while (Date.now() - start < SHUTDOWN_GRACE_MS) {

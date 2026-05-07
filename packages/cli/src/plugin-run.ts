@@ -31,6 +31,8 @@ export interface RunOptions {
   net?: string[];
   /** Per-run collection grant additions. */
   collections?: string[];
+  /** Files that triggered this run (for watch fires). Surfaced in input.json.targets. */
+  targets?: string[];
   /** Called for every `progress()` NDJSON message the plugin emits on stderr. */
   onProgress?: (msg: ProgressMessage) => void;
 }
@@ -245,7 +247,7 @@ async function runPluginLocked(
           trigger,
           env: resolvedEnv,
           files: grantFiles,
-          targets: [],
+          targets: opts.targets ?? [],
         },
         null,
         2,
@@ -262,7 +264,13 @@ async function runPluginLocked(
       }),
     );
 
-    const allowRead = [pluginDir, runDir, sdkPath, ...Object.values(grantFiles)].join(",");
+    const allowRead = [
+      pluginDir,
+      runDir,
+      sdkPath,
+      ...Object.values(grantFiles),
+      ...(opts.targets ?? []),
+    ].join(",");
     const allowWrite = [stateDir, runDir].join(",");
     const allowEnv = DITHER_ENV_VARS.join(",");
 

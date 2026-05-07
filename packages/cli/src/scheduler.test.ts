@@ -37,7 +37,9 @@ describe("Scheduler", () => {
 
   it("malformed schedules don't take down sibling schedules", () => {
     const fires: string[] = [];
-    const sched = new Scheduler((name) => fires.push(name));
+    const sched = new Scheduler((name) => {
+      fires.push(name);
+    });
     sched.set([
       { name: "good", schedule: "every 5m" },
       { name: "bad", schedule: "this is not a schedule" },
