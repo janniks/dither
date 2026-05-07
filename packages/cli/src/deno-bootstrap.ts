@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, rename, rm, writeFile, mkdtemp, readdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { binDir } from "./home";
@@ -126,8 +125,11 @@ async function performInstall(target: Target, finalPath: string): Promise<void> 
         `  retry: re-run the same command. If this persists, the upstream release may have been tampered with — file an issue.`,
     );
   }
+  // Scratch dir lives next to the final path so `rename(2)` always operates
+  // within one filesystem. Putting scratch under `os.tmpdir()` would EXDEV on
+  // Linux when /tmp is tmpfs and $HOME is on a different volume.
   await mkdir(binDir(), { recursive: true });
-  const scratch = await mkdtemp(join(tmpdir(), "dither-deno-"));
+  const scratch = await mkdtemp(join(binDir(), ".tmp-deno-"));
   try {
     const extractedPath = await extractDeno(bytes, scratch);
     await chmod(extractedPath, 0o755);
