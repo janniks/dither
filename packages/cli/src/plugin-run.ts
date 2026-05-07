@@ -371,7 +371,8 @@ async function runPluginLocked(
     }
 
     if (promoted.length > 0) {
-      await updateIndex();
+      const touchedCollections = Array.from(new Set(candidates.map((c) => c.collection)));
+      await updateIndex(touchedCollections);
     }
 
     return promoted;

@@ -7,19 +7,24 @@ export interface UpdateSummary {
 }
 
 /**
- * Re-index all configured collections. Single chokepoint for keeping
- * the qmd index fresh — called after plugin promote and via the
- * `dither index update` CLI subcommand.
+ * Re-index the qmd store. Single chokepoint, called after plugin promote
+ * and via the `dither index update` CLI subcommand.
  *
- * Returns zero counts when there are no collections (i.e. the entries
- * dir is missing or contains no subdirectories).
+ * If `collections` is provided, only those collections are rescanned —
+ * the rest of the library is left untouched (per the qmd SDK's
+ * `update({ collections })` semantics). Pass nothing for a full rescan.
+ *
+ * Returns zero counts when the library has no collections (subdirs).
  */
-export async function updateIndex(): Promise<UpdateSummary> {
+export async function updateIndex(collections?: string[]): Promise<UpdateSummary> {
   const store = await openStore();
   if (!store) {
     return { collections: 0, indexed: 0, updated: 0 };
   }
-  const result = await store.update();
+  const result =
+    collections && collections.length > 0
+      ? await store.update({ collections })
+      : await store.update();
   return {
     collections: result.collections ?? 0,
     indexed: result.indexed ?? 0,

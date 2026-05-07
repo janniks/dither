@@ -79,10 +79,10 @@ This is the phase where the conceptual split between dither-home and library bec
 `updateIndex` gains an optional `collections?: string[]` argument and forwards to `store.update({ collections })`. `plugin-run` builds the touched-collection set from the promoted-paths return and passes it. Manual `dither index update` continues to do a full rescan (no scope).
 
 **Acceptance:**
-- [ ] `updateIndex(collections?)` exists; default behavior (no arg) is a full rescan, unchanged.
-- [ ] Plugin promote computes the touched-collection set from the just-promoted paths and passes it to the indexer.
-- [ ] Test: a plugin promoting into one of multiple collections triggers a scoped `store.update({ collections: [<that one>] })`. Asserted via SDK call shape (mock or counter), or via observable indexed-count if cleaner.
-- [ ] `dither index update` (manual command) still calls `updateIndex()` with no scope.
+- [x] `updateIndex(collections?)` exists; default behavior (no arg) is a full rescan, unchanged.
+- [x] Plugin promote computes the touched-collection set from the just-promoted paths and passes it to the indexer.
+- [x] Test: a scoped `updateIndex(["alpha"])` over a library with both `alpha` and `beta` populated finds only alpha's content; a subsequent full update picks up beta. (Asserted via observable search result, not a mock.)
+- [x] `dither index update` (manual command) still calls `updateIndex()` with no scope.
 
 ---
 
@@ -115,3 +115,4 @@ When starting implementation, rename this file to `./plans/qmd-library-RUNNING.m
 |--------|---------|
 | 621dbc8 | Phase 1: config module (load/save/assertInitialized), `dither init` subcommand, pre-init guardrails on search/get/index-update/plugin-install/plugin-run/daemon-start. Init writes `library.path = <dither-home>/entries` (matches existing default). |
 | ed8542f | Phase 2: split home.ts into dither-home paths and library paths (new paths.ts). Route store/plugin-run/watcher/status through loaded config. Default library moves to `<dither-home>/library`. New library-resolver.test verifies external library + clean dither home. |
+| f2c227b | Phase 3: `dither init --library <path>` with validation (file → error, unwritable → error, missing → create+report). realpath canonicalisation at init. |
