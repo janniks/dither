@@ -383,7 +383,14 @@ async function runPluginLocked(
     }
 
     if (promoted.length > 0) {
-      const touchedCollections = Array.from(new Set(candidates.map((c) => c.collection)));
+      // qmd collections are top-level library subdirs (see store.ts), so a
+      // multi-segment frontmatter `collection: "messages/inbox"` must be
+      // narrowed to `"messages"` before being passed to updateIndex —
+      // otherwise qmd's exact-name filter matches nothing and the index
+      // silently stays stale.
+      const touchedCollections = Array.from(
+        new Set(candidates.map((c) => c.collection.split("/")[0]!)),
+      );
       await updateIndex(touchedCollections);
     }
 

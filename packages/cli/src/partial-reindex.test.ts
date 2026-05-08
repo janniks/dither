@@ -53,6 +53,29 @@ describe("partial reindex (Phase 4)", () => {
     expect(betaHitsAfter.length).toBeGreaterThan(0);
   }, 30_000);
 
+  it("plugin-run-style nested collection path narrows to top-level qmd collection", async () => {
+    // Mirror the case plugin-run produces: a candidate with collection
+    // "messages/inbox" must be narrowed to "messages" (the qmd collection
+    // name = top-level library subdir) before calling updateIndex.
+    const nested = join(home, "entries", "messages", "inbox");
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(join(nested, "doc.md"), "---\ntitle: nested\n---\n\nNESTEDTOKEN unique body.\n");
+
+    const candidates = [{ collection: "messages/inbox" }];
+    const touchedCollections = Array.from(
+      new Set(candidates.map((c) => c.collection.split("/")[0]!)),
+    );
+    expect(touchedCollections).toEqual(["messages"]);
+
+    const { updateIndex } = await import("./update-index");
+    const result = await updateIndex(touchedCollections);
+    expect(result.collections).toBe(1);
+
+    const { search } = await import("./search");
+    const hits = await search({ query: "NESTEDTOKEN", mode: "lex" });
+    expect(hits.length).toBeGreaterThan(0);
+  }, 30_000);
+
   it("updateIndex with no arg is unchanged (full rescan)", async () => {
     const collA = join(home, "entries", "alpha");
     mkdirSync(collA, { recursive: true });
