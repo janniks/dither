@@ -150,6 +150,13 @@ work.
   - `MAX_URLS` — testing cap; empty default = no cap.
   - `TIMEOUT_MS` — per-fetch timeout; default 15000.
   - `USER_AGENT` — default `dither-url-scraper-test/0.1`.
+  - `SKIP_DOMAINS` — comma-separated host list; default
+    `x.com,twitter.com`. Added post-Phase-4 after observing 5/7 t.co
+    URLs redirect into Twitter's anti-bot block page. Matches exact
+    host or any subdomain. Applied to source URL host *and* (post-fetch)
+    to `final_url` host so shorteners that redirect into a blocked host
+    are dropped without producing a useless entry. Records `skipped: true`
+    in the cache so subsequent runs are no-ops.
 - `files`:
   - `SOURCE` — folder grant, required. Library subdir to scan.
 - `net`: `["*"]` — relies on the host's wildcard support (see "Host change"
@@ -303,7 +310,8 @@ that runs without an import-time error wins. The result determines what
 - URL canonicalization / dedupe across query-string variants.
 - Rendering JS-heavy SPAs (no headless browser).
 - Multi-language / multilingual special-casing in extraction.
-- `SKIP_HOSTS` / `INCLUDE_HOSTS` filters.
+- `INCLUDE_HOSTS` allowlist filter (kept simple — `SKIP_DOMAINS` denylist
+  added post-Phase-4 covers the load-bearing case).
 - Removing the test.local plugin and replacing it with a shippable
   `packages/plugin-url-scraper/` — that's a follow-up spec.
 - Relationship store / central index for parent lookups — see
