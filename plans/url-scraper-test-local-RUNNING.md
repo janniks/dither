@@ -168,16 +168,54 @@ won, Readability hit-rate on the real subset, observed throughput, any
 failure modes the spec didn't anticipate.
 
 **Acceptance:**
-- [ ] ~10 real twitter likes copied into SOURCE; `id`, `urls`, `source`
+- [x] ~10 real twitter likes copied into SOURCE; `id`, `urls`, `source`
       preserved.
-- [ ] Run completes; failures don't crash the orchestrator.
-- [ ] At least one real article ends up searchable via `d search` against
+- [x] Run completes; failures don't crash the orchestrator.
+- [x] At least one real article ends up searchable via `d search` against
       a phrase from its body.
-- [ ] `// TODO(patchEntry)` marker present at the new-parent-on-existing
+- [x] `// TODO(patchEntry)` marker present at the new-parent-on-existing
       branch with a one-line comment pointing at the notes file.
-- [ ] Phase log includes the lessons section with at least: chosen DOM
+- [x] Phase log includes the lessons section with at least: chosen DOM
       library, real-subset hit rate, throughput estimate, list of
       surprises.
+
+### Lessons captured (real subset)
+
+- **Chosen DOM library**: `linkedom` + `@mozilla/readability`. JSDOM blocked
+  by sandbox at import time (`debug` → `Object.keys(process.env)`).
+- **Real-subset hit rate**: 7 t.co URLs sampled (10 likes, 3 had no `urls:`
+  frontmatter or were already in cache).
+  - 5/7 (71%) resolved to `x.com/...` and got the **anti-bot block page**
+    served by Twitter. Body identical across all 5: "Something went wrong,
+    but don't fret — let's give it another shot. Some privacy related
+    extensions may cause issues on x.com. Please disable them and try again."
+    Title empty, body ~168 chars. This is the load-bearing surprise.
+  - 1/7 (alfredvc.no) → real article, title="Do you even know how LLMs
+    work?", body 12.2 KB. Search on "LLMs" surfaces it at score 1.000 —
+    higher than the linking tweet (0.500). **Central design hypothesis
+    confirmed.**
+  - 1/7 (pay.sh) → marketing landing page, title + 2.1 KB body. Decent.
+- **Useful-content rate**: 2/7 (29%). The shippable plugin needs an
+  anti-bot detector (heuristic: empty title + body < 500 chars + matches
+  known templates) to avoid storing useless "please enable JS" entries.
+- **Throughput**: ~1.1s per fetch with `MIN_DELAY_MS=1000`. 8 fetches in
+  ~9s wall-clock (matches the per-host 1s gap). For a 10k-like real
+  library that's ≈ 2.7h — acceptable as opt-in batch, not as a
+  daemon-driven sync.
+- **`net: ["*"]`** is the right grant model — 7 destination hosts emerged
+  from a single 8-URL run (t.co, x.com, alfredvc.no, pay.sh, plus the
+  fixture's example.com and httpbin.org). A hand-curated allowlist would
+  have failed before the first useful run.
+- **Pacing limitation**: pacer keys on the *source* host (t.co), not the
+  redirect target. With 7 t.co URLs, all redirects to x.com hit x.com
+  back-to-back without any per-target delay. We didn't trigger x.com's
+  rate-limiter (its anti-bot fired first), but the shippable plugin
+  should pace by the post-redirect host — or at minimum apply a
+  redirect-aware secondary gate.
+- **Limitation confirmed**: the new-parent-on-already-scraped-URL gap is
+  real but invisible during testing — none of our re-runs introduced new
+  parents. Will surface only in production with new tweets that link
+  already-scraped URLs.
 
 ---
 
@@ -213,4 +251,5 @@ phases complete, rename back to `./plans/url-scraper-test-local.md`.
 |--------|---------|
 | bcf01c5 | Phase 1: dom-smoke plugin probes DOM libs. linkedom + readability win; jsdom blocked by `debug` env probe. |
 | a0ee754 | Phase 2: tracer scraper end-to-end against synthetic fixture (3 scraped + 1 4xx); dedupe with 2 parents on example.com; per-host pacing 1.00s gap; search by body content works. Includes `plugin-run.ts` change to honor `net: ["*"]` as bare `--allow-net`. |
-| (pending) | Phase 3: `cache.ts` module; permanent-vs-transient skip verified — 2xx & 4xx → skip, 5xx → retry. Second run is a true no-op. |
+| 406a75b | Phase 3: `cache.ts` module; permanent-vs-transient skip verified — 2xx & 4xx → skip, 5xx → retry. Second run is a true no-op. |
+| (pending) | Phase 4: real twitter subset (10 likes). 5/7 hit x.com anti-bot block (load-bearing surprise). 2/7 yield real article content; "LLMs" search hits scraped alfredvc.no entry at score 1.000 over the linking tweet at 0.500. |
