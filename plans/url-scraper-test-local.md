@@ -261,4 +261,4 @@ phases complete, rename back to `./plans/url-scraper-test-local.md`.
 | a0ee754 | Phase 2: tracer scraper end-to-end against synthetic fixture (3 scraped + 1 4xx); dedupe with 2 parents on example.com; per-host pacing 1.00s gap; search by body content works. Includes `plugin-run.ts` change to honor `net: ["*"]` as bare `--allow-net`. |
 | 406a75b | Phase 3: `cache.ts` module; permanent-vs-transient skip verified — 2xx & 4xx → skip, 5xx → retry. Second run is a true no-op. |
 | 77c0bc1 | Phase 4: real twitter subset (10 likes). 5/7 hit x.com anti-bot block (load-bearing surprise). 2/7 yield real article content; "LLMs" search hits scraped alfredvc.no entry at score 1.000 over the linking tweet at 0.500. |
-| (pending) | Phase 5: 11 unit tests (4 extract, 7 render). `deno test` green. Plan complete; renamed back from RUNNING. |
+| 0d72a1d | Phase 5: 11 unit tests (4 extract, 7 render). `deno test` green. Plan complete; renamed back from RUNNING. |
