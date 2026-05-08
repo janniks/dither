@@ -290,7 +290,14 @@ async function runPluginLocked(
       `--allow-env=${allowEnv}`,
     ];
     if (grantNet.length) {
-      denoArgs.push(`--allow-net=${grantNet.join(",")}`);
+      // Sole `"*"` entry → bare --allow-net (any host). Required by plugins
+      // that fetch arbitrary URLs (e.g. URL scrapers); user opts in by
+      // accepting `net: ["*"]` from the manifest at install time.
+      if (grantNet.length === 1 && grantNet[0] === "*") {
+        denoArgs.push("--allow-net");
+      } else {
+        denoArgs.push(`--allow-net=${grantNet.join(",")}`);
+      }
     }
     denoArgs.push(join(pluginDir, "plugin.ts"));
 

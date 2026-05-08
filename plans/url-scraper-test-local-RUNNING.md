@@ -94,20 +94,30 @@ and `https://httpbin.org/status/404`. Marked `source: test-fixture` so the
 scraper doesn't refuse them.
 
 **Acceptance:**
-- [ ] Synthetic fixture exists and validates as real dither entries.
-- [ ] Plugin installs with `--file SOURCE=...` and `net: ["*"]` honored.
-- [ ] `d plugin run url-scraper-test --env MAX_URLS=5` produces one
+- [x] Synthetic fixture exists and validates as real dither entries.
+- [x] Plugin installs with `--file SOURCE=...` and `net: ["*"]` honored.
+- [x] `d plugin run url-scraper-test --env MAX_URLS=5` produces one
       `urls/<host>/<hash>.md` entry per successful (2xx) URL.
-- [ ] Two source entries linking the same URL produce one scraped entry
+- [x] Two source entries linking the same URL produce one scraped entry
       with both parents in `dither_parent_id` (within the run).
-- [ ] Run journal timestamps show ≥ 1s gaps between fetches to the same
+- [x] Run journal timestamps show ≥ 1s gaps between fetches to the same
       host.
-- [ ] `d index update && d search "<phrase from a known scraped page>"`
+- [x] `d index update && d search "<phrase from a known scraped page>"`
       surfaces the scraped entry.
-- [ ] Picking a search hit and reading frontmatter, `dither_parent_path[0]`
+- [x] Picking a search hit and reading frontmatter, `dither_parent_path[0]`
       points to a real source entry on disk.
-- [ ] 404 URL produces no entry; failure logged in plugin output.
-- [ ] Redirect chain results in the scraped entry's `final_url` ≠ `source_url`.
+- [x] 404 URL produces no entry; failure logged in plugin output.
+- [x] Redirect chain results in the scraped entry's `final_url` ≠ `source_url`.
+
+**Outcome:** Tracer scraper end-to-end against the synthetic fixture works.
+4 unique URLs collected from 2 entries; example.com had 2 parents and
+produced one entry with both ids in `dither_parent_id`. Redirect resolved:
+source_url=`httpbin.org/redirect-to?url=…` → final_url=`https://example.com/`,
+entry filed under `urls/example.com/`. Pacing visible in journal: two
+same-host (httpbin.org) calls were 1.00s apart. Search hits both scraped
+articles by body content (score 1.000). Side note: `--allow-net` host
+extension landed in `plugin-run.ts` to honor `net: ["*"]` as bare flag
+(the documented precondition).
 
 ---
 
@@ -193,4 +203,5 @@ phases complete, rename back to `./plans/url-scraper-test-local.md`.
 
 | commit | summary |
 |--------|---------|
-| (pending) | Phase 1: dom-smoke plugin probes DOM libs. linkedom + readability win; jsdom blocked by `debug` env probe. |
+| bcf01c5 | Phase 1: dom-smoke plugin probes DOM libs. linkedom + readability win; jsdom blocked by `debug` env probe. |
+| (pending) | Phase 2: tracer scraper end-to-end against synthetic fixture (3 scraped + 1 4xx); dedupe with 2 parents on example.com; per-host pacing 1.00s gap; search by body content works. Includes `plugin-run.ts` change to honor `net: ["*"]` as bare `--allow-net`. |
