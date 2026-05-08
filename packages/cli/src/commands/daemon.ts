@@ -6,6 +6,15 @@ import { assertInitialized } from "../config";
 import { startDaemon, stopDaemon, getDaemonStatus, reloadDaemon } from "../daemon-control";
 import { runDaemon } from "../daemon";
 
+const PREVIEW_LIMIT = 4;
+
+// Print up to PREVIEW_LIMIT entries; if more exist, append "..." so the
+// caller knows the printed list is a preview, not the full set.
+function printPreview<T>(items: readonly T[], format: (item: T) => string): void {
+  for (const item of items.slice(0, PREVIEW_LIMIT)) console.log(format(item));
+  if (items.length > PREVIEW_LIMIT) console.log("  - ...");
+}
+
 const startSubcommand = defineCommand({
   meta: {
     name: "start",
@@ -69,27 +78,27 @@ const statusSubcommand = defineCommand({
       console.log(`startedAt:   ${s.snapshot.startedAt}`);
       console.log(`lastTick:    ${s.snapshot.lastTick}`);
       console.log(`schedules:   ${s.snapshot.schedules}`);
-      for (const e of s.snapshot.scheduleEntries.slice(0, 3)) {
-        console.log(`  - ${e.name}: ${e.pattern} (next ${e.nextRun ?? "—"})`);
-      }
+      printPreview(s.snapshot.scheduleEntries, (e) =>
+        `  - ${e.name}: ${e.pattern} (next ${e.nextRun ?? "—"})`,
+      );
       console.log(`watches:     ${s.snapshot.watches}`);
-      for (const e of s.snapshot.watchEntries.slice(0, 3)) {
-        console.log(`  - ${e.name}: ${e.collections.join(", ")} ${e.glob}`);
-      }
+      printPreview(s.snapshot.watchEntries, (e) =>
+        `  - ${e.name}: ${e.collections.join(", ")} ${e.glob}`,
+      );
       console.log(`running:     ${s.snapshot.running.length}`);
       for (const r of s.snapshot.running) {
         console.log(`  - ${r.name} (pid ${r.pid})`);
       }
       if (s.snapshot.recentHalts.length) {
         console.log(`halts:       ${s.snapshot.recentHalts.length}`);
-        for (const h of s.snapshot.recentHalts.slice(0, 3)) {
-          console.log(`  - ${h.pluginName} via ${h.triggerSource} @ depth ${h.depth} (${h.at})`);
-        }
+        printPreview(s.snapshot.recentHalts, (h) =>
+          `  - ${h.pluginName} via ${h.triggerSource} @ depth ${h.depth} (${h.at})`,
+        );
       }
-      const failures = s.snapshot.recentRuns.filter((r) => r.status === "fail").slice(0, 3);
+      const failures = s.snapshot.recentRuns.filter((r) => r.status === "fail");
       if (failures.length) {
         console.log(`failures:    ${failures.length} recent`);
-        for (const f of failures) console.log(`  - ${f.plugin} (${f.runId})`);
+        printPreview(failures, (f) => `  - ${f.plugin} (${f.runId})`);
       }
     } else {
       console.log("snapshot:    (not yet written)");
