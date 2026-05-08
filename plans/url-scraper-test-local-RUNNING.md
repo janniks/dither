@@ -133,15 +133,23 @@ run. Plugin emits an end-of-run summary line: `scraped N, skipped M from
 cache, X failed`.
 
 **Acceptance:**
-- [ ] `state.json` matches the documented schema after a successful run.
-- [ ] Re-running with no SOURCE changes prints "scraped 0, skipped N from
+- [x] `state.json` matches the documented schema after a successful run.
+- [x] Re-running with no SOURCE changes prints "scraped 0, skipped N from
       cache, 0 failed" and writes no new files in `urls/`.
-- [ ] After a synthetic 404 URL is scraped once, a second run skips it
+- [x] After a synthetic 404 URL is scraped once, a second run skips it
       without a network request.
-- [ ] After a synthetic 5xx URL is scraped once, a second run does fetch
+- [x] After a synthetic 5xx URL is scraped once, a second run does fetch
       it again (verify via run journal).
-- [ ] Deleting `state.json` causes a re-run to re-fetch every URL.
-- [ ] Phase log records per-branch behavior observed.
+- [x] Deleting `state.json` causes a re-run to re-fetch every URL.
+- [x] Phase log records per-branch behavior observed.
+
+**Outcome:** `cache.ts` extracted with `decide(url, cache)` returning
+`fetch` / `skip-cached` / `skip-permanent`. State persisted via SDK
+readState/writeState. Verified on the synthetic fixture extended with a
+`httpbin.org/status/500` URL: 2xx → skip-cached, 4xx → skip-permanent,
+5xx → fetch (every run). Second run with no changes is a true no-op
+("scraped 0, skipped 4 from cache, failed 0"). Deleting state.json
+re-runs every URL.
 
 ---
 
@@ -204,4 +212,5 @@ phases complete, rename back to `./plans/url-scraper-test-local.md`.
 | commit | summary |
 |--------|---------|
 | bcf01c5 | Phase 1: dom-smoke plugin probes DOM libs. linkedom + readability win; jsdom blocked by `debug` env probe. |
-| (pending) | Phase 2: tracer scraper end-to-end against synthetic fixture (3 scraped + 1 4xx); dedupe with 2 parents on example.com; per-host pacing 1.00s gap; search by body content works. Includes `plugin-run.ts` change to honor `net: ["*"]` as bare `--allow-net`. |
+| a0ee754 | Phase 2: tracer scraper end-to-end against synthetic fixture (3 scraped + 1 4xx); dedupe with 2 parents on example.com; per-host pacing 1.00s gap; search by body content works. Includes `plugin-run.ts` change to honor `net: ["*"]` as bare `--allow-net`. |
+| (pending) | Phase 3: `cache.ts` module; permanent-vs-transient skip verified — 2xx & 4xx → skip, 5xx → retry. Second run is a true no-op. |
