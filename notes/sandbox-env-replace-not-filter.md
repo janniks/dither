@@ -81,29 +81,16 @@ So the host can use an absolute Deno path (already produced by
 `deno-bootstrap.ts`'s `ensureDeno`), pass a literal env, and the child runs
 without inheriting anything. No `PATH`, no `HOME`, no `TMPDIR` needed.
 
-## Open question — manifest env routing
+## Manifest env routing — decided
 
-Today, plugin-declared env (`env: [{ name, default, ... }]`) flows to the
-plugin via `input.json` only — never via `process.env`. The plugin reads it
-with `await readInput().then(i => i.env.NAME)`.
+Resolved manifest env flows through **both** `process.env` (conventional;
+libraries auto-read) **and** `input.json` (structured; via `readInput()`).
+Plugin author picks per call site. See `notes/manifest-env-routing.md`
+for the full rationale and implementation plan.
 
-**Proposed**: also route resolved manifest env through `process.env`, gated
-by Deno's `--allow-env`. So `--allow-env=OPENAI_API_KEY` adds:
-- `OPENAI_API_KEY` to the plugin's `--allow-env` list,
-- `process.env.OPENAI_API_KEY = <value>` from the global env store / per-run
-  literal.
-
-Convention payoff: most npm libs (`new OpenAI()`, `new Anthropic()`) auto-
-pick up keys from `process.env` without plumbing. Plugin authors don't have
-to learn an extra channel.
-
-Cost: every transitive dep can now read those names. But the user explicitly
-granted `--allow-env=NAME`; dependencies inheriting access matches the
-explicit grant intent.
-
-I'd default to "yes, route through process.env" because the convention payoff
-is large and the threat model is consistent (explicit user opt-in). Pending
-confirmation.
+The hardcoded shim list above is independent of this — those names live
+only in `process.env` with sanitized constant values, and don't appear in
+`input.env`.
 
 ## Out of scope (this note)
 

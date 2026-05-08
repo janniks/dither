@@ -201,6 +201,8 @@ Walking through what an attacker could try:
 ## Cross-references
 
 - `notes/sandbox-env-replace-not-filter.md` — env shim approach.
+- `notes/manifest-env-routing.md` — resolved manifest env flows through
+  both `process.env` and `input.json`.
 - `notes/sandbox-ffi-policy.md` — never grant FFI, native via host.
 - `notes/plugin-state-sqlite.md` — `node:sqlite` is the right pick;
   verifies the FFI-policy implication.
