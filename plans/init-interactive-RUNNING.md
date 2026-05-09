@@ -109,31 +109,44 @@ of-init summary + next-step nudge, and Ctrl-C clean exit. Drop `--force`.
 Existing `--library` flag path keeps working unchanged.
 
 **Acceptance:**
-- [ ] `consola` added as a CLI dep; the prompt wrapper module exposes a
+- [x] `consola` added as a CLI dep; the prompt wrapper module exposes a
       `promptText({ message, default, hint, validate })` helper.
-- [ ] `dither init` on a TTY with no existing config prompts for the
+- [x] `dither init` on a TTY with no existing config prompts for the
       library path; default is `<DITHER_DIR>/library`; placeholder hint
       shows `~/Documents/dither`; Enter accepts the default.
-- [ ] Validation runs after submission (writable directory, mkdir if
+- [x] Validation runs after submission (writable directory, mkdir if
       absent, realpath canonicalisation). Failures re-prompt with the
       error inline rather than crashing.
-- [ ] `dither init` without a TTY and without `--library` exits with a
+- [x] `dither init` without a TTY and without `--library` exits with a
       non-zero status and a clear error message naming the missing flag.
-- [ ] `dither init --library /path` runs non-interactively (today's
+- [x] `dither init --library /path` runs non-interactively (today's
       behavior unchanged).
-- [ ] `dither init` on an already-configured home is a no-op that prints
+- [x] `dither init` on an already-configured home is a no-op that prints
       the existing summary and exits 0.
-- [ ] `--force` flag is removed from the init command.
-- [ ] `--download` flag remains, default `true`, no prompt.
-- [ ] After successful init, output is three short lines (config wrote,
+- [x] `--force` flag is removed from the init command.
+- [x] `--download` flag remains, default `true`, no prompt.
+- [x] After successful init, output is three short lines (config wrote,
       library created, weights pre-downloaded) plus a one-line
       `next: dither plugin install <path>` nudge.
-- [ ] Ctrl-C at the prompt exits with a non-zero status, no partial
+- [x] Ctrl-C at the prompt exits with a non-zero status, no partial
       `config.json` written, no half-created library.
-- [ ] Tests cover: non-TTY-without-flag error, non-TTY-with-flag works,
+- [x] Tests cover: non-TTY-without-flag error, non-TTY-with-flag works,
       existing-config no-op. Interactive TTY path itself is left out of
       unit tests (TTY interaction is fiddly; wrapper is a thin
       pass-through).
+
+**Outcome:** New `prompt.ts` wraps `consola.prompt` with
+`promptText({ message, hint, default, validate })` — re-prompts on
+validation failure, propagates Ctrl-C as a rejection. Init flow:
+existing-config → summary + (note "--library ignored" if flag passed);
+no config → branch on `process.stdout.isTTY`. TTY → prompt with the
+default + hint; non-TTY → stderr error + exit 2. Ctrl-C → exit 130
+with no partial state. End-of-init prints three ✓ lines + a
+`next: dither plugin install <path>` nudge. `--force` removed; tests
+pruned of the two `--force` scenarios; new tests cover the no-TTY
+error and re-init-flag-ignored paths. 25 tests green (init: 16,
+home: 4, status: 5). Live smoke confirms the no-TTY error, the
+non-interactive --library path, and the re-init flag-noted path.
 
 ---
 
@@ -148,4 +161,5 @@ complete, rename back to `./plans/init-interactive.md`.
 | commit | summary |
 |--------|---------|
 | b684d32 | Phase 1: home.ts resolves DITHER_DIR → XDG_CONFIG_HOME/dither → DITHER_HOME (warn-once) → ~/.dither. New home.test.ts. persistence.ts writes DITHER_DIR. Test files mass-renamed to DITHER_DIR. |
-| (pending) | Phase 2: status.ts split — configDir + library (string\|null); home alias retained. commands/status.ts prints two-row output with source labels. status.test.ts adds 5 cases. |
+| bfcbb1b | Phase 2: status.ts split — configDir + library (string\|null); home alias retained. commands/status.ts prints two-row output with source labels. status.test.ts adds 5 cases. |
+| (pending) | Phase 3: consola dep + prompt.ts wrapper. Init drops --force, adds TTY interactive prompt with re-validation, no-TTY error, re-init flag-noted path, ✓ summary + next-step nudge. 16 init tests + 25 phase-suite tests green. |

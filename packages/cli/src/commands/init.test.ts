@@ -42,10 +42,11 @@ describe("dither init (Phase 1)", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  it("writes config.json with the default library path inside dither home", async () => {
+  it("--library <DITHER_DIR>/library writes config with the nested-default path", async () => {
+    const lib = join(home, "library");
     const { main } = await import("../main");
     await captureLogs(async () => {
-      await runCommand(main, { rawArgs: ["init"] });
+      await runCommand(main, { rawArgs: ["init", "--library", lib, "--no-download"] });
     });
 
     expect(existsSync(join(home, "config.json"))).toBe(true);
@@ -53,9 +54,32 @@ describe("dither init (Phase 1)", () => {
     const cfg = await loadConfig();
     expect(cfg).toEqual({
       schema: { version: 1 },
-      library: { path: realpathSync(join(home, "library")) },
+      library: { path: realpathSync(lib) },
     });
-    expect(existsSync(join(home, "library"))).toBe(true);
+    expect(existsSync(lib)).toBe(true);
+  });
+
+  it("non-TTY without --library errors with a helpful message", async () => {
+    const { main } = await import("../main");
+    const stderr: string[] = [];
+    const errSpy = vi.spyOn(console, "error").mockImplementation((...args) => {
+      stderr.push(args.map((a) => (typeof a === "string" ? a : String(a))).join(" "));
+    });
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`);
+    }) as never);
+    try {
+      await expect(
+        captureLogs(async () => {
+          await runCommand(main, { rawArgs: ["init"] });
+        }),
+      ).rejects.toThrow(/process\.exit\(2\)/);
+      expect(stderr.join("\n")).toContain("--library is required");
+    } finally {
+      errSpy.mockRestore();
+      exitSpy.mockRestore();
+    }
+    expect(existsSync(join(home, "config.json"))).toBe(false);
   });
 
   it("re-running init prints existing config and does not overwrite", async () => {
@@ -74,6 +98,26 @@ describe("dither init (Phase 1)", () => {
     expect(out).toContain("/somewhere/else");
 
     // Confirm we didn't overwrite.
+    const { loadConfig } = await import("../config");
+    const cfg = await loadConfig();
+    expect(cfg?.library.path).toBe("/somewhere/else");
+  });
+
+  it("re-running init with --library notes the flag is ignored", async () => {
+    const { saveConfig } = await import("../config");
+    await saveConfig({
+      schema: { version: 1 },
+      library: { path: "/somewhere/else" },
+    });
+
+    const { main } = await import("../main");
+    const out = await captureLogs(async () => {
+      await runCommand(main, { rawArgs: ["init", "--library", "/anywhere"] });
+    });
+
+    expect(out).toContain("already initialized");
+    expect(out).toContain("--library ignored");
+
     const { loadConfig } = await import("../config");
     const cfg = await loadConfig();
     expect(cfg?.library.path).toBe("/somewhere/else");
@@ -132,7 +176,7 @@ describe("dither init (Phase 1)", () => {
     });
 
     expect(existsSync(newLib)).toBe(true);
-    expect(out).toContain("(created)");
+    expect(out).toContain("created library at");
     const { loadConfig } = await import("../config");
     const cfg = await loadConfig();
     expect(cfg?.library.path).toBe(realpathSync(newLib));
@@ -201,96 +245,22 @@ describe("dither init (Phase 1)", () => {
     }
   });
 
-  it("--force --library <new> overwrites config, rebuilds index against new library", async () => {
-    const libA = mkdtempSync(join(tmpdir(), "dither-init-libA-"));
-    const libB = mkdtempSync(join(tmpdir(), "dither-init-libB-"));
-    mkdirSync(join(libA, "alpha"), { recursive: true });
-    writeFileSync(
-      join(libA, "alpha", "doc.md"),
-      "---\ntitle: alpha-doc\n---\n\nalpha-token unique content.\n",
-    );
-    mkdirSync(join(libB, "beta"), { recursive: true });
-    writeFileSync(
-      join(libB, "beta", "doc.md"),
-      "---\ntitle: beta-doc\n---\n\nbeta-token unique content.\n",
-    );
-
-    try {
-      const { main } = await import("../main");
-
-      // First init points at libA → alpha gets indexed.
-      await captureLogs(async () => {
-        await runCommand(main, {
-          rawArgs: ["init", "--library", libA, "--no-download"],
-        });
-      });
-
-      const { search } = await import("../search");
-      let alphaHits = await search({ query: "alpha-token", mode: "lex" });
-      expect(alphaHits.length).toBeGreaterThan(0);
-
-      // Reconfig to libB with --force.
-      await captureLogs(async () => {
-        await runCommand(main, {
-          rawArgs: ["init", "--force", "--library", libB, "--no-download"],
-        });
-      });
-
-      const { loadConfig } = await import("../config");
-      const cfg = await loadConfig();
-      expect(cfg?.library.path).toBe(realpathSync(libB));
-
-      // Old alpha content is no longer in the index (rebuilt from scratch
-      // against libB). Beta content is now searchable.
-      alphaHits = await search({ query: "alpha-token", mode: "lex" });
-      expect(alphaHits).toEqual([]);
-
-      const betaHits = await search({ query: "beta-token", mode: "lex" });
-      expect(betaHits.length).toBeGreaterThan(0);
-    } finally {
-      rmSync(libA, { recursive: true, force: true });
-      rmSync(libB, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  it("--force without --library rebuilds against same library cleanly", async () => {
-    const lib = mkdtempSync(join(tmpdir(), "dither-init-libsame-"));
-    try {
-      const { main } = await import("../main");
-      await captureLogs(async () => {
-        await runCommand(main, {
-          rawArgs: ["init", "--library", lib, "--no-download"],
-        });
-      });
-
-      // --force with same library - should reconfigure cleanly.
-      const out = await captureLogs(async () => {
-        await runCommand(main, { rawArgs: ["init", "--force", "--no-download"] });
-      });
-      expect(out).toContain("reconfigured");
-    } finally {
-      rmSync(lib, { recursive: true, force: true });
-    }
-  });
-
-  it("re-running without --force prints hint about --force", async () => {
-    const { main } = await import("../main");
-    await captureLogs(async () => {
-      await runCommand(main, { rawArgs: ["init", "--no-download"] });
-    });
-
-    const out = await captureLogs(async () => {
-      await runCommand(main, { rawArgs: ["init"] });
-    });
-    expect(out).toContain("--force");
-  });
-
   it("--no-download annotates the summary and skips prefetch", async () => {
+    const lib = join(home, "library");
     const { main } = await import("../main");
     const out = await captureLogs(async () => {
-      await runCommand(main, { rawArgs: ["init", "--no-download"] });
+      await runCommand(main, { rawArgs: ["init", "--library", lib, "--no-download"] });
     });
     expect(out).toContain("--no-download");
     expect(existsSync(join(home, "config.json"))).toBe(true);
+  });
+
+  it("end-of-init summary prints the next-step nudge", async () => {
+    const lib = join(home, "library");
+    const { main } = await import("../main");
+    const out = await captureLogs(async () => {
+      await runCommand(main, { rawArgs: ["init", "--library", lib, "--no-download"] });
+    });
+    expect(out).toContain("next: dither plugin install");
   });
 });

@@ -1,11 +1,13 @@
 import { defineCommand } from "citty";
 import { existsSync } from "node:fs";
-import { access, lstat, mkdir, realpath, rm } from "node:fs/promises";
+import { access, lstat, mkdir, realpath } from "node:fs/promises";
 import { constants } from "node:fs";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { resolveHome, indexDbPath } from "../home";
+import { resolveHome } from "../home";
 import { loadConfig, saveConfig, type DitherConfig } from "../config";
 import { openStore } from "../store";
+import { promptText } from "../prompt";
 
 /**
  * Resolve a `--library <path>` value into a canonical, writable directory
@@ -17,7 +19,8 @@ import { openStore } from "../store";
  * a symlink later must not silently widen the library scope.
  */
 async function resolveLibraryPath(input: string): Promise<{ path: string; created: boolean }> {
-  const absolute = resolve(input);
+  const expanded = input.startsWith("~/") ? join(homedir(), input.slice(2)) : input;
+  const absolute = resolve(expanded);
   let created = false;
 
   if (existsSync(absolute)) {
@@ -66,12 +69,8 @@ export const initCommand = defineCommand({
   args: {
     library: {
       type: "string",
-      description: "Library directory (default: <dither-home>/library).",
-    },
-    force: {
-      type: "boolean",
-      description: "Overwrite an existing config; rebuild the qmd index.",
-      default: false,
+      description:
+        "Library directory (where your .md entries live). Defaults to <DITHER_DIR>/library. Pass an explicit path to keep your library outside the dither working directory — e.g. --library ~/Documents/dither — so it's visible alongside your other documents and easy to sync/back up independently.",
     },
     download: {
       type: "boolean",
@@ -84,31 +83,54 @@ export const initCommand = defineCommand({
     await mkdir(home, { recursive: true });
 
     const existing = await loadConfig();
-    if (existing && !args.force) {
+    if (existing) {
       console.log(`dither is already initialized at ${home}`);
       console.log(`  library: ${existing.library.path}`);
-      console.log("  re-run with --force to reconfigure");
+      if (args.library) {
+        console.log("  (--library ignored — re-init isn't supported; remove config.json and re-run if you need to reconfigure)");
+      }
       return existing;
     }
 
-    const requested = args.library ?? join(home, "library");
-    const { path: libraryPath, created } = await resolveLibraryPath(requested);
-
-    // On --force, the dbPath is the same but its contents reference the old
-    // library's subdirs. Drop it so the next openStore registers the new
-    // library's subdirs and store.update() rebuilds from scratch.
-    //
-    // We do NOT lock against in-flight plugin runs here. A run that resolved
-    // its libraryRoot before this point will promote into the old library
-    // and leave its files orphaned of the new index. See
-    // notes/qmd-library-edge-cases.md (#1). Running daemons also need a
-    // SIGHUP-driven reconcile to pick up the new library — see (#5).
-    if (existing && args.force) {
-      const dbPath = indexDbPath();
-      if (existsSync(dbPath)) {
-        await rm(dbPath, { force: true });
+    // No config yet. Resolve library: explicit flag > interactive prompt
+    // (TTY only) > error.
+    const defaultLibrary = join(home, "library");
+    let requested: string;
+    if (args.library) {
+      requested = args.library;
+    } else if (process.stdout.isTTY) {
+      console.log("");
+      console.log("Welcome to dither.");
+      console.log("");
+      try {
+        requested = await promptText({
+          message: "Where should your library live?",
+          hint: "Your markdown entries — back this up / sync / git. example: ~/Documents/dither",
+          default: defaultLibrary,
+          validate: async (v) => {
+            if (!v.trim()) return "path cannot be empty";
+            try {
+              await resolveLibraryPath(v);
+              return null;
+            } catch (err) {
+              return err instanceof Error ? err.message : String(err);
+            }
+          },
+        });
+      } catch {
+        // Cancelled (Ctrl-C). Exit cleanly with no partial state.
+        console.log("\ninit cancelled.");
+        process.exit(130);
       }
+    } else {
+      console.error(
+        "error: --library is required when not running on a TTY (no prompt available).",
+      );
+      console.error("       e.g. dither init --library ~/Documents/dither");
+      process.exit(2);
     }
+
+    const { path: libraryPath, created } = await resolveLibraryPath(requested);
 
     const cfg: DitherConfig = {
       schema: { version: 1 },
@@ -116,24 +138,37 @@ export const initCommand = defineCommand({
     };
     await saveConfig(cfg);
 
-    // Initialize / rebuild the qmd index over the new library's subdirs.
-    // Empty library → openStore returns null and no SQLite is created until
-    // a plugin promotes content; that's fine, schema is created lazily then.
+    // Initialize the qmd index over the new library's subdirs. Empty
+    // library → openStore returns null and no SQLite is created until a
+    // plugin promotes content; that's fine, schema is created lazily then.
     const store = await openStore();
     if (store) await store.update();
 
-    let weightsNote = "";
+    let weightsOk = false;
+    let weightsReason: string | undefined;
     if (args.download) {
       const result = await prefetchWeights();
-      if (!result.ok) {
-        weightsNote = ` (weight prefetch failed: ${result.reason}; search will fall back to lex-only)`;
-      }
-    } else {
-      weightsNote = " (--no-download: weights not prefetched)";
+      weightsOk = result.ok;
+      weightsReason = result.reason;
     }
 
-    console.log(`${existing ? "reconfigured" : "initialized"} dither at ${home}`);
-    console.log(`  library: ${libraryPath}${created ? " (created)" : ""}${weightsNote}`);
+    // End-of-init summary: three short lines + a one-line next-step nudge.
+    console.log("");
+    console.log(`✓ wrote ${join(home, "config.json")}`);
+    console.log(`✓ ${created ? "created" : "using"} library at ${libraryPath}`);
+    if (args.download) {
+      if (weightsOk) {
+        console.log("✓ pre-downloaded model weights");
+      } else {
+        console.log(
+          `⚠ weight prefetch failed: ${weightsReason} (search will fall back to lex-only)`,
+        );
+      }
+    } else {
+      console.log("• weights skipped (--no-download)");
+    }
+    console.log("");
+    console.log("next: dither plugin install <path>");
     return cfg;
   },
 });
