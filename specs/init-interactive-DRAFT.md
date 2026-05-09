@@ -73,12 +73,10 @@ $ dither init
 Welcome to dither.
 
 ? Where should your library live?
-  Your library is the folder containing all your markdown entries —
-  it's the part you'll back up, sync, or version-control.
+  Your markdown entries — back this up / sync / git.
+  example: ~/Documents/dither
   (default: /Users/jannik/.dither/library)
 > _
-
-? Pre-download model weights for search? (Y/n) _
 
 ✓ wrote /Users/jannik/.dither/config.json
 ✓ created library at /Users/jannik/Documents/dither
@@ -87,11 +85,11 @@ Welcome to dither.
 next: dither plugin install <path>
 ```
 
-Each prompt shows:
-- A short question.
-- One-sentence rationale (why this matters, what they're choosing).
-- A pre-filled default they can accept by hitting Enter.
-- Examples in a hint line where useful.
+One prompt for now: library. The download step runs unconditionally per
+the `--download` flag's default (currently `true`, can be disabled with
+`--no-download` for tests/CI). It's not a prompt — pre-fetching model
+weights is what the user wants 99% of the time, and asking would just
+add a question they always say yes to.
 
 The library question takes free-form text and validates after submission
 (directory writable, no existing library at that path, etc.). Re-prompt
@@ -120,25 +118,51 @@ or grouped flows with cancellation, re-evaluate clack.
 prompts in dither-shaped helpers. Anywhere in the CLI that needs a
 prompt imports from this module. Swapping libraries later is one file.
 
-### Bypass triggers
+### Non-interactive mode
 
-Skip the interactive flow and use defaults when:
-- `--library <path>` is provided (current behavior).
-- `--yes` / `-y` flag is set (CI / scripted use).
-- stdout is not a TTY (piped, redirected, headless container).
-- `--force` is set without `--library` (re-init keeps existing path
-  unless overridden).
+No `-y` / `--yes` flag. **Every prompt has a matching CLI flag.** Pass
+all of them and init runs non-interactively. Today the only prompt is
+library location, so the only flag is `--library`.
 
-Library default in non-interactive mode: `<DITHER_DIR>/library` (today's
-behavior).
+- `dither init --library <path>` → no prompts, uses given path.
+- `dither init` on a TTY → interactive prompt for library.
+- `dither init` without a TTY (piped, redirected, container) and
+  without `--library` → exit with an error pointing at the missing
+  flag. Don't silently default.
 
-### Library default change?
+This keeps scripted use explicit ("you must say what you want") while
+keeping interactive use friendly. Adding a future prompt = add a
+matching flag, no `-y` semantics to maintain.
 
-**No.** The default stays `<DITHER_DIR>/library`. The interactive flow
-doesn't change defaults — it makes the choice *visible* and lets the
-user opt out of nesting at install time. Power users who want library
-elsewhere set `--library`; everyone else accepts the default and never
-thinks about it.
+### Library default + placeholder
+
+The default stays `<DITHER_DIR>/library` (today's behavior). Pressing
+Enter at the prompt accepts that default.
+
+The prompt also shows a *placeholder example* — `~/Documents/dither` —
+as guidance so users see what an alternative looks like. The placeholder
+is hint text, **not the default**: if the user types nothing and
+submits, they get the actual default (`<DITHER_DIR>/library`), not the
+placeholder.
+
+```
+? Where should your library live?
+  Your markdown entries — back this up / sync / git.
+  example: ~/Documents/dither
+  (default: /Users/jannik/.dither/library)
+> _
+```
+
+### `--force` removed
+
+Init is first-run setup only. No `--force` flag. If a user wants to
+reconfigure, they delete `config.json` (or whatever scoped reset we
+later expose) and re-run. Keeps the command's contract crisp:
+"one-shot setup, doesn't touch existing config."
+
+A future `dither config reset` or `dither config set library.path …`
+command can handle reconfiguration without overloading init. Out of
+scope here.
 
 ### Future: arrow-key select
 
@@ -155,16 +179,13 @@ Don't pre-adopt.
 
 ## Behavior matrix
 
-| Invocation | Interactive? | Library path |
-|---|---|---|
-| `dither init` (TTY, no config) | Yes | from prompt |
-| `dither init` (no TTY) | No | `<DITHER_DIR>/library` |
-| `dither init -y` | No | `<DITHER_DIR>/library` |
-| `dither init --library /path` | No | `/path` |
-| `dither init --library /path -y` | No | `/path` |
-| `dither init --force` (TTY, has config) | Yes (re-prompts with existing as default) | from prompt |
-| `dither init --force --library /path` | No | `/path` |
-| `dither init` (TTY, has config, no --force) | No | unchanged (prints existing summary) |
+| Invocation | Result |
+|---|---|
+| `dither init` (TTY, no config) | Interactive prompt; library = answer |
+| `dither init` (no TTY, no config) | Error: `--library required when not on a TTY` |
+| `dither init --library /path` (no config) | Non-interactive; library = `/path` |
+| `dither init` (config exists) | Print existing summary, exit 0 (no overwrite) |
+| `dither init --library /path` (config exists) | Print existing summary, exit 0 (no overwrite, flag ignored with note) |
 
 ## Implementation surface
 
@@ -173,11 +194,11 @@ Changes:
   XDG_CONFIG_HOME/dither → DITHER_HOME alias → ~/.dither). Deprecation
   log for DITHER_HOME usage.
 - `packages/cli/src/prompt.ts` — new module wrapping `consola.prompt`.
-  Helpers: `promptText({ message, default, validate })`,
-  `promptConfirm({ message, default })`. Add as needed.
-- `packages/cli/src/commands/init.ts` — add interactive branch when no
-  `--library` and TTY. Use `prompt.ts` helpers. Existing non-interactive
-  path unchanged.
+  Single helper for v1: `promptText({ message, default, hint, validate })`.
+- `packages/cli/src/commands/init.ts` — remove `--force` and `--download`
+  options? (download stays — it's not a prompt today). Add interactive
+  branch when no `--library` and TTY. Error path when no `--library`
+  and no TTY.
 - `packages/cli/src/commands/status.ts` + `status.ts` — separate output
   for `config dir` vs `library`, with their respective env / config
   source labels.
@@ -185,10 +206,10 @@ Changes:
 - Tests:
   - `home.test.ts` — resolution chain (DITHER_DIR > XDG > HOME alias >
     fallback).
-  - `init.test.ts` — non-TTY path skips prompts; existing tests continue
-    passing.
-  - `prompt.test.ts` — wrapper module sanity (deferred — testing TTY
-    interaction is fiddly; the wrapper is a thin pass-through).
+  - `init.test.ts` — non-TTY path errors when no flag; flag path works;
+    existing-config path is no-op.
+  - `prompt.test.ts` — deferred (testing TTY interaction is fiddly; the
+    wrapper is a thin pass-through).
 
 ## Out of scope
 
