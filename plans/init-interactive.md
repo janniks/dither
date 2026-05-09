@@ -162,4 +162,4 @@ complete, rename back to `./plans/init-interactive.md`.
 |--------|---------|
 | b684d32 | Phase 1: home.ts resolves DITHER_DIR → XDG_CONFIG_HOME/dither → DITHER_HOME (warn-once) → ~/.dither. New home.test.ts. persistence.ts writes DITHER_DIR. Test files mass-renamed to DITHER_DIR. |
 | bfcbb1b | Phase 2: status.ts split — configDir + library (string\|null); home alias retained. commands/status.ts prints two-row output with source labels. status.test.ts adds 5 cases. |
-| (pending) | Phase 3: consola dep + prompt.ts wrapper. Init drops --force, adds TTY interactive prompt with re-validation, no-TTY error, re-init flag-noted path, ✓ summary + next-step nudge. 16 init tests + 25 phase-suite tests green. |
+| 65c6ded | Phase 3: consola dep + prompt.ts wrapper. Init drops --force, adds TTY interactive prompt with re-validation, no-TTY error, re-init flag-noted path, ✓ summary + next-step nudge. 16 init tests + 25 phase-suite tests green. |
