@@ -4,7 +4,8 @@ import { getStatus } from "../status";
 export const statusCommand = defineCommand({
   meta: {
     name: "status",
-    description: "Summarize the dither install (home, plugins, collections, entries).",
+    description:
+      "Summarize the dither install (config dir, library, plugins, collections, entries).",
   },
   args: {
     json: {
@@ -19,7 +20,16 @@ export const statusCommand = defineCommand({
       console.log(JSON.stringify(s, null, 2));
       return s;
     }
-    console.log(`home:        ${s.home}`);
+    // Two-row split — surfaces the conceptual separation between
+    // dither's working directory and the user's content library.
+    console.log(`config dir:  ${s.configDir}`);
+    console.log("  (env: DITHER_DIR)");
+    if (s.library) {
+      console.log(`library:     ${s.library}`);
+      console.log("  (config: library.path — set by `dither init --library`)");
+    } else {
+      console.log("library:     (not configured — run `dither init`)");
+    }
     console.log(`plugins:     ${s.plugins}`);
     console.log(`collections: ${s.collections}`);
     console.log(`entries:     ${s.entries}`);

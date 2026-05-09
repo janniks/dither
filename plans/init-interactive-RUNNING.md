@@ -80,16 +80,22 @@ default install shows both rows even if they share a prefix, so the
 conceptual split is visible at a glance.
 
 **Acceptance:**
-- [ ] `dither status` prints `config dir:` and `library:` as separate rows.
-- [ ] Each row has a parenthetical source label: `(env: DITHER_DIR)` /
-      `(config: library.path — set by \`dither init --library\`)` (or
-      `(default)` when the library hasn't been overridden — wording finalized
-      in implementation).
-- [ ] JSON mode (`--json`) reflects the same shape: separate `configDir`
-      and `library` fields, with the existing `home` either renamed or
-      retained as alias for one release.
-- [ ] Existing status tests updated; new test covers both the nested-
-      default and overridden-library cases.
+- [x] `dither status` prints `config dir:` and `library:` as separate rows.
+- [x] Each row has a parenthetical source label: `(env: DITHER_DIR)` /
+      `(config: library.path — set by \`dither init --library\`)`.
+- [x] JSON mode (`--json`) reflects the same shape: separate `configDir`
+      and `library` fields, with `home` retained as deprecated alias.
+- [x] Existing `lifecycle.test.ts` consumer of `status.home` keeps
+      working via the alias; new `status.test.ts` covers configDir,
+      library-null, nested-default and separate-location cases.
+
+**Outcome:** `DitherStatus` extended with `configDir` and `library`
+(string | null), `home` retained as alias. `commands/status.ts` prints
+two rows with source labels; falls back to `(not configured — run
+\`dither init\`)` when no library is set yet. JSON output exposes all
+fields. New `status.test.ts` adds 5 cases (9 tests green when
+combined with home.test.ts). Live smoke against `test.local/.dither`
+confirms human + JSON output both look right.
 
 ---
 
@@ -141,4 +147,5 @@ complete, rename back to `./plans/init-interactive.md`.
 
 | commit | summary |
 |--------|---------|
-| (pending) | Phase 1: home.ts resolves DITHER_DIR → XDG_CONFIG_HOME/dither → DITHER_HOME (warn-once) → ~/.dither. New home.test.ts. persistence.ts writes DITHER_DIR. Test files mass-renamed to DITHER_DIR. |
+| b684d32 | Phase 1: home.ts resolves DITHER_DIR → XDG_CONFIG_HOME/dither → DITHER_HOME (warn-once) → ~/.dither. New home.test.ts. persistence.ts writes DITHER_DIR. Test files mass-renamed to DITHER_DIR. |
+| (pending) | Phase 2: status.ts split — configDir + library (string\|null); home alias retained. commands/status.ts prints two-row output with source labels. status.test.ts adds 5 cases. |

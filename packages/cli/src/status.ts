@@ -6,7 +6,22 @@ import { loadConfig } from "./config";
 import { listPlugins } from "./plugin-list";
 import { getDaemonStatus, type DaemonStatus } from "./daemon-control";
 
+/**
+ * Status surfaces the two location concepts separately:
+ *   - configDir: dither's working directory (config, grants, indexes,
+ *     plugin code, runs). Sourced from $DITHER_DIR / $XDG_CONFIG_HOME /
+ *     ~/.dither.
+ *   - library: the user's content (markdown entries). Sourced from
+ *     config.library.path, set at `dither init --library`.
+ *
+ * `home` is retained as a deprecated alias of `configDir` for one
+ * release so external consumers (`dither status --json` parsers) get a
+ * grace window to migrate.
+ */
 export interface DitherStatus {
+  configDir: string;
+  library: string | null;
+  /** @deprecated Use `configDir`. Retained for one release. */
   home: string;
   plugins: number;
   collections: number;
@@ -48,12 +63,21 @@ async function countMarkdownDeep(dir: string): Promise<number> {
 }
 
 export async function getStatus(): Promise<DitherStatus> {
-  const home = resolveHome();
+  const configDir = resolveHome();
   const plugins = (await listPlugins()).length;
   const cfg = await loadConfig();
-  const { collections, entries } = cfg
-    ? await countMarkdownEntries(cfg.library.path)
+  const library = cfg ? cfg.library.path : null;
+  const { collections, entries } = library
+    ? await countMarkdownEntries(library)
     : { collections: 0, entries: 0 };
   const daemon = await getDaemonStatus();
-  return { home, plugins, collections, entries, daemon };
+  return {
+    configDir,
+    library,
+    home: configDir,
+    plugins,
+    collections,
+    entries,
+    daemon,
+  };
 }
