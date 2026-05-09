@@ -1,12 +1,7 @@
 import Link from "next/link";
-import {
-  ArrowRight,
-  Boxes,
-  Plug,
-  Sparkles,
-  Terminal,
-} from "lucide-react";
+import { ArrowRight, Boxes, Plug, Sparkles, Terminal } from "lucide-react";
 import { RotatingHeadline } from "./rotating-headline";
+import { FooterSection } from "./footer-section";
 
 const links = [
   {
@@ -34,166 +29,56 @@ const links = [
 
 export default function HomePage() {
   return (
-    <div
-      className="w-full"
-      style={{
-        display: "flex",
-        flex: "1 1 auto",
-        justifyContent: "center",
-        padding: "88px 24px 72px",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          width: "100%",
-          maxWidth: 1080,
-          flexDirection: "column",
-          gap: 56,
-        }}
-      >
-        <section
-          style={{
-            display: "flex",
-            maxWidth: 760,
-            flexDirection: "column",
-            alignItems: "flex-start",
-          }}
-        >
-          <div
-            className="border bg-fd-card text-fd-muted-foreground"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              borderRadius: 999,
-              padding: "6px 12px",
-              fontSize: 14,
-              lineHeight: "20px",
-            }}
-          >
+    <>
+      <div className="flex w-full justify-center px-6 pt-22 pb-18">
+        <div className="flex w-full max-w-[1080px] flex-col gap-14">
+        <section className="flex max-w-[760px] flex-col items-start">
+          <div className="border bg-fd-card text-fd-muted-foreground inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm leading-5">
             <Sparkles size={16} />
             dither documentation
           </div>
-          <div style={{ marginTop: 24, maxWidth: 820 }}>
+          <div className="mt-6 max-w-[820px]">
             <RotatingHeadline />
           </div>
-          <p
-            className="text-fd-muted-foreground"
-            style={{
-              marginTop: 24,
-              maxWidth: 660,
-              fontSize: 18,
-              lineHeight: "30px",
-            }}
-          >
+          <p className="text-fd-muted-foreground mt-6 max-w-[660px] text-lg leading-[30px]">
             Local-first, plugin-driven, sandboxed. Drop markdown into
             collections, run plugins to pull data in, and search across
             everything from one CLI.
           </p>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 12,
-              marginTop: 32,
-            }}
-          >
+          <div className="mt-8 flex flex-wrap gap-3">
             <Link
               href="/docs"
-              className="bg-fd-primary text-fd-primary-foreground"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                borderRadius: 10,
-                padding: "12px 16px",
-                fontSize: 14,
-                fontWeight: 600,
-              }}
+              className="bg-fd-primary text-fd-primary-foreground inline-flex items-center justify-center gap-2 rounded-[10px] px-4 py-3 text-sm font-semibold"
             >
               Get started
               <ArrowRight size={16} />
             </Link>
             <Link
               href="/docs/cli"
-              className="border bg-fd-card hover:bg-fd-accent"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 10,
-                padding: "12px 16px",
-                fontSize: 14,
-                fontWeight: 600,
-              }}
+              className="border bg-fd-card hover:bg-fd-accent inline-flex items-center justify-center rounded-[10px] px-4 py-3 text-sm font-semibold"
             >
               Browse the CLI
             </Link>
           </div>
         </section>
 
-        <section
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 16,
-          }}
-        >
+        <section className="flex flex-wrap gap-4">
           {links.map((item) => {
             const Icon = item.icon;
-
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className="group border bg-fd-card hover:border-fd-primary/50 hover:bg-fd-accent/50"
-                style={{
-                  display: "flex",
-                  minWidth: 260,
-                  flex: "1 1 0",
-                  flexDirection: "column",
-                  borderRadius: 20,
-                  padding: 24,
-                  textDecoration: "none",
-                  transition: "background-color 160ms, border-color 160ms",
-                }}
+                className="group border bg-fd-card hover:border-fd-primary/50 hover:bg-fd-accent/50 flex min-w-[260px] flex-1 flex-col rounded-[20px] p-6 no-underline transition-colors duration-150"
               >
-                <div
-                  className="bg-fd-muted text-fd-muted-foreground group-hover:text-fd-primary"
-                  style={{
-                    display: "flex",
-                    width: 44,
-                    height: 44,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    borderRadius: 14,
-                  }}
-                >
+                <div className="bg-fd-muted text-fd-muted-foreground group-hover:text-fd-primary flex h-11 w-11 items-center justify-center rounded-[14px]">
                   <Icon size={22} />
                 </div>
-                <h2
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    marginTop: 24,
-                    fontSize: 20,
-                    fontWeight: 600,
-                  }}
-                >
+                <h2 className="mt-6 flex items-center gap-2 text-xl font-semibold">
                   {item.title}
                   <ArrowRight size={16} />
                 </h2>
-                <p
-                  className="text-fd-muted-foreground"
-                  style={{
-                    marginTop: 10,
-                    fontSize: 14,
-                    lineHeight: "24px",
-                  }}
-                >
+                <p className="text-fd-muted-foreground mt-2.5 text-sm leading-6">
                   {item.description}
                 </p>
               </Link>
@@ -201,42 +86,23 @@ export default function HomePage() {
           })}
         </section>
 
-        <section
-          className="border bg-fd-card"
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 16,
-            borderRadius: 20,
-            padding: 24,
-          }}
-        >
-          <p
-            className="text-fd-muted-foreground"
-            style={{ maxWidth: 720, fontSize: 15, lineHeight: "26px" }}
-          >
-            v0 ships today: a CLI, a markdown-on-disk store, a qmd-backed
-            hybrid search index, and a Deno-sandboxed plugin runtime. Daemon,
-            MCP server, sync, and scheduling come later.
+        <section className="border bg-fd-card flex flex-wrap items-center justify-between gap-4 rounded-[20px] p-6">
+          <p className="text-fd-muted-foreground max-w-[720px] text-[15px] leading-[26px]">
+            v0 ships today: a CLI, a markdown-on-disk store, a qmd-backed hybrid
+            search index, and a Deno-sandboxed plugin runtime. Daemon, MCP
+            server, sync, and scheduling come later.
           </p>
           <Link
             href="/docs"
-            className="text-fd-primary"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              fontSize: 14,
-              fontWeight: 600,
-            }}
+            className="text-fd-primary inline-flex items-center gap-2 text-sm font-semibold"
           >
             Read the overview
             <ArrowRight size={16} />
           </Link>
         </section>
+        </div>
       </div>
-    </div>
+      <FooterSection />
+    </>
   );
 }

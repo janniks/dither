@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type CSSProperties,
   ElementType,
   forwardRef,
   useCallback,
@@ -47,6 +48,7 @@ interface TextRotateProps {
   mainClassName?: string;
   splitLevelClassName?: string;
   elementLevelClassName?: string;
+  style?: CSSProperties;
 }
 
 export interface TextRotateRef {
@@ -222,7 +224,7 @@ const TextRotate = forwardRef<TextRotateRef, TextRotateProps>(
           <motion.span
             key={currentTextIndex}
             className={cn(
-              "flex flex-wrap",
+              "flex flex-nowrap whitespace-nowrap",
               splitBy === "lines" && "flex-col w-full"
             )}
             aria-hidden

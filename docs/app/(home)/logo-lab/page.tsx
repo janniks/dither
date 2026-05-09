@@ -7,6 +7,7 @@ import { DitherCanvas } from "@/lib/dither-canvas";
 import { DitherCanvasStopping } from "@/lib/dither-canvas-stopping";
 import { DitherCanvasHover } from "@/lib/dither-canvas-hover";
 import Dither from "./Dither";
+import { DitherText } from "./dither-text";
 
 type Tone = "light" | "dark";
 
@@ -312,6 +313,10 @@ export default function LogoLab() {
 
       <HoverPointsVariant />
 
+      <DitherTextVariant />
+
+      <DitherTextV10 />
+
       <MarketingSection />
 
       <section
@@ -512,6 +517,226 @@ function StopPointsVariant() {
   );
 }
 
+type DT = {
+  label: string;
+  mode: "erode" | "splatter" | "both";
+  startFrac?: number;
+  splatterPx?: number;
+  cellSize?: number;
+  note: string;
+};
+
+const ditherTextVariants: DT[] = [
+  { label: "09.01", mode: "erode", startFrac: 0.4, cellSize: 1, note: "erode · fine · start 40%" },
+  { label: "09.02", mode: "erode", startFrac: 0.5, cellSize: 2, note: "erode · chunky 2x · start 50%  ★ baseline" },
+  { label: "09.03", mode: "erode", startFrac: 0.25, cellSize: 1, note: "erode · fine · start 25% (more dithered)" },
+  { label: "09.04", mode: "splatter", splatterPx: 60, cellSize: 1, note: "splatter · fine · 60px bleed" },
+  { label: "09.05", mode: "splatter", splatterPx: 80, cellSize: 2, note: "splatter · chunky · 80px bleed" },
+  { label: "09.06", mode: "both", startFrac: 0.45, splatterPx: 50, cellSize: 1, note: "both · erode + splatter" },
+  { label: "09.07", mode: "both", startFrac: 0.35, splatterPx: 70, cellSize: 2, note: "both · chunky · heavier" },
+  { label: "09.08", mode: "both", startFrac: 0.6, splatterPx: 30, cellSize: 1, note: "both · subtle · short tail" },
+];
+
+// Variations around 09.02 baseline (erode · 50% · chunky cell 2 · retina-crisp glyphs)
+const ditherTextV10: DT[] = [
+  { label: "10.01", mode: "erode", startFrac: 0.5, cellSize: 2, note: "baseline" },
+  { label: "10.02", mode: "erode", startFrac: 0.4, cellSize: 2, note: "earlier dither (40%)" },
+  { label: "10.03", mode: "erode", startFrac: 0.6, cellSize: 2, note: "later dither (60%)" },
+  { label: "10.04", mode: "erode", startFrac: 0.5, cellSize: 3, note: "chunkier cell 3" },
+  { label: "10.05", mode: "erode", startFrac: 0.5, cellSize: 4, note: "very chunky cell 4" },
+  { label: "10.06", mode: "both", startFrac: 0.5, splatterPx: 30, cellSize: 2, note: "+ short splatter 30" },
+  { label: "10.07", mode: "both", startFrac: 0.5, splatterPx: 60, cellSize: 2, note: "+ long splatter 60" },
+  { label: "10.08", mode: "both", startFrac: 0.55, splatterPx: 40, cellSize: 3, note: "+ splatter · chunky 3" },
+];
+
+function DitherTextVariant() {
+  return (
+    <section
+      className="border bg-fd-card"
+      style={{ borderRadius: 20, padding: 32, display: "flex", flexDirection: "column", gap: 20 }}
+    >
+      <div>
+        <div
+          className="text-fd-muted-foreground"
+          style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.08em" }}
+        >
+          09
+        </div>
+        <h2 style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", marginTop: 4 }}>
+          dither-mask wordmark
+        </h2>
+        <p className="text-fd-muted-foreground" style={{ fontSize: 14, marginTop: 6, maxWidth: 600 }}>
+          Text starts solid on the left, dithered edges on the right. Erode drops text pixels via
+          a Bayer-thresholded mask weighted by x-position; splatter spawns dither pixels rightward
+          from the trailing edge of each glyph; both combines them.
+        </p>
+      </div>
+
+      {(["light", "dark"] as const).map((tone) => (
+        <div
+          key={tone}
+          style={{
+            background: surface[tone].bg,
+            borderRadius: 12,
+            padding: 32,
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 24,
+          }}
+        >
+          {ditherTextVariants.map((v) => {
+            const fg: [number, number, number] =
+              tone === "dark" ? [245, 245, 245] : [10, 10, 10];
+            return (
+              <div
+                key={v.label}
+                style={{
+                  background: surface[tone].sub,
+                  borderRadius: 10,
+                  padding: "24px 24px 16px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  alignItems: "flex-start",
+                  minHeight: 160,
+                  justifyContent: "space-between",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", flex: 1, width: "100%" }}>
+                  <DitherText
+                    text="dither"
+                    fontSize={88}
+                    fontWeight={700}
+                    color={fg}
+                    mode={v.mode}
+                    startFrac={v.startFrac}
+                    splatterPx={v.splatterPx}
+                    cellSize={v.cellSize}
+                  />
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    width: "100%",
+                    gap: 12,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      letterSpacing: "0.08em",
+                      color: surface[tone].muted,
+                    }}
+                  >
+                    {v.label}
+                  </span>
+                  <span style={{ fontSize: 11, color: surface[tone].muted }}>{v.note}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function DitherTextV10() {
+  return (
+    <section
+      className="border bg-fd-card"
+      style={{ borderRadius: 20, padding: 32, display: "flex", flexDirection: "column", gap: 20 }}
+    >
+      <div>
+        <div
+          className="text-fd-muted-foreground"
+          style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.08em" }}
+        >
+          10
+        </div>
+        <h2 style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", marginTop: 4 }}>
+          dither-mask wordmark · 09.02 baseline, retina-crisp
+        </h2>
+        <p className="text-fd-muted-foreground" style={{ fontSize: 14, marginTop: 6, maxWidth: 680 }}>
+          Glyphs now render at full <code>devicePixelRatio</code> (crisp letterforms);
+          dither cells stay chunky (independent of DPR). Variations sweep around 50% start
+          and explore cell-size + splatter additions.
+        </p>
+      </div>
+
+      {(["light", "dark"] as const).map((tone) => (
+        <div
+          key={tone}
+          style={{
+            background: surface[tone].bg,
+            borderRadius: 12,
+            padding: 32,
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 24,
+          }}
+        >
+          {ditherTextV10.map((v) => {
+            const fg: [number, number, number] =
+              tone === "dark" ? [245, 245, 245] : [10, 10, 10];
+            return (
+              <div
+                key={v.label}
+                style={{
+                  background: surface[tone].sub,
+                  borderRadius: 10,
+                  padding: "24px 24px 16px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  alignItems: "flex-start",
+                  minHeight: 160,
+                  justifyContent: "space-between",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", flex: 1, width: "100%" }}>
+                  <DitherText
+                    text="dither"
+                    fontSize={88}
+                    fontWeight={700}
+                    color={fg}
+                    mode={v.mode}
+                    startFrac={v.startFrac}
+                    splatterPx={v.splatterPx}
+                    cellSize={v.cellSize}
+                  />
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    width: "100%",
+                    gap: 12,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      letterSpacing: "0.08em",
+                      color: surface[tone].muted,
+                    }}
+                  >
+                    {v.label}
+                  </span>
+                  <span style={{ fontSize: 11, color: surface[tone].muted }}>{v.note}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function HoverTile({ stopAt, tone }: { stopAt: number; tone: Tone }) {
   const ref = useRef<HTMLDivElement>(null);
   return (
@@ -675,7 +900,7 @@ function MarketingSection() {
           className="text-fd-muted-foreground"
           style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.08em" }}
         >
-          09
+          11
         </div>
         <h2 style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", marginTop: 4 }}>
           marketing-page pattern
