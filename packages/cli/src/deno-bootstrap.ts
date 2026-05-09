@@ -9,7 +9,7 @@ import { acquire, release } from "./locks";
 /**
  * Dither owns its Deno. On first need, we download a pinned release from the
  * official GitHub URL, sha256-verify it against a hash hard-coded here, and
- * install it at `<DITHER_HOME>/bin/deno-<version>`. Plugin runs spawn from
+ * install it at `<DITHER_DIR>/bin/deno-<version>`. Plugin runs spawn from
  * that exact path. The single managed-binary path is the durable FDA target
  * on macOS — see `tcc-hint.ts` and `specs/managed-deno.md`.
  *

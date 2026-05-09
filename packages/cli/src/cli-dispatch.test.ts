@@ -30,8 +30,8 @@ describe("CLI dispatch", () => {
 
   beforeEach(async () => {
     home = mkdtempSync(join(tmpdir(), "dither-test-"));
-    prevHome = process.env.DITHER_HOME;
-    process.env.DITHER_HOME = home;
+    prevHome = process.env.DITHER_DIR;
+    process.env.DITHER_DIR = home;
     // CLI subcommands now refuse without config; write one matching today's
     // implicit default so the rest of these tests behave unchanged.
     const { saveConfig } = await import("./config");
@@ -43,9 +43,9 @@ describe("CLI dispatch", () => {
 
   afterEach(() => {
     if (prevHome === undefined) {
-      delete process.env.DITHER_HOME;
+      delete process.env.DITHER_DIR;
     } else {
-      process.env.DITHER_HOME = prevHome;
+      process.env.DITHER_DIR = prevHome;
     }
     rmSync(home, { recursive: true, force: true });
   });

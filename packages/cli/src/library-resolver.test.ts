@@ -13,15 +13,15 @@ describe("library resolver (Phase 2)", () => {
   beforeEach(async () => {
     home = mkdtempSync(join(tmpdir(), "dither-libresolver-test-"));
     library = mkdtempSync(join(tmpdir(), "dither-libresolver-lib-"));
-    prevHome = process.env.DITHER_HOME;
-    process.env.DITHER_HOME = home;
+    prevHome = process.env.DITHER_DIR;
+    process.env.DITHER_DIR = home;
     const { writeTestConfig } = await import("../test/helpers/config");
     await writeTestConfig(library);
   });
 
   afterEach(() => {
-    if (prevHome === undefined) delete process.env.DITHER_HOME;
-    else process.env.DITHER_HOME = prevHome;
+    if (prevHome === undefined) delete process.env.DITHER_DIR;
+    else process.env.DITHER_DIR = prevHome;
     rmSync(home, { recursive: true, force: true });
     rmSync(library, { recursive: true, force: true });
   });

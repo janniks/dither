@@ -56,7 +56,7 @@ function macPlist(execPath: string, entry: string, ditherHome: string, logPath: 
   <key>KeepAlive</key><true/>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>DITHER_HOME</key><string>${ditherHome}</string>
+    <key>DITHER_DIR</key><string>${ditherHome}</string>
   </dict>
   <key>StandardOutPath</key><string>${logPath}</string>
   <key>StandardErrorPath</key><string>${logPath}</string>
@@ -73,7 +73,7 @@ After=default.target
 [Service]
 Type=simple
 ExecStart=${execPath} ${entry} daemon run
-Environment=DITHER_HOME=${ditherHome}
+Environment=DITHER_DIR=${ditherHome}
 Restart=on-failure
 RestartSec=5
 

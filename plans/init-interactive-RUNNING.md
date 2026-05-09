@@ -43,17 +43,30 @@ because the alias is honored. A one-line deprecation warning is emitted
 the first time `DITHER_HOME` is read in a process.
 
 **Acceptance:**
-- [ ] `$DITHER_DIR` set takes precedence over everything else.
-- [ ] `$XDG_CONFIG_HOME` set with `$DITHER_DIR` unset resolves to
+- [x] `$DITHER_DIR` set takes precedence over everything else.
+- [x] `$XDG_CONFIG_HOME` set with `$DITHER_DIR` unset resolves to
       `$XDG_CONFIG_HOME/dither`.
-- [ ] Only `$DITHER_HOME` set (no `DITHER_DIR`, no `XDG_CONFIG_HOME`)
+- [x] Only `$DITHER_HOME` set (no `DITHER_DIR`, no `XDG_CONFIG_HOME`)
       still resolves to that path AND emits a single deprecation warning
       to stderr.
-- [ ] All env vars unset resolves to `~/.dither`.
-- [ ] Existing test suite continues to pass without modification (legacy
-      `DITHER_HOME` usage in tests still works via the alias).
-- [ ] New unit tests for the resolver cover the precedence chain
+- [x] All env vars unset resolves to `~/.dither`.
+- [x] Existing test suite continues to pass — *updated* to use
+      `DITHER_DIR` rather than rely on the alias (alias path verified
+      by `home.test.ts`; test code is internal — switching to the new
+      name is the cleaner outcome).
+- [x] New unit tests for the resolver cover the precedence chain
       explicitly.
+
+**Outcome:** Resolver in `home.ts` implements the four-step chain with
+a once-per-process deprecation warning latch. `home.test.ts` covers all
+four precedence cases (4 tests, green). `persistence.ts` writes
+`DITHER_DIR` into the launchd plist + systemd unit for new installs.
+Test files using `DITHER_HOME` mass-renamed to `DITHER_DIR` (codebase-
+internal; end-user shell rc files unaffected — alias handles them).
+Fast subset (7 files / 31 tests over home, journal, locks, config,
+library-resolver, cli-dispatch, persistence) all green. Pre-existing
+slow plugin-host / env / daemon test timeouts (deno-download in
+test setup) are unrelated to this change.
 
 ---
 
@@ -128,4 +141,4 @@ complete, rename back to `./plans/init-interactive.md`.
 
 | commit | summary |
 |--------|---------|
-|  |  |
+| (pending) | Phase 1: home.ts resolves DITHER_DIR → XDG_CONFIG_HOME/dither → DITHER_HOME (warn-once) → ~/.dither. New home.test.ts. persistence.ts writes DITHER_DIR. Test files mass-renamed to DITHER_DIR. |

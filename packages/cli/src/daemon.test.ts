@@ -9,15 +9,15 @@ describe("daemon lifecycle (in-process)", () => {
 
   beforeEach(async () => {
     home = mkdtempSync(join(tmpdir(), "dither-daemon-test-"));
-    prevHome = process.env.DITHER_HOME;
-    process.env.DITHER_HOME = home;
+    prevHome = process.env.DITHER_DIR;
+    process.env.DITHER_DIR = home;
     const { writeTestConfig } = await import("../test/helpers/config");
     await writeTestConfig(join(home, "entries"));
   });
 
   afterEach(() => {
-    if (prevHome === undefined) delete process.env.DITHER_HOME;
-    else process.env.DITHER_HOME = prevHome;
+    if (prevHome === undefined) delete process.env.DITHER_DIR;
+    else process.env.DITHER_DIR = prevHome;
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -103,13 +103,13 @@ describe("daemon control (no daemon)", () => {
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "dither-daemon-spawn-"));
-    prevHome = process.env.DITHER_HOME;
-    process.env.DITHER_HOME = home;
+    prevHome = process.env.DITHER_DIR;
+    process.env.DITHER_DIR = home;
   });
 
   afterEach(() => {
-    if (prevHome === undefined) delete process.env.DITHER_HOME;
-    else process.env.DITHER_HOME = prevHome;
+    if (prevHome === undefined) delete process.env.DITHER_DIR;
+    else process.env.DITHER_DIR = prevHome;
     rmSync(home, { recursive: true, force: true });
   });
 

@@ -9,15 +9,15 @@ describe("locks", () => {
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "dither-locks-test-"));
-    prevHome = process.env.DITHER_HOME;
-    process.env.DITHER_HOME = home;
+    prevHome = process.env.DITHER_DIR;
+    process.env.DITHER_DIR = home;
   });
 
   afterEach(() => {
     if (prevHome === undefined) {
-      delete process.env.DITHER_HOME;
+      delete process.env.DITHER_DIR;
     } else {
-      process.env.DITHER_HOME = prevHome;
+      process.env.DITHER_DIR = prevHome;
     }
     rmSync(home, { recursive: true, force: true });
   });

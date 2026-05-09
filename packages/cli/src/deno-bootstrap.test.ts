@@ -40,15 +40,15 @@ describe("deno-bootstrap", () => {
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "dither-deno-test-"));
-    prevHome = process.env.DITHER_HOME;
+    prevHome = process.env.DITHER_DIR;
     prevOptOut = process.env.DITHER_USE_SYSTEM_DENO;
-    process.env.DITHER_HOME = home;
+    process.env.DITHER_DIR = home;
     delete process.env.DITHER_USE_SYSTEM_DENO;
   });
 
   afterEach(async () => {
-    if (prevHome === undefined) delete process.env.DITHER_HOME;
-    else process.env.DITHER_HOME = prevHome;
+    if (prevHome === undefined) delete process.env.DITHER_DIR;
+    else process.env.DITHER_DIR = prevHome;
     if (prevOptOut === undefined) delete process.env.DITHER_USE_SYSTEM_DENO;
     else process.env.DITHER_USE_SYSTEM_DENO = prevOptOut;
     rmSync(home, { recursive: true, force: true });

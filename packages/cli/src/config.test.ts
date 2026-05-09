@@ -9,13 +9,13 @@ describe("config module", () => {
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "dither-config-test-"));
-    prevHome = process.env.DITHER_HOME;
-    process.env.DITHER_HOME = home;
+    prevHome = process.env.DITHER_DIR;
+    process.env.DITHER_DIR = home;
   });
 
   afterEach(() => {
-    if (prevHome === undefined) delete process.env.DITHER_HOME;
-    else process.env.DITHER_HOME = prevHome;
+    if (prevHome === undefined) delete process.env.DITHER_DIR;
+    else process.env.DITHER_DIR = prevHome;
     rmSync(home, { recursive: true, force: true });
   });
 

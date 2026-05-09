@@ -11,13 +11,13 @@ describe("persistence", () => {
   beforeEach(() => {
     homeDir = mkdtempSync(join(tmpdir(), "dither-persist-fakehome-"));
     ditherHome = mkdtempSync(join(tmpdir(), "dither-persist-dh-"));
-    prevHome = process.env.DITHER_HOME;
-    process.env.DITHER_HOME = ditherHome;
+    prevHome = process.env.DITHER_DIR;
+    process.env.DITHER_DIR = ditherHome;
   });
 
   afterEach(() => {
-    if (prevHome === undefined) delete process.env.DITHER_HOME;
-    else process.env.DITHER_HOME = prevHome;
+    if (prevHome === undefined) delete process.env.DITHER_DIR;
+    else process.env.DITHER_DIR = prevHome;
     rmSync(homeDir, { recursive: true, force: true });
     rmSync(ditherHome, { recursive: true, force: true });
   });
@@ -46,7 +46,7 @@ describe("persistence", () => {
       expect(content).toContain("<key>RunAtLoad</key><true/>");
     } else if (platform === "linux") {
       expect(content).toContain("[Service]");
-      expect(content).toContain(`DITHER_HOME=${ditherHome}`);
+      expect(content).toContain(`DITHER_DIR=${ditherHome}`);
     }
 
     const second = await installAutostart(homeDir);

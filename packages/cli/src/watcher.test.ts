@@ -11,15 +11,15 @@ describe("Watcher", () => {
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "dither-watcher-test-"));
-    prevHome = process.env.DITHER_HOME;
-    process.env.DITHER_HOME = home;
+    prevHome = process.env.DITHER_DIR;
+    process.env.DITHER_DIR = home;
     libRoot = join(home, "entries");
     mkdirSync(join(libRoot, "messages"), { recursive: true });
   });
 
   afterEach(() => {
-    if (prevHome === undefined) delete process.env.DITHER_HOME;
-    else process.env.DITHER_HOME = prevHome;
+    if (prevHome === undefined) delete process.env.DITHER_DIR;
+    else process.env.DITHER_DIR = prevHome;
     rmSync(home, { recursive: true, force: true });
   });
 
