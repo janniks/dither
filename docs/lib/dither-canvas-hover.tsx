@@ -18,6 +18,7 @@ type Props = {
   stopAt?: number;
   rounded?: number;
   triggerRef?: RefObject<HTMLElement | null>;
+  onReady?: () => void;
 };
 
 const bayer = [
@@ -44,6 +45,7 @@ export function DitherCanvasHover({
   stopAt = 2.6,
   rounded = 0,
   triggerRef,
+  onReady,
 }: Props) {
   const wrapRef = useRef<HTMLSpanElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -168,6 +170,7 @@ export function DitherCanvasHover({
     trigger.addEventListener("pointerleave", onLeave);
 
     render(stopAt);
+    onReady?.();
 
     return () => {
       alive = false;

@@ -6,6 +6,7 @@ import {
   Sparkles,
   Terminal,
 } from "lucide-react";
+import { RotatingHeadline } from "./rotating-headline";
 
 const links = [
   {
@@ -74,18 +75,9 @@ export default function HomePage() {
             <Sparkles size={16} />
             dither documentation
           </div>
-          <h1
-            style={{
-              marginTop: 24,
-              maxWidth: 820,
-              fontSize: "clamp(44px, 7vw, 72px)",
-              lineHeight: 0.95,
-              fontWeight: 650,
-              letterSpacing: "-0.05em",
-            }}
-          >
-            A personal index for the agentic era.
-          </h1>
+          <div style={{ marginTop: 24, maxWidth: 820 }}>
+            <RotatingHeadline />
+          </div>
           <p
             className="text-fd-muted-foreground"
             style={{
