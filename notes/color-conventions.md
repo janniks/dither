@@ -18,14 +18,19 @@ on a "design system."
 
 ## Library
 
-Reuse what's already pulled in. `consola` is the CLI's prompt + log
-library and depends on `colorette` for ANSI styling. `colorette`
-auto-detects TTY and respects `NO_COLOR` — no extra work needed.
+`picocolors` — explicit dep. Tiny (<5 KB, zero deps), auto-detects TTY,
+respects `NO_COLOR`. consola v3 doesn't re-export color helpers (uses
+its own internal styling), so we pull `picocolors` directly.
 
-**Use `colorette`'s named functions directly** (`green`, `yellow`,
-`red`, `dim`, `bold`, `cyan`). Don't reach for `chalk`, `picocolors`,
-or `ansi-colors` — `colorette` is already in the tree and is the
-lightest of the bunch.
+**Use `picocolors`'s named functions** (`green`, `yellow`, `red`,
+`dim`, `bold`, `cyan`). Don't reach for `chalk`, `colorette`, or
+`ansi-colors` — `picocolors` is the lightest and what consola itself
+uses internally.
+
+```ts
+import pc from "picocolors";
+console.log(pc.green("✓") + " ok");
+```
 
 ## Semantic palette
 

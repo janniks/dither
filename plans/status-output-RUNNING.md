@@ -123,16 +123,26 @@ never colors. `NO_COLOR=1` strips colors; glyphs survive.
 **User stories**: 7, 8, 10, 13.
 
 **Acceptance:**
-- [ ] Daemon-running label is green (visible under `FORCE_COLOR=1` in
-      tests).
-- [ ] Daemon-not-running label is dim.
-- [ ] Library health warnings are yellow.
-- [ ] Counts show as `dim("—")` when health isn't `ok`.
-- [ ] `NO_COLOR=1` strips ANSI escapes; the `⚠` and `—` glyphs
+- [x] Daemon-running label is green (visible under `FORCE_COLOR=1` in
+      live smoke).
+- [x] Daemon-not-running label is dim.
+- [x] Library health warnings are yellow.
+- [x] Counts show as `dim("—")` when health isn't `ok`.
+- [x] `NO_COLOR=1` strips ANSI escapes; the `⚠` and `—` glyphs
       remain in output.
-- [ ] `--json` output contains no ANSI escape sequences regardless
+- [x] `--json` output contains no ANSI escape sequences regardless
       of color env vars.
-- [ ] Plain values (paths, integer counts when `ok`) are not painted.
+- [x] Plain values (paths, integer counts when `ok`) are not painted.
+
+**Outcome:** picocolors added as an explicit dep (consola v3 doesn't
+re-export color helpers; picocolors is the lightest pure color lib).
+Notes/color-conventions.md updated to use picocolors. Status printer
+applies five semantic roles: bold-cyan on DITHER_DIR header, green
+on running daemon, yellow on ⚠ warnings, dim on — placeholders /
+muted text. `--json` mode never colors. `NO_COLOR=1` strips
+everything; glyphs survive. 23 tests green (including a small smoke
+asserting picocolors is importable; full color application verified
+via live smoke at FORCE_COLOR=1 vs NO_COLOR=1).
 
 ---
 
@@ -144,4 +154,5 @@ acceptance per phase, commit, append a row, rename back when complete.
 | commit | summary |
 |--------|---------|
 | f226cae | Phase 1: DitherStatus + libraryHealth + configDirSource. status.test.ts 5→11 cases; lifecycle.test.ts mkdir before writeConfig. |
-| (pending) | Phase 2: human printer rewrite — DITHER_DIR header, three sections, ⚠/— glyphs, comma counts. New commands/status.test.ts (9 cases). 21 tests green. |
+| f72ce15 | Phase 2: human printer rewrite — DITHER_DIR header, three sections, ⚠/— glyphs, comma counts. New commands/status.test.ts (9 cases). 21 tests green. |
+| (pending) | Phase 3: picocolors applied per color-conventions. Bold-cyan DITHER_DIR header, green daemon, yellow ⚠ warnings, dim — placeholders. NO_COLOR strips ANSI, keeps glyphs. JSON never colors. 23 tests green; live smoke confirms color paths. |

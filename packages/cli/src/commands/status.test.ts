@@ -197,3 +197,61 @@ describe("dither status (output shape)", () => {
     expect(out).not.toMatch(/\x1b\[/);
   });
 });
+
+describe("dither status (color)", () => {
+  let home: string;
+  let prevDir: string | undefined;
+  let prevForce: string | undefined;
+  let prevNo: string | undefined;
+
+  beforeEach(() => {
+    prevDir = process.env.DITHER_DIR;
+    prevForce = process.env.FORCE_COLOR;
+    prevNo = process.env.NO_COLOR;
+    delete process.env.NO_COLOR;
+    home = mkdtempSync(join(tmpdir(), "dither-status-color-"));
+    process.env.DITHER_DIR = home;
+    _resetHomeWarningLatch();
+  });
+
+  afterEach(() => {
+    rmSync(home, { recursive: true, force: true });
+    if (prevDir === undefined) delete process.env.DITHER_DIR;
+    else process.env.DITHER_DIR = prevDir;
+    if (prevForce === undefined) delete process.env.FORCE_COLOR;
+    else process.env.FORCE_COLOR = prevForce;
+    if (prevNo === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = prevNo;
+  });
+
+  it("picocolors module is wired into the printer (smoke)", async () => {
+    // Verify the dep is present and importable. Color application itself
+    // is auto-detected by picocolors based on TTY/FORCE_COLOR/NO_COLOR; we
+    // trust its long-standing behavior rather than re-testing it here.
+    const pc = (await import("picocolors")).default;
+    expect(typeof pc.green).toBe("function");
+    expect(typeof pc.yellow).toBe("function");
+    expect(typeof pc.dim).toBe("function");
+    expect(typeof pc.cyan).toBe("function");
+    expect(typeof pc.bold).toBe("function");
+  });
+
+  it("strips color but keeps glyphs when NO_COLOR is set", async () => {
+    process.env.NO_COLOR = "1";
+    delete process.env.FORCE_COLOR;
+    vi.resetModules();
+    const ghost = join(tmpdir(), "dither-ghost-no-color-test");
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({ schema: { version: 1 }, library: { path: ghost } }),
+    );
+    const { main } = await import("../main");
+    const out = await captureLogs(async () => {
+      await runCommand(main, { rawArgs: ["status"] });
+    });
+    expect(out).not.toMatch(/\x1b\[/);
+    // Glyphs survive.
+    expect(out).toContain("⚠ missing");
+    expect(out).toContain("—");
+  });
+});

@@ -1,4 +1,5 @@
 import { defineCommand } from "citty";
+import pc from "picocolors";
 import { getStatus, type DitherStatus } from "../status";
 
 const fmt = (n: number): string => new Intl.NumberFormat(undefined).format(n);
@@ -6,18 +7,22 @@ const fmt = (n: number): string => new Intl.NumberFormat(undefined).format(n);
 function printHumanStatus(s: DitherStatus): void {
   // Optional header — only when the user explicitly overrode via env.
   if (s.configDirSource === "env") {
-    console.log(`DITHER_DIR=${s.configDir}`);
+    console.log(`${pc.bold(pc.cyan("DITHER_DIR"))}=${s.configDir}`);
     console.log("");
   }
 
   // Locations.
   console.log(`config dir:  ${s.configDir}`);
   if (s.libraryHealth === "unconfigured") {
-    console.log("library:     (not configured — run `dither init`)");
+    console.log(`library:     ${pc.dim("(not configured — run `dither init`)")}`);
   } else if (s.libraryHealth === "missing") {
-    console.log(`library:     ${s.library}  ⚠ missing — directory does not exist`);
+    console.log(
+      `library:     ${s.library}  ${pc.yellow("⚠ missing — directory does not exist")}`,
+    );
   } else if (s.libraryHealth === "unreadable") {
-    console.log(`library:     ${s.library}  ⚠ unreadable — directory exists but is not readable`);
+    console.log(
+      `library:     ${s.library}  ${pc.yellow("⚠ unreadable — directory exists but is not readable")}`,
+    );
   } else {
     console.log(`library:     ${s.library}`);
   }
@@ -27,24 +32,26 @@ function printHumanStatus(s: DitherStatus): void {
   console.log(`plugins:     ${fmt(s.plugins)}`);
   const ctx =
     s.libraryHealth === "missing"
-      ? "  (library missing)"
+      ? `  ${pc.dim("(library missing)")}`
       : s.libraryHealth === "unreadable"
-        ? "  (library unreadable)"
+        ? `  ${pc.dim("(library unreadable)")}`
         : s.libraryHealth === "unconfigured"
-          ? "  (library not configured)"
+          ? `  ${pc.dim("(library not configured)")}`
           : "";
-  console.log(`collections: ${s.collections === null ? "—" : fmt(s.collections)}`);
-  console.log(`entries:     ${s.entries === null ? "—" : fmt(s.entries)}${ctx}`);
+  const collectionsCell = s.collections === null ? pc.dim("—") : fmt(s.collections);
+  const entriesCell = s.entries === null ? pc.dim("—") : fmt(s.entries);
+  console.log(`collections: ${collectionsCell}`);
+  console.log(`entries:     ${entriesCell}${ctx}`);
   console.log("");
 
   // Runtime.
   if (s.daemon.running) {
-    console.log(`daemon:      running (pid ${s.daemon.pid})`);
+    console.log(`daemon:      ${pc.green(`running (pid ${s.daemon.pid})`)}`);
     if (s.daemon.snapshot) {
       console.log(`  running plugins: ${s.daemon.snapshot.running.length}`);
     }
   } else {
-    console.log("daemon:      not running");
+    console.log(`daemon:      ${pc.dim("not running")}`);
   }
 }
 
