@@ -182,6 +182,38 @@ describe("dither init (Phase 1)", () => {
     expect(cfg?.library.path).toBe(realpathSync(newLib));
   });
 
+  it("--library <existing dir with files> leaves contents untouched", async () => {
+    // Regression: pointing --library at a directory that already holds
+    // entries (e.g. a previously-synced library, or a Documents folder the
+    // user wants to adopt) must not delete, rewrite, or move any of those
+    // files. Init is non-destructive against the library tree.
+    const externalLib = mkdtempSync(join(tmpdir(), "dither-init-existing-"));
+    const collectionDir = join(externalLib, "raindrop", "bookmarks");
+    mkdirSync(collectionDir, { recursive: true });
+    const topFile = join(externalLib, "top.md");
+    const nestedFile = join(collectionDir, "1.md");
+    const nestedAsset = join(collectionDir, "asset.bin");
+    writeFileSync(topFile, "# top\n", "utf-8");
+    writeFileSync(nestedFile, "---\nid: 1\n---\nbody\n", "utf-8");
+    writeFileSync(nestedAsset, "raw-bytes", "utf-8");
+
+    try {
+      const { main } = await import("../main");
+      await captureLogs(async () => {
+        await runCommand(main, {
+          rawArgs: ["init", "--library", externalLib, "--no-download"],
+        });
+      });
+
+      const { readFileSync } = await import("node:fs");
+      expect(readFileSync(topFile, "utf-8")).toBe("# top\n");
+      expect(readFileSync(nestedFile, "utf-8")).toBe("---\nid: 1\n---\nbody\n");
+      expect(readFileSync(nestedAsset, "utf-8")).toBe("raw-bytes");
+    } finally {
+      rmSync(externalLib, { recursive: true, force: true });
+    }
+  });
+
   it("--library <file path> errors out", async () => {
     const filePath = join(home, "not-a-dir.txt");
     writeFileSync(filePath, "hi", "utf-8");
