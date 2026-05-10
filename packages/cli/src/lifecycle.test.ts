@@ -80,7 +80,9 @@ describe("status", () => {
     prevHome = process.env.DITHER_DIR;
     process.env.DITHER_DIR = home;
     const { writeTestConfig } = await import("../test/helpers/config");
-    await writeTestConfig(join(home, "entries"));
+    const lib = join(home, "entries");
+    mkdirSync(lib, { recursive: true });
+    await writeTestConfig(lib);
   });
 
   afterEach(() => {

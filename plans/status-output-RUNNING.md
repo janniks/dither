@@ -34,21 +34,29 @@ string).
 **User stories**: 4, 5, 9.
 
 **Acceptance:**
-- [ ] `getStatus()` returns `libraryHealth: "ok"` for a healthy install
+- [x] `getStatus()` returns `libraryHealth: "ok"` for a healthy install
       with markdown-walk counts as before.
-- [ ] When `library.path` doesn't exist on disk, `libraryHealth ===
+- [x] When `library.path` doesn't exist on disk, `libraryHealth ===
       "missing"` and `collections` / `entries` are `null`.
-- [ ] When `library.path` exists but is unreadable, `libraryHealth ===
+- [x] When `library.path` exists but is unreadable, `libraryHealth ===
       "unreadable"` and counts are `null`.
-- [ ] When no config exists, `libraryHealth === "unconfigured"`,
+- [x] When no config exists, `libraryHealth === "unconfigured"`,
       `library === null`, counts are `null`.
-- [ ] `configDirSource` returns `"env"` when `DITHER_DIR` (or legacy
+- [x] `configDirSource` returns `"env"` when `DITHER_DIR` (or legacy
       `DITHER_HOME`) is set; `"xdg"` when `XDG_CONFIG_HOME` is the
       effective source; `"fallback"` otherwise.
-- [ ] `--json` output exposes `libraryHealth` and `configDirSource`.
-- [ ] `home` field retained in JSON as deprecated alias.
-- [ ] Existing `status.test.ts` cases continue passing; new cases
+- [x] `--json` output exposes `libraryHealth` and `configDirSource`.
+- [x] `home` field retained in JSON as deprecated alias.
+- [x] Existing `status.test.ts` cases continue passing; new cases
       cover each `libraryHealth` value.
+
+**Outcome:** `DitherStatus` extended with `libraryHealth` and
+`configDirSource`. `collections`/`entries` are `number | null`.
+`status.test.ts` grew from 5 → 11 cases. `lifecycle.test.ts`'s
+`beforeEach` now `mkdir`s the library before writing config so the
+existing "fresh home" test gets a healthy empty library (rather than
+the new "missing" health). Pre-existing deno-bootstrap-download
+timeouts in lifecycle's other tests are unrelated.
 
 ---
 
@@ -123,4 +131,4 @@ acceptance per phase, commit, append a row, rename back when complete.
 
 | commit | summary |
 |--------|---------|
-|  |  |
+| (pending) | Phase 1: DitherStatus + libraryHealth + configDirSource. status.test.ts 5→11 cases; lifecycle.test.ts mkdir before writeConfig. |

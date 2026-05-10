@@ -1,5 +1,5 @@
-import { readdir, stat } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { readdir, stat, access } from "node:fs/promises";
+import { existsSync, constants } from "node:fs";
 import { join } from "node:path";
 import { resolveHome } from "./home";
 import { loadConfig } from "./config";
@@ -14,18 +14,30 @@ import { getDaemonStatus, type DaemonStatus } from "./daemon-control";
  *   - library: the user's content (markdown entries). Sourced from
  *     config.library.path, set at `dither init --library`.
  *
+ * `libraryHealth` distinguishes "library is healthy" from
+ * "library is unconfigured / missing on disk / unreadable" so callers
+ * (humans + agentic consumers) can tell unknowable counts (`null`)
+ * apart from genuinely-zero counts.
+ *
+ * `configDirSource` mirrors home.ts's resolver chain so the human
+ * printer can decide whether to show a `DITHER_DIR=/path` header.
+ *
  * `home` is retained as a deprecated alias of `configDir` for one
- * release so external consumers (`dither status --json` parsers) get a
- * grace window to migrate.
+ * release.
  */
+export type LibraryHealth = "ok" | "missing" | "unreadable" | "unconfigured";
+export type ConfigDirSource = "env" | "xdg" | "fallback";
+
 export interface DitherStatus {
   configDir: string;
+  configDirSource: ConfigDirSource;
   library: string | null;
+  libraryHealth: LibraryHealth;
   /** @deprecated Use `configDir`. Retained for one release. */
   home: string;
   plugins: number;
-  collections: number;
-  entries: number;
+  collections: number | null;
+  entries: number | null;
   daemon: DaemonStatus;
 }
 
@@ -33,8 +45,6 @@ async function countMarkdownEntries(root: string): Promise<{
   collections: number;
   entries: number;
 }> {
-  if (!existsSync(root)) return { collections: 0, entries: 0 };
-
   const top = await readdir(root);
   let collections = 0;
   let entries = 0;
@@ -62,18 +72,55 @@ async function countMarkdownDeep(dir: string): Promise<number> {
   return n;
 }
 
+/**
+ * Detect which env (or none) drove resolveHome()'s decision. Mirrors
+ * the chain in home.ts. Both `DITHER_DIR` (current) and `DITHER_HOME`
+ * (legacy alias) count as `"env"` — the user is being explicit either
+ * way.
+ */
+function detectConfigDirSource(): ConfigDirSource {
+  if (process.env.DITHER_DIR || process.env.DITHER_HOME) return "env";
+  if (process.env.XDG_CONFIG_HOME) return "xdg";
+  return "fallback";
+}
+
+/**
+ * Probe `library.path` for health. Cheap: one `existsSync` and at most
+ * one `access(R_OK)`. Returns null when not configured at all.
+ */
+async function probeLibraryHealth(libraryPath: string | null): Promise<LibraryHealth> {
+  if (!libraryPath) return "unconfigured";
+  if (!existsSync(libraryPath)) return "missing";
+  try {
+    await access(libraryPath, constants.R_OK);
+    return "ok";
+  } catch {
+    return "unreadable";
+  }
+}
+
 export async function getStatus(): Promise<DitherStatus> {
   const configDir = resolveHome();
+  const configDirSource = detectConfigDirSource();
   const plugins = (await listPlugins()).length;
   const cfg = await loadConfig();
   const library = cfg ? cfg.library.path : null;
-  const { collections, entries } = library
-    ? await countMarkdownEntries(library)
-    : { collections: 0, entries: 0 };
+  const libraryHealth = await probeLibraryHealth(library);
+
+  let collections: number | null = null;
+  let entries: number | null = null;
+  if (libraryHealth === "ok" && library) {
+    const counts = await countMarkdownEntries(library);
+    collections = counts.collections;
+    entries = counts.entries;
+  }
+
   const daemon = await getDaemonStatus();
   return {
     configDir,
+    configDirSource,
     library,
+    libraryHealth,
     home: configDir,
     plugins,
     collections,
