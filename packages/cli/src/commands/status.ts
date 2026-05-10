@@ -7,7 +7,7 @@ const fmt = (n: number): string => new Intl.NumberFormat(undefined).format(n);
 function printHumanStatus(s: DitherStatus): void {
   // Optional header — only when the user explicitly overrode via env.
   if (s.configDirSource === "env") {
-    console.log(`${pc.bold(pc.cyan("DITHER_DIR"))}=${s.configDir}`);
+    console.log(`${pc.cyan("Note:")} Using ENV DITHER_DIR=${s.configDir}`);
     console.log("");
   }
 

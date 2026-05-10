@@ -45,7 +45,7 @@ describe("dither status (output shape)", () => {
     else process.env.DITHER_HOME = prevHome;
   });
 
-  it("emits the DITHER_DIR header line when env is the source", async () => {
+  it("emits the 'Note: Using ENV DITHER_DIR' header when env is the source", async () => {
     const lib = join(home, "library");
     mkdirSync(lib, { recursive: true });
     writeFileSync(
@@ -56,7 +56,8 @@ describe("dither status (output shape)", () => {
     const out = await captureLogs(async () => {
       await runCommand(main, { rawArgs: ["status"] });
     });
-    expect(out).toContain(`DITHER_DIR=${home}`);
+    expect(out).toContain(`Note:`);
+    expect(out).toContain(`Using ENV DITHER_DIR=${home}`);
   });
 
   it("does NOT emit a header line when env is not the source", async () => {
@@ -68,6 +69,7 @@ describe("dither status (output shape)", () => {
     const out = await captureLogs(async () => {
       await runCommand(main, { rawArgs: ["status"] });
     });
+    expect(out).not.toContain("Note:");
     expect(out).not.toContain("DITHER_DIR=");
   });
 
