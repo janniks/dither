@@ -17,9 +17,13 @@ import { consola } from "consola";
 
 export interface PromptTextOptions {
   message: string;
-  /** Pre-filled default. Enter at the empty prompt accepts this. */
+  /** Value used when the user presses Enter without typing. Not shown
+   *  in the input field — surface it via `hint` if you want it visible. */
   default?: string;
-  /** Free-form hint shown alongside the prompt. Distinct from `default`. */
+  /** Dim ghost text shown in the empty input field. Disappears as soon
+   *  as the user types. NOT used as the value on Enter — that's `default`. */
+  placeholder?: string;
+  /** Free-form hint shown under the question. */
   hint?: string;
   /** Returns null on success or an error string to display + re-prompt. */
   validate?: (value: string) => string | null | Promise<string | null>;
@@ -32,11 +36,11 @@ export async function promptText(opts: PromptTextOptions): Promise<string> {
       : opts.message;
     const raw = (await consola.prompt(formattedMessage, {
       type: "text",
-      placeholder: opts.default,
+      placeholder: opts.placeholder,
       default: opts.default,
       cancel: "reject",
     })) as unknown;
-    const value = typeof raw === "string" ? raw : opts.default ?? "";
+    const value = typeof raw === "string" && raw !== "" ? raw : opts.default ?? "";
     if (opts.validate) {
       const err = await opts.validate(value);
       if (err) {

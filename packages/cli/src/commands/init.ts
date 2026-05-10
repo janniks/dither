@@ -105,7 +105,8 @@ export const initCommand = defineCommand({
       try {
         requested = await promptText({
           message: "Where should your library live?",
-          hint: "Your markdown entries — back this up / sync / git. example: ~/Documents/dither",
+          hint: `ENTER to use default ${defaultLibrary}`,
+          placeholder: "~/Documents/dither",
           default: defaultLibrary,
           validate: async (v) => {
             if (!v.trim()) return "path cannot be empty";
