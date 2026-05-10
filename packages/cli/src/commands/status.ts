@@ -44,12 +44,23 @@ function printHumanStatus(s: DitherStatus): void {
   console.log(`entries:     ${entriesCell}${ctx}`);
   console.log("");
 
-  // Runtime.
+  // Runtime. Three states on one line:
+  //   idle (pid 14675)                     ← daemon up, 0 plugins running
+  //   running (pid 14675, 1 plugin)        ← daemon up, 1 plugin running
+  //   running (pid 14675, 3 plugins)       ← daemon up, N>0 plugins
+  //   running (pid 14675)                  ← snapshot unavailable; assume up
+  //   not running                          ← daemon down
   if (s.daemon.running) {
-    console.log(`daemon:      ${pc.green(`running (pid ${s.daemon.pid})`)}`);
-    if (s.daemon.snapshot) {
-      console.log(`  running plugins: ${s.daemon.snapshot.running.length}`);
+    const n = s.daemon.snapshot?.running.length ?? -1;
+    let label: string;
+    if (n === 0) {
+      label = `idle (pid ${s.daemon.pid})`;
+    } else if (n > 0) {
+      label = `running (pid ${s.daemon.pid}, ${n} plugin${n === 1 ? "" : "s"})`;
+    } else {
+      label = `running (pid ${s.daemon.pid})`;
     }
+    console.log(`daemon:      ${pc.green(label)}`);
   } else {
     console.log(`daemon:      ${pc.dim("not running")}`);
   }
