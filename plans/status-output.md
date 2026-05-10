@@ -155,4 +155,4 @@ acceptance per phase, commit, append a row, rename back when complete.
 |--------|---------|
 | f226cae | Phase 1: DitherStatus + libraryHealth + configDirSource. status.test.ts 5→11 cases; lifecycle.test.ts mkdir before writeConfig. |
 | f72ce15 | Phase 2: human printer rewrite — DITHER_DIR header, three sections, ⚠/— glyphs, comma counts. New commands/status.test.ts (9 cases). 21 tests green. |
-| (pending) | Phase 3: picocolors applied per color-conventions. Bold-cyan DITHER_DIR header, green daemon, yellow ⚠ warnings, dim — placeholders. NO_COLOR strips ANSI, keeps glyphs. JSON never colors. 23 tests green; live smoke confirms color paths. |
+| 21bb21d | Phase 3: picocolors applied per color-conventions. Bold-cyan DITHER_DIR header, green daemon, yellow ⚠ warnings, dim — placeholders. NO_COLOR strips ANSI, keeps glyphs. JSON never colors. 23 tests green; live smoke confirms color paths. |
