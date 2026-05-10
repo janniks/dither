@@ -80,19 +80,31 @@ counts. No color yet — that comes in Phase 3.
 **User stories**: 1, 2, 3, 4, 5, 6, 11, 12, 14.
 
 **Acceptance:**
-- [ ] With `DITHER_DIR` set, output begins with `DITHER_DIR=/path`
+- [x] With `DITHER_DIR` set, output begins with `DITHER_DIR=/path`
       followed by a blank line.
-- [ ] Without `DITHER_DIR` set, the header line is absent.
-- [ ] No `(env: ...)` or `(config: ...)` parentheticals appear.
-- [ ] Three sections separated by blank lines: locations, content,
+- [x] Without `DITHER_DIR` set, the header line is absent.
+- [x] No `(env: ...)` or `(config: ...)` parentheticals appear.
+- [x] Three sections separated by blank lines: locations, content,
       runtime.
-- [ ] Library missing → output contains `⚠ missing — directory does
+- [x] Library missing → output contains `⚠ missing — directory does
       not exist` next to the path.
-- [ ] Library unreadable → contains `⚠ unreadable — ...`.
-- [ ] Counts when not `ok` show `—` (em dash, not hyphen-minus).
-- [ ] Pre-init → `library: (not configured — run \`dither init\`)`.
-- [ ] Counts use comma-thousands separators (e.g. `12,847`).
-- [ ] Long paths render in full (no truncation).
+- [x] Library unreadable → contains `⚠ unreadable — ...`.
+- [x] Counts when not `ok` show `—` (em dash, not hyphen-minus).
+- [x] Pre-init → `library: (not configured — run \`dither init\`)`.
+- [x] Counts use comma-thousands separators (e.g. `1,234`).
+- [x] Long paths render in full (no truncation).
+
+**Outcome:** New `printHumanStatus` in commands/status.ts. Optional
+header gates on `configDirSource === "env"`. Three blank-line-
+separated sections. Library row gets a health-aware suffix (`⚠
+missing`/`⚠ unreadable`) or a pre-init placeholder. Counts switch
+between `Intl.NumberFormat`-formatted numbers and the em-dash glyph.
+New commands/status.test.ts adds 9 cases covering header on/off, no
+attribution noise, missing/unreadable/unconfigured states, comma
+formatting, and JSON shape (libraryHealth + configDirSource present;
+no ANSI). 21 tests green combined with status.test.ts. Live smoke
+of the original scenario (deleted tmpdir library) shows ⚠ missing +
+— instead of silent zeros.
 
 ---
 
@@ -131,4 +143,5 @@ acceptance per phase, commit, append a row, rename back when complete.
 
 | commit | summary |
 |--------|---------|
-| (pending) | Phase 1: DitherStatus + libraryHealth + configDirSource. status.test.ts 5→11 cases; lifecycle.test.ts mkdir before writeConfig. |
+| f226cae | Phase 1: DitherStatus + libraryHealth + configDirSource. status.test.ts 5→11 cases; lifecycle.test.ts mkdir before writeConfig. |
+| (pending) | Phase 2: human printer rewrite — DITHER_DIR header, three sections, ⚠/— glyphs, comma counts. New commands/status.test.ts (9 cases). 21 tests green. |
