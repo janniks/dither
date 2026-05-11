@@ -174,4 +174,6 @@ When starting implementation, rename this file to `./plans/external-collections-
 
 | commit | summary |
 |--|--|
-|  |  |
+| 89a87f3 | Phase 1 — Config v2 schema + pure `collection-registry` module. v1 configs load transparently. Exhaustive unit coverage of validation branches. |
+| f068fe9 | Phase 2 — `dither collection {add,list,remove}` subcommand group; `openStore` registers externals with `**/*.md` and skips missing. CLI smoke tests. |
+| 8c3d338 | Phase 3 — `planPromotion` routes through the registry by top-segment; missing externals hard-fail the run; four plugin-host integration tests pin the behavior. |
