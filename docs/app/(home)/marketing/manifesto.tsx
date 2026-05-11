@@ -1,11 +1,17 @@
+// Manifesto text is copied verbatim from
+// ../mmry-homepage-new/app/page.tsx ~lines 600-675 (per spec).
+// User will edit "mmry" → "dither" references later.
 export function Manifesto() {
   return (
     <section className="flex flex-col items-center gap-6">
       <p className="text-fd-muted-foreground text-[12px] font-semibold tracking-[0.12em] uppercase">
         Manifesto
       </p>
-      <article className="border bg-fd-card max-w-[720px] rounded-[20px] p-10 sm:p-12">
-        <div className="text-fd-foreground space-y-4 font-serif text-[17px] leading-[28px]">
+      <article
+        className="border bg-fd-card max-w-[720px] rounded-[20px] p-10 sm:p-12"
+        style={{ fontFamily: "var(--font-dm-serif), serif" }}
+      >
+        <div className="text-fd-foreground space-y-4 text-[18px] leading-[30px]">
           <p>Something happened to our digital memories.</p>
           <p>
             They used to belong to us. Photos on hard drives. Emails in
@@ -14,15 +20,13 @@ export function Manifesto() {
           </p>
           <p>
             Today,{" "}
-            <mark className="bg-yellow-200/40 rounded-md px-1.5 text-fd-foreground">
-              our memories are scattered
-            </mark>{" "}
-            across a thousand services. Your thoughts live in Notion&apos;s
-            cloud. Your conversations in Slack&apos;s servers. Your
-            inspirations on Twitter&apos;s timeline. Your discoveries buried
-            in Reddit&apos;s endless scroll. Each platform holds a piece of
-            your digital self hostage, locked behind their walls, searchable
-            only by their rules, accessible only at their pleasure.
+            <Mark>our memories are scattered</Mark> across a thousand services.
+            Your thoughts live in Notion&apos;s cloud. Your conversations in
+            Slack&apos;s servers. Your inspirations on Twitter&apos;s
+            timeline. Your discoveries buried in Reddit&apos;s endless scroll.
+            Each platform holds a piece of your digital self hostage, locked
+            behind their walls, searchable only by their rules, accessible
+            only at their pleasure.
           </p>
           <p>
             You&apos;ve become a digital tenant, paying rent to access your
@@ -30,12 +34,10 @@ export function Manifesto() {
           </p>
           <p>
             We believe in a simple truth:{" "}
-            <mark className="bg-yellow-200/40 rounded-md px-2 text-fd-foreground">
-              Your memories belong to you.
-            </mark>
+            <Mark>Your memories belong to you.</Mark>
           </p>
           <p>
-            dither isn&apos;t another cloud service asking for your trust.
+            mmry isn&apos;t another cloud service asking for your trust.
             It&apos;s a tool that works for you, not the other way around.
             Connect your services once. Search everything instantly. Keep
             control always.
@@ -52,13 +54,18 @@ export function Manifesto() {
             in your hands, under your control.
           </p>
           <p>
-            Your things. Your search.{" "}
-            <mark className="bg-yellow-200/40 rounded-md px-2 text-fd-foreground">
-              Your dither.
-            </mark>
+            Your things. Your search. <Mark>Your mmry.</Mark>
           </p>
         </div>
       </article>
     </section>
+  );
+}
+
+function Mark({ children }: { children: React.ReactNode }) {
+  return (
+    <mark className="bg-yellow-200/30 text-fd-foreground rounded-md px-1.5 py-0.5 dark:bg-yellow-300/20">
+      {children}
+    </mark>
   );
 }

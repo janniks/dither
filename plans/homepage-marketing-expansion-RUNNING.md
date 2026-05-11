@@ -107,15 +107,15 @@ The architecture diagram (section 8) earns the "wrapper around qmd" claim with a
 Manifesto (verbatim, will be edited later by the user) gives the emotional close; FAQ deflects the predictable HN comments before they're typed. qmd link reinforced in FAQ #1.
 
 **Acceptance:**
-- [ ] Manifesto (section 11) renders the full text from `mmry-homepage-new/app/page.tsx:600–675` verbatim, in a bordered card with serif body. Highlight-style inline marks (the yellow underlines in the source) preserved as `<mark>`-style spans or equivalent.
-- [ ] FAQ (section 12) shows 5 questions with answers:
+- [x] Manifesto (section 11) renders the full text from `mmry-homepage-new/app/page.tsx:600–675` verbatim, in a bordered card with serif body. Highlight-style inline marks (the yellow underlines in the source) preserved as `<mark>`-style spans or equivalent.
+- [x] FAQ (section 12) shows 5 questions with answers:
   1. *What's qmd?* → 2-line answer with a link to qmd.
   2. *Does it phone home?* → No.
   3. *Can plugins exfiltrate data?* → grants story.
   4. *Headless schedule?* → daemon answer.
   5. *Encryption at rest?* → use FileVault/LUKS.
-- [ ] FAQ items are either always-open or use a native `<details>` so they collapse cleanly. No external accordion library.
-- [ ] Final pass on the whole homepage: vertical rhythm consistent (gap-14 column, full-bleed shader rows where chosen); typography tightened; the page reads top-to-bottom without any "why is this here?" section.
+- [x] FAQ items are either always-open or use a native `<details>` so they collapse cleanly. No external accordion library.
+- [x] Final pass on the whole homepage: vertical rhythm consistent (gap-14 column, full-bleed shader rows where chosen); typography tightened; the page reads top-to-bottom without any "why is this here?" section.
 
 ---
 
@@ -129,3 +129,4 @@ When starting implementation, rename this file to `./plans/homepage-marketing-ex
 | `2f6cf53` | Phase 2 — feature grid + no-BS strip + OSS card polished. Hover states, tighter typography, refined icon containers, centered 760px strip. |
 | `43084f6` | Phase 3 — plugin USP narrative: macOS-chrome code cards w/ inline syntax styling, wave row with branded chips, marketplace cards w/ letter avatars and status-aware opacity. |
 | `bd2240f` | Phase 4 — terminal copy pass: bulleted caption + job-id + watcher ticks for schedule; chunk counts + 2-line search result for init; collection/tools counts + separate `claude mcp add` typed line for mcp. |
+| `97d6592` | Phase 5 — inline-SVG architecture diagram (md+) with ASCII fallback (<md), theme-token strokes; sphere row tightened (1fr/1.1fr grid, 5xl heading on md+, max-440px sphere). |
