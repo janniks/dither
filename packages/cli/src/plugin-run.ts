@@ -5,11 +5,12 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import matter from "gray-matter";
 import { resolveHome } from "./home";
-import { libraryRoot as resolveLibraryRoot } from "./paths";
+import { assertInitialized, type DitherConfig } from "./config";
 import { parsePackage } from "./manifest";
 import { updateIndex } from "./update-index";
 import { getGlobalEnv } from "./global-env";
 import { validateCollectionPath, validateGrantPattern, grantsCover } from "./collection-paths";
+import { resolveCollection } from "./collection-registry";
 import { acquire as acquireLock, release as releaseLock } from "./locks";
 import { startRun, type RunJournal } from "./journal";
 import { isMacOS, findProtectedPathInError, formatFdaError, FDA_REQUIRED } from "./tcc-hint";
@@ -97,7 +98,7 @@ interface PromoteCandidate {
 async function planPromotion(
   runDir: string,
   pluginName: string,
-  libraryRoot: string,
+  cfg: DitherConfig,
   allowedCollections: readonly string[],
 ): Promise<PromoteCandidate[]> {
   const entries = await readdir(runDir);
@@ -125,7 +126,23 @@ async function planPromotion(
       );
     }
 
-    const destDir = join(libraryRoot, collection);
+    // Resolve the destination by top-segment lookup. External mounts win
+    // when registered; otherwise the library auto-creates a subdir. The
+    // qmd-side collection name is the top segment in either case (see
+    // store.ts) so search and partial-reindex behave identically.
+    const [top, ...rest] = collection.split("/");
+    const resolved = resolveCollection(cfg, top!);
+    let destDir: string;
+    if (resolved?.source === "external") {
+      if (resolved.status === "missing") {
+        throw new Error(
+          `output ${filename} targets external collection '${top}' but its path is missing: ${resolved.path}`,
+        );
+      }
+      destDir = rest.length > 0 ? join(resolved.path, ...rest) : resolved.path;
+    } else {
+      destDir = join(cfg.library.path, collection);
+    }
     const dest = join(destDir, filename);
     if (existsSync(dest)) {
       const existing = await readFile(dest, "utf-8");
@@ -374,9 +391,10 @@ async function runPluginLocked(
 
     // Two-pass promote: validate every output, then copy. Any validation
     // failure throws before any file is moved into the library, so a partial
-    // promote is impossible.
-    const libRoot = await resolveLibraryRoot();
-    const candidates = await planPromotion(runDir, opts.name, libRoot, grantCollections);
+    // promote is impossible. The full config is passed so promote-time
+    // resolution can branch on external-collection mounts.
+    const cfg = await assertInitialized();
+    const candidates = await planPromotion(runDir, opts.name, cfg, grantCollections);
     const promoted = await copyPromoted(candidates);
     for (const path of promoted) {
       await journal.append("promoted", { path });
