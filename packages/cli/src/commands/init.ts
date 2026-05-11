@@ -8,6 +8,7 @@ import { resolveHome } from "../home";
 import { loadConfig, saveConfig, type DitherConfig } from "../config";
 import { openStore } from "../store";
 import { promptText } from "../prompt";
+import { tildePath } from "../display";
 
 /**
  * Resolve a `--library <path>` value into a canonical, writable directory
@@ -84,8 +85,8 @@ export const initCommand = defineCommand({
 
     const existing = await loadConfig();
     if (existing) {
-      console.log(`dither is already initialized at ${home}`);
-      console.log(`  library: ${existing.library.path}`);
+      console.log(`dither is already initialized at ${tildePath(home)}`);
+      console.log(`  library: ${tildePath(existing.library.path)}`);
       if (args.library) {
         console.log("  (--library ignored — re-init isn't supported; remove config.json and re-run if you need to reconfigure)");
       }
@@ -105,7 +106,7 @@ export const initCommand = defineCommand({
       try {
         requested = await promptText({
           message: "Where should your library live?",
-          hint: `ENTER to use default ${defaultLibrary}`,
+          hint: `ENTER to use default ${tildePath(defaultLibrary)}`,
           placeholder: "~/Documents/dither",
           default: defaultLibrary,
           validate: async (v) => {
@@ -155,8 +156,8 @@ export const initCommand = defineCommand({
 
     // End-of-init summary: three short lines + a one-line next-step nudge.
     console.log("");
-    console.log(`✓ wrote ${join(home, "config.json")}`);
-    console.log(`✓ ${created ? "created" : "using"} library at ${libraryPath}`);
+    console.log(`✓ wrote ${tildePath(join(home, "config.json"))}`);
+    console.log(`✓ ${created ? "created" : "using"} library at ${tildePath(libraryPath)}`);
     if (args.download) {
       if (weightsOk) {
         console.log("✓ pre-downloaded model weights");

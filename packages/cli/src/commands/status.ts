@@ -1,30 +1,31 @@
 import { defineCommand } from "citty";
 import pc from "picocolors";
 import { getStatus, type DitherStatus } from "../status";
+import { tildePath } from "../display";
 
 const fmt = (n: number): string => new Intl.NumberFormat(undefined).format(n);
 
 function printHumanStatus(s: DitherStatus): void {
   // Optional header — only when the user explicitly overrode via env.
   if (s.configDirSource === "env") {
-    console.log(`${pc.cyan("Note:")} Using ENV DITHER_DIR=${s.configDir}`);
+    console.log(`${pc.cyan("Note:")} Using ENV DITHER_DIR=${tildePath(s.configDir)}`);
     console.log("");
   }
 
   // Locations.
-  console.log(`config dir:  ${s.configDir}`);
+  console.log(`config dir:  ${tildePath(s.configDir)}`);
   if (s.libraryHealth === "unconfigured") {
     console.log(`library:     ${pc.dim("(not configured — run `dither init`)")}`);
   } else if (s.libraryHealth === "missing") {
     console.log(
-      `library:     ${s.library}  ${pc.yellow("⚠ missing — directory does not exist")}`,
+      `library:     ${tildePath(s.library!)}  ${pc.yellow("⚠ missing — directory does not exist")}`,
     );
   } else if (s.libraryHealth === "unreadable") {
     console.log(
-      `library:     ${s.library}  ${pc.yellow("⚠ unreadable — directory exists but is not readable")}`,
+      `library:     ${tildePath(s.library!)}  ${pc.yellow("⚠ unreadable — directory exists but is not readable")}`,
     );
   } else {
-    console.log(`library:     ${s.library}`);
+    console.log(`library:     ${tildePath(s.library!)}`);
   }
   console.log("");
 
