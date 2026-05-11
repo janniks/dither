@@ -69,11 +69,11 @@ Polish the sections a hurried reader will actually see: feature grid, no-BS stri
 The plugin story is the real USP — sections 3, 4, 6 work together. Section 3 *shows the API surface* (code + grants), section 4 *frames it lyrically* (wave shader + chips), section 6 *proves there's a marketplace* (9 cards with honest shipping labels). Together they should leave a reader thinking "ok, the plugin model is the differentiator."
 
 **Acceptance:**
-- [ ] Plugin USP (section 3) is a 2-column block: left = a 30–50 line representative TypeScript Deno plugin, right = the grants manifest declaring `net` / `env` / `fs`. Code is syntax-highlighted; manifest is in a styled box.
-- [ ] Wave shader row (section 4) renders a `Dithering shape="wave"` shader, has 3 inline plugin chips (Twitter / Pocket / Raindrop) under a one-paragraph pitch.
-- [ ] Plugin marketplace grid (section 6) shows 9 plugin cards with icon + name + 1-line + status label (`shipped` / `wip` / `planned`); cards in `wip` and `planned` are visually de-emphasized.
-- [ ] Cards link out to per-plugin docs OR are clearly non-clickable (consistent within the grid).
-- [ ] Wave row stacks correctly on `< md` (shader on top, copy below).
+- [x] Plugin USP (section 3) is a 2-column block: left = a 30–50 line representative TypeScript Deno plugin, right = the grants manifest declaring `net` / `env` / `fs`. Code is syntax-highlighted; manifest is in a styled box.
+- [x] Wave shader row (section 4) renders a `Dithering shape="wave"` shader, has 3 inline plugin chips (Twitter / Pocket / Raindrop) under a one-paragraph pitch.
+- [x] Plugin marketplace grid (section 6) shows 9 plugin cards with icon + name + 1-line + status label (`shipped` / `wip` / `planned`); cards in `wip` and `planned` are visually de-emphasized.
+- [x] Cards link out to per-plugin docs OR are clearly non-clickable (consistent within the grid).
+- [x] Wave row stacks correctly on `< md` (shader on top, copy below).
 
 ---
 
@@ -126,3 +126,4 @@ When starting implementation, rename this file to `./plans/homepage-marketing-ex
 | Commit | Summary |
 |--------|---------|
 | `94ae1c9` | Phase 1 — tracer bullet: 13 stub components scaffolded under `app/(home)/marketing/`, wired into `page.tsx` in agreed order. All acceptance criteria met. |
+| `2f6cf53` | Phase 2 — feature grid + no-BS strip + OSS card polished. Hover states, tighter typography, refined icon containers, centered 760px strip. |
