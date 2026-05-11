@@ -95,10 +95,10 @@ Hands-off ingest is the second-strongest USP after the sandbox. Sections 5, 7, 9
 The architecture diagram (section 8) earns the "wrapper around qmd" claim with a single picture. The sphere shader row (section 10) is the lyrical payoff that lands *after* a reader has been convinced by the technical sections — never first.
 
 **Acceptance:**
-- [ ] Architecture diagram (section 8) renders as inline SVG showing: `markdown on disk` ⇄ `qmd index` ⇄ `dither core` → `{ CLI · MCP server · scheduler · watcher · Deno plugin runtime }`.
-- [ ] Diagram colors / borders use theme tokens; readable on light and dark.
-- [ ] Diagram is replaced by a textual fallback below `< md` if the SVG would be cramped, OR scales gracefully — pick one explicitly.
-- [ ] Sphere shader row (section 10) renders `Dithering shape="sphere"` and a one-paragraph lyrical pitch ("Your data has a center now."). Sphere is positioned to feel like a payoff, not a stunt.
+- [x] Architecture diagram (section 8) renders as inline SVG showing: `markdown on disk` ⇄ `qmd index` ⇄ `dither core` → `{ CLI · MCP server · scheduler · watcher · Deno plugin runtime }`.
+- [x] Diagram colors / borders use theme tokens; readable on light and dark.
+- [x] Diagram is replaced by a textual fallback below `< md` if the SVG would be cramped, OR scales gracefully — pick one explicitly. *(picked: SVG on `md+`, ASCII fallback below `md`)*
+- [x] Sphere shader row (section 10) renders `Dithering shape="sphere"` and a one-paragraph lyrical pitch ("Your data has a center now."). Sphere is positioned to feel like a payoff, not a stunt.
 
 ---
 
@@ -128,3 +128,4 @@ When starting implementation, rename this file to `./plans/homepage-marketing-ex
 | `94ae1c9` | Phase 1 — tracer bullet: 13 stub components scaffolded under `app/(home)/marketing/`, wired into `page.tsx` in agreed order. All acceptance criteria met. |
 | `2f6cf53` | Phase 2 — feature grid + no-BS strip + OSS card polished. Hover states, tighter typography, refined icon containers, centered 760px strip. |
 | `43084f6` | Phase 3 — plugin USP narrative: macOS-chrome code cards w/ inline syntax styling, wave row with branded chips, marketplace cards w/ letter avatars and status-aware opacity. |
+| `bd2240f` | Phase 4 — terminal copy pass: bulleted caption + job-id + watcher ticks for schedule; chunk counts + 2-line search result for init; collection/tools counts + separate `claude mcp add` typed line for mcp. |
