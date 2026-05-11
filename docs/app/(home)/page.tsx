@@ -2,6 +2,19 @@ import Link from "next/link";
 import { ArrowRight, Boxes, Plug, Sparkles, Terminal } from "lucide-react";
 import { RotatingHeadline } from "./rotating-headline";
 import { FooterSection } from "./footer-section";
+import { FeatureGrid } from "./marketing/feature-grid";
+import { NoBsStrip } from "./marketing/no-bs-strip";
+import { PluginUsp } from "./marketing/plugin-usp";
+import { WaveRow } from "./marketing/wave-row";
+import { ScheduleWatchDemo } from "./marketing/schedule-watch-demo";
+import { PluginMarketplace } from "./marketing/plugin-marketplace";
+import { TerminalInit } from "./marketing/terminal-init";
+import { ArchitectureDiagram } from "./marketing/architecture-diagram";
+import { TerminalMcp } from "./marketing/terminal-mcp";
+import { SphereRow } from "./marketing/sphere-row";
+import { Manifesto } from "./marketing/manifesto";
+import { Faq } from "./marketing/faq";
+import { OssCard } from "./marketing/oss-card";
 
 const links = [
   {
@@ -85,6 +98,20 @@ export default function HomePage() {
             );
           })}
         </section>
+
+        <FeatureGrid />
+        <NoBsStrip />
+        <PluginUsp />
+        <WaveRow />
+        <ScheduleWatchDemo />
+        <PluginMarketplace />
+        <TerminalInit />
+        <ArchitectureDiagram />
+        <TerminalMcp />
+        <SphereRow />
+        <Manifesto />
+        <Faq />
+        <OssCard />
 
         <section className="border bg-fd-card flex flex-wrap items-center justify-between gap-4 rounded-[20px] p-6">
           <p className="text-fd-muted-foreground max-w-[720px] text-[15px] leading-[26px]">
