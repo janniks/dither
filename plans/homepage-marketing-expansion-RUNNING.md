@@ -57,10 +57,10 @@ End-to-end behavior: every section exists as a stub component, wired into the ho
 Polish the sections a hurried reader will actually see: feature grid, no-BS strip, OSS hackability card. These three frame everything: the grid sets the technical stake (qmd, Deno, scheduling, MCP), the strip handles the "is this another SaaS?" reflex, the OSS card closes the loop with "read the source."
 
 **Acceptance:**
-- [ ] Feature grid (section 1) has 4 cards with real icons, real titles, and real one-line bodies; qmd link present and clickable; Deno mentioned in card 2.
-- [ ] Grid is 4-across on `md+`, 2×2 on `< md`.
-- [ ] No-BS strip (section 2) is a single-line emphatic block; types correctly on dark and light themes; respects 760px content max width.
-- [ ] OSS card (section 13) has a repo URL link and a one-liner; visually consistent with existing v0 status card.
+- [x] Feature grid (section 1) has 4 cards with real icons, real titles, and real one-line bodies; qmd link present and clickable; Deno mentioned in card 2.
+- [x] Grid is 4-across on `md+`, 2×2 on `< md`.
+- [x] No-BS strip (section 2) is a single-line emphatic block; types correctly on dark and light themes; respects 760px content max width.
+- [x] OSS card (section 13) has a repo URL link and a one-liner; visually consistent with existing v0 status card.
 
 ---
 
@@ -125,4 +125,4 @@ When starting implementation, rename this file to `./plans/homepage-marketing-ex
 
 | Commit | Summary |
 |--------|---------|
-|        |         |
+| `94ae1c9` | Phase 1 — tracer bullet: 13 stub components scaffolded under `app/(home)/marketing/`, wired into `page.tsx` in agreed order. All acceptance criteria met. |
