@@ -130,3 +130,4 @@ When starting implementation, rename this file to `./plans/homepage-marketing-ex
 | `43084f6` | Phase 3 — plugin USP narrative: macOS-chrome code cards w/ inline syntax styling, wave row with branded chips, marketplace cards w/ letter avatars and status-aware opacity. |
 | `bd2240f` | Phase 4 — terminal copy pass: bulleted caption + job-id + watcher ticks for schedule; chunk counts + 2-line search result for init; collection/tools counts + separate `claude mcp add` typed line for mcp. |
 | `97d6592` | Phase 5 — inline-SVG architecture diagram (md+) with ASCII fallback (<md), theme-token strokes; sphere row tightened (1fr/1.1fr grid, 5xl heading on md+, max-440px sphere). |
+| `a29ab40` | Phase 6 — manifesto verbatim from mmry source + DM Serif Text via CSS var, yellow inline highlights with dark-mode tint. FAQ already done in phase 1. Plan complete. |
