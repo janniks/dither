@@ -7,13 +7,26 @@ export function TerminalInit() {
       <div className="flex justify-center md:justify-start">
         <Terminal>
           <TypingAnimation>$ dither init ~/notes</TypingAnimation>
-          <AnimatedSpan className="text-green-500">✔ Created ~/notes/.dither</AnimatedSpan>
-          <AnimatedSpan className="text-green-500">✔ qmd index ready</AnimatedSpan>
+          <AnimatedSpan className="text-green-500">
+            ✔ Created ~/notes/.dither
+          </AnimatedSpan>
+          <AnimatedSpan className="text-green-500">
+            ✔ qmd index ready (lexical + semantic)
+          </AnimatedSpan>
           <TypingAnimation>$ dither add notes/idea.md</TypingAnimation>
-          <AnimatedSpan className="text-green-500">✔ Indexed notes/idea.md</AnimatedSpan>
+          <AnimatedSpan className="text-green-500">
+            ✔ Indexed notes/idea.md · 1.2 KB · 4 chunks
+          </AnimatedSpan>
           <TypingAnimation>$ dither search &quot;ranking signals&quot;</TypingAnimation>
+          <AnimatedSpan className="text-fd-muted-foreground">
+            2 results · 12ms
+          </AnimatedSpan>
           <AnimatedSpan>
-            <span className="text-blue-500">notes/idea.md</span> · 8ms
+            <span className="text-blue-500">notes/idea.md</span>{" "}
+            <span className="text-fd-muted-foreground">· 3 days ago</span>
+          </AnimatedSpan>
+          <AnimatedSpan className="text-fd-muted-foreground pl-4">
+            ...recency should decay by query intent, not by clock...
           </AnimatedSpan>
         </Terminal>
       </div>

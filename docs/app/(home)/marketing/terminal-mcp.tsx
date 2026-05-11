@@ -21,13 +21,17 @@ export function TerminalMcp() {
             ✔ MCP server listening on stdio
           </AnimatedSpan>
           <AnimatedSpan className="text-fd-muted-foreground">
-            tools: search · show · list · add · tag · grep
+            collections: notes · bookmarks · chats · drafts (4)
           </AnimatedSpan>
-          <AnimatedSpan>
-            <span className="text-blue-500">
-              claude mcp add dither -- dither mcp serve
-            </span>
+          <AnimatedSpan className="text-fd-muted-foreground">
+            tools: search · show · list · add · tag · grep (6)
           </AnimatedSpan>
+          <AnimatedSpan className="text-fd-muted-foreground">
+            ready
+          </AnimatedSpan>
+          <TypingAnimation className="text-blue-500">
+            $ claude mcp add dither -- dither mcp serve
+          </TypingAnimation>
         </Terminal>
       </div>
     </section>

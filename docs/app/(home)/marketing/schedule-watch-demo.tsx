@@ -12,16 +12,42 @@ export function ScheduleWatchDemo() {
           Cron-style schedules, fs watchers, or one-shot manual runs. Plugins
           do the same work whether you trigger them or the daemon does.
         </p>
+        <ul className="text-fd-muted-foreground mt-2 flex flex-col gap-1 text-[13px]">
+          <li>
+            <span className="text-fd-foreground font-mono">schedule</span> —
+            cron, every N minutes, or on a wall-clock.
+          </li>
+          <li>
+            <span className="text-fd-foreground font-mono">watch</span> — fs
+            events, debounced, batched.
+          </li>
+          <li>
+            <span className="text-fd-foreground font-mono">run</span> — manual
+            one-shot for ad-hoc ingests.
+          </li>
+        </ul>
       </div>
       <div className="flex justify-center md:justify-start">
         <Terminal>
           <TypingAnimation>$ dither schedule add bookmarks --every 1h</TypingAnimation>
           <AnimatedSpan className="text-green-500">
-            ✔ Scheduled bookmarks every 1h (next: 14:00)
+            ✔ Scheduled bookmarks every 1h
           </AnimatedSpan>
-          <TypingAnimation>$ dither watch ~/Inbox</TypingAnimation>
           <AnimatedSpan className="text-fd-muted-foreground">
-            watching ~/Inbox · indexed 3 entries · idle
+            next run: 14:00 · last: never · job id: sch_a12f
+          </AnimatedSpan>
+          <TypingAnimation>$ dither watch ~/Inbox --collection notes</TypingAnimation>
+          <AnimatedSpan className="text-green-500">
+            ✔ Watching ~/Inbox → notes
+          </AnimatedSpan>
+          <AnimatedSpan className="text-fd-muted-foreground">
+            + draft-202605.md · indexed (1.2 KB · 4 chunks)
+          </AnimatedSpan>
+          <AnimatedSpan className="text-fd-muted-foreground">
+            + agentic-ranking.md · indexed (0.8 KB · 2 chunks)
+          </AnimatedSpan>
+          <AnimatedSpan className="text-fd-muted-foreground">
+            idle · debouncing
           </AnimatedSpan>
         </Terminal>
       </div>

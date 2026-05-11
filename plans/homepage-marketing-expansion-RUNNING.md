@@ -82,11 +82,11 @@ The plugin story is the real USP — sections 3, 4, 6 work together. Section 3 *
 Hands-off ingest is the second-strongest USP after the sandbox. Sections 5, 7, 9 use `Terminal` + `TypingAnimation` to animate concrete CLI sequences. Each terminal sequence must read like real output a real user would see, not invented marketing prose.
 
 **Acceptance:**
-- [ ] Schedule & watch demo (section 5) shows two commands (`dither schedule add …` and `dither watch …`) with realistic stdout: schedule confirmation + watcher tick lines. Caption next to it explains cron / fs-watch / one-shot.
-- [ ] Terminal demo #1 (section 7) runs `dither init` → `dither add` → `dither search` with one or two result lines. A short caption beside the terminal explains the mental model in 2 sentences.
-- [ ] MCP terminal demo (section 9) shows `dither mcp serve` + tools list + the `claude mcp add` install line.
-- [ ] All three terminals start typing only when the section enters the viewport (existing `Terminal` behavior).
-- [ ] Terminals stay readable on `< md` (no horizontal scroll, font scales appropriately).
+- [x] Schedule & watch demo (section 5) shows two commands (`dither schedule add …` and `dither watch …`) with realistic stdout: schedule confirmation + watcher tick lines. Caption next to it explains cron / fs-watch / one-shot.
+- [x] Terminal demo #1 (section 7) runs `dither init` → `dither add` → `dither search` with one or two result lines. A short caption beside the terminal explains the mental model in 2 sentences.
+- [x] MCP terminal demo (section 9) shows `dither mcp serve` + tools list + the `claude mcp add` install line.
+- [x] All three terminals start typing only when the section enters the viewport (existing `Terminal` behavior).
+- [x] Terminals stay readable on `< md` (no horizontal scroll, font scales appropriately).
 
 ---
 
@@ -127,3 +127,4 @@ When starting implementation, rename this file to `./plans/homepage-marketing-ex
 |--------|---------|
 | `94ae1c9` | Phase 1 — tracer bullet: 13 stub components scaffolded under `app/(home)/marketing/`, wired into `page.tsx` in agreed order. All acceptance criteria met. |
 | `2f6cf53` | Phase 2 — feature grid + no-BS strip + OSS card polished. Hover states, tighter typography, refined icon containers, centered 760px strip. |
+| `43084f6` | Phase 3 — plugin USP narrative: macOS-chrome code cards w/ inline syntax styling, wave row with branded chips, marketplace cards w/ letter avatars and status-aware opacity. |
