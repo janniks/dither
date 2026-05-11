@@ -135,8 +135,9 @@ export const initCommand = defineCommand({
     const { path: libraryPath, created } = await resolveLibraryPath(requested);
 
     const cfg: DitherConfig = {
-      schema: { version: 1 },
+      schema: { version: 2 },
       library: { path: libraryPath },
+      collections: { external: [] },
     };
     await saveConfig(cfg);
 

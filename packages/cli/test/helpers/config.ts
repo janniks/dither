@@ -7,7 +7,8 @@ import { saveConfig } from "../../src/config";
  */
 export async function writeTestConfig(libraryPath: string): Promise<void> {
   await saveConfig({
-    schema: { version: 1 },
+    schema: { version: 2 },
     library: { path: libraryPath },
+    collections: { external: [] },
   });
 }

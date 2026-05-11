@@ -36,8 +36,9 @@ describe("CLI dispatch", () => {
     // implicit default so the rest of these tests behave unchanged.
     const { saveConfig } = await import("./config");
     await saveConfig({
-      schema: { version: 1 },
+      schema: { version: 2 },
       library: { path: join(home, "entries") },
+      collections: { external: [] },
     });
   });
 

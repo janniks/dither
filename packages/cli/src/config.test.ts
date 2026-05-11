@@ -27,26 +27,60 @@ describe("config module", () => {
   it("saveConfig + loadConfig round-trips a valid config", async () => {
     const { saveConfig, loadConfig } = await import("./config");
     const cfg = {
-      schema: { version: 1 },
+      schema: { version: 2 },
       library: { path: join(home, "library") },
+      collections: { external: [] },
     };
     await saveConfig(cfg);
     const loaded = await loadConfig();
     expect(loaded).toEqual(cfg);
   });
 
-  it("loadConfig tolerates // line comments and /* */ block comments", async () => {
+  it("loadConfig accepts v1 configs and normalises them to v2 with empty externals", async () => {
     mkdirSync(home, { recursive: true });
     writeFileSync(
       join(home, "config.json"),
-      `// header comment\n{\n  "schema": { "version": 1 }, /* inline */\n  "library": { "path": "/tmp/x" } // trailing\n}\n`,
+      JSON.stringify({ schema: { version: 1 }, library: { path: "/tmp/x" } }),
       "utf-8",
     );
     const { loadConfig } = await import("./config");
     const loaded = await loadConfig();
     expect(loaded).toEqual({
-      schema: { version: 1 },
+      schema: { version: 2 },
       library: { path: "/tmp/x" },
+      collections: { external: [] },
+    });
+  });
+
+  it("loadConfig round-trips a v2 config with externals", async () => {
+    const { saveConfig, loadConfig } = await import("./config");
+    const cfg = {
+      schema: { version: 2 },
+      library: { path: join(home, "library") },
+      collections: {
+        external: [
+          { name: "work", path: "/tmp/work" },
+          { name: "personal", path: "/tmp/personal" },
+        ],
+      },
+    };
+    await saveConfig(cfg);
+    expect(await loadConfig()).toEqual(cfg);
+  });
+
+  it("loadConfig tolerates // line comments and /* */ block comments", async () => {
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(home, "config.json"),
+      `// header comment\n{\n  "schema": { "version": 2 }, /* inline */\n  "library": { "path": "/tmp/x" } // trailing\n}\n`,
+      "utf-8",
+    );
+    const { loadConfig } = await import("./config");
+    const loaded = await loadConfig();
+    expect(loaded).toEqual({
+      schema: { version: 2 },
+      library: { path: "/tmp/x" },
+      collections: { external: [] },
     });
   });
 
@@ -70,9 +104,24 @@ describe("config module", () => {
 
   it("loadConfig rejects missing library.path", async () => {
     mkdirSync(home, { recursive: true });
-    writeFileSync(join(home, "config.json"), JSON.stringify({ schema: { version: 1 } }), "utf-8");
+    writeFileSync(join(home, "config.json"), JSON.stringify({ schema: { version: 2 } }), "utf-8");
     const { loadConfig } = await import("./config");
     await expect(loadConfig()).rejects.toThrow(/library\.path/);
+  });
+
+  it("loadConfig rejects malformed collections.external entries", async () => {
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({
+        schema: { version: 2 },
+        library: { path: "/x" },
+        collections: { external: [{ name: "ok" }] },
+      }),
+      "utf-8",
+    );
+    const { loadConfig } = await import("./config");
+    await expect(loadConfig()).rejects.toThrow(/malformed collections\.external/);
   });
 
   it("assertInitialized throws NotInitializedError when no config exists", async () => {
@@ -83,8 +132,9 @@ describe("config module", () => {
   it("assertInitialized returns the config when present", async () => {
     const { saveConfig, assertInitialized } = await import("./config");
     const cfg = {
-      schema: { version: 1 },
+      schema: { version: 2 },
       library: { path: join(home, "library") },
+      collections: { external: [] },
     };
     await saveConfig(cfg);
     const got = await assertInitialized();
