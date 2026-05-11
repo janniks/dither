@@ -107,7 +107,7 @@ export const initCommand = defineCommand({
         requested = await promptText({
           message: "Where should your library live?",
           hint: `ENTER to use default ${tildePath(defaultLibrary)}`,
-          placeholder: "~/Documents/dither",
+          placeholder: "e.g. ~/Documents/dither",
           default: defaultLibrary,
           validate: async (v) => {
             if (!v.trim()) return "path cannot be empty";
