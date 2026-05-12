@@ -79,25 +79,25 @@ export function HomeNav() {
               href="/docs"
               className="text-fd-muted-foreground hover:text-fd-foreground text-[13px] font-semibold no-underline"
             >
-              Docs
+              Documentation
             </Link>
             <Link
-              href="/logo-lab"
+              href="/#marketplace"
               className="text-fd-muted-foreground hover:text-fd-foreground text-[13px] font-semibold no-underline"
             >
-              Logo Lab
+              Plugins
             </Link>
             <Link
-              href="/nav-lab"
+              href="/#manifesto"
               className="text-fd-muted-foreground hover:text-fd-foreground text-[13px] font-semibold no-underline"
             >
-              Nav Lab
+              Manifesto
             </Link>
             <Link
-              href="/terminal-lab"
+              href="/#faq"
               className="text-fd-muted-foreground hover:text-fd-foreground text-[13px] font-semibold no-underline"
             >
-              Terminal Lab
+              FAQs
             </Link>
             <Link
               href="/docs"
@@ -167,7 +167,7 @@ export function HomeNav() {
         {/* mobile expandable panel — absolute so it doesn't grow the sticky pill
             (which would push the rest of the page down on open) */}
         <div
-          className={`absolute inset-x-2 top-full mt-2 grid overflow-hidden rounded-[20px] border bg-fd-background/85 backdrop-blur-md shadow-[0_12px_24px_-12px_rgba(0,0,0,0.25),0_1px_1px_rgba(255,255,255,0.06)_inset] transition-[grid-template-rows,opacity] duration-300 ease-out md:hidden ${
+          className={`absolute inset-x-2 top-full mt-2 grid overflow-hidden rounded-[20px] border bg-fd-background/60 backdrop-blur-xl shadow-[0_12px_24px_-12px_rgba(0,0,0,0.25),0_1px_1px_rgba(255,255,255,0.06)_inset] transition-[grid-template-rows,opacity] duration-300 ease-out md:hidden ${
             open ? "grid-rows-[1fr] opacity-100" : "pointer-events-none grid-rows-[0fr] opacity-0"
           }`}
         >
@@ -178,28 +178,28 @@ export function HomeNav() {
                 onClick={() => setOpen(false)}
                 className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
               >
-                Docs
+                Documentation
               </Link>
               <Link
-                href="/logo-lab"
+                href="/#marketplace"
                 onClick={() => setOpen(false)}
                 className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
               >
-                Logo Lab
+                Plugins
               </Link>
               <Link
-                href="/nav-lab"
+                href="/#manifesto"
                 onClick={() => setOpen(false)}
                 className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
               >
-                Nav Lab
+                Manifesto
               </Link>
               <Link
-                href="/terminal-lab"
+                href="/#faq"
                 onClick={() => setOpen(false)}
                 className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
               >
-                Terminal Lab
+                FAQs
               </Link>
               <Link
                 href="/docs"

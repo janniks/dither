@@ -43,7 +43,7 @@ const items = [
 
 export function Faq() {
   return (
-    <section className="flex flex-col gap-6">
+    <section id="faq" className="flex scroll-mt-24 flex-col gap-6">
       <div className="max-w-[720px]">
         <h2 className="text-3xl font-[650] tracking-[-0.02em]">
           Questions a skeptic asks.
