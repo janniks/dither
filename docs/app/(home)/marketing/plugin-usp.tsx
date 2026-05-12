@@ -1,8 +1,8 @@
 // Tiny inline syntax styling — no external highlighter, just a few colored
 // spans for the keywords/strings/comments that carry the most signal.
-const K = "text-purple-400";
-const S = "text-green-400";
-const F = "text-blue-400";
+const K = "text-[#B093D8]";
+const S = "text-[#99D892]";
+const F = "text-[#4AB5EC]";
 
 export function PluginUsp() {
   return (

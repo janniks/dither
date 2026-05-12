@@ -84,7 +84,7 @@ export function WaveRow() {
               width="100%"
               height="100%"
               colorBack="#000000"
-              colorFront="#ff5d2e"
+              colorFront="#99D892"
               shape="wave"
               type="4x4"
               size={2}

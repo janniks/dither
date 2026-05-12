@@ -31,14 +31,14 @@ export function ScheduleWatchDemo() {
       <div className="flex justify-center md:justify-start">
         <Terminal>
           <TypingAnimation>$ dither schedule add bookmarks --every 1h</TypingAnimation>
-          <AnimatedSpan className="text-green-500">
+          <AnimatedSpan className="text-[#99D892]">
             ✔ Scheduled bookmarks every 1h
           </AnimatedSpan>
           <AnimatedSpan className="text-fd-muted-foreground">
             next run: 14:00 · last: never · job id: sch_a12f
           </AnimatedSpan>
           <TypingAnimation>$ dither watch ~/Inbox --collection notes</TypingAnimation>
-          <AnimatedSpan className="text-green-500">
+          <AnimatedSpan className="text-[#99D892]">
             ✔ Watching ~/Inbox → notes
           </AnimatedSpan>
           <AnimatedSpan className="text-fd-muted-foreground">

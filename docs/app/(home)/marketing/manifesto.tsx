@@ -1,20 +1,34 @@
 // Manifesto text is copied verbatim from
 // ../mmry-homepage-new/app/page.tsx ~lines 600-675 (per spec).
 // User will edit "mmry" → "dither" references later.
+import {
+  DiagonalEdgeStrips,
+  type DitherStripOpts,
+} from "@/lib/dither-edge-strip";
+
+const MANIFESTO_OPTS: DitherStripOpts = {
+  thickness: 36,
+  cellPx: 3,
+  falloff: 0.45,
+  acrossFalloff: 0.8,
+  jitter: 0.15,
+  densityScale: 1.25,
+};
+
 export function Manifesto() {
   return (
     <section
       id="manifesto"
-      className="flex scroll-mt-24 flex-col items-center gap-6"
+      className="flex scroll-mt-24 flex-col items-center"
     >
-      <p className="text-fd-muted-foreground text-[12px] font-semibold tracking-[0.12em] uppercase">
-        Manifesto
-      </p>
       <article
-        className="border bg-fd-card max-w-[720px] rounded-[20px] p-6 sm:p-8 md:p-12"
-        style={{ fontFamily: "var(--font-dm-serif), serif" }}
+        className="bg-fd-card relative max-w-[720px] overflow-hidden p-6 sm:p-8 md:p-12"
+        style={{ borderRadius: 0 }}
       >
-        <div className="text-fd-foreground space-y-3 text-[15px] leading-[24px] sm:space-y-4 sm:text-[16px] sm:leading-[26px] md:text-[18px] md:leading-[30px]">
+        <p className="text-fd-muted-foreground relative z-[1] text-[12px] font-semibold tracking-[0.12em] uppercase">
+          Manifesto
+        </p>
+        <div className="text-fd-foreground relative z-[1] mt-6 space-y-3 text-[15px] leading-[24px] sm:space-y-4 sm:text-[16px] sm:leading-[26px] md:text-[18px] md:leading-[30px]">
           <p>Something happened to our digital memories.</p>
           <p>
             They used to belong to us. Photos on hard drives. Emails in
@@ -41,6 +55,7 @@ export function Manifesto() {
             control always.
           </p>
         </div>
+        <DiagonalEdgeStrips opts={MANIFESTO_OPTS} />
       </article>
     </section>
   );

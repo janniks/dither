@@ -13,6 +13,7 @@ import { SphereRow } from "./marketing/sphere-row";
 import { Manifesto } from "./marketing/manifesto";
 import { Faq } from "./marketing/faq";
 import { OssCard } from "./marketing/oss-card";
+import { DitheredCta } from "./marketing/dithered-cta";
 
 const links = [
   {
@@ -48,7 +49,7 @@ export default function HomePage() {
             href="#manifesto"
             className="border bg-fd-card text-fd-muted-foreground hover:text-fd-foreground hover:border-fd-primary/40 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm leading-5 no-underline transition-colors"
           >
-            <Quote size={14} />
+            <Quote size={14} className="text-[#99D892]" />
             Read Manifesto
           </a>
           <div className="mt-6 max-w-[820px]">
@@ -109,18 +110,13 @@ export default function HomePage() {
         <ScheduleWatchDemo />
         {/* <ArchitectureDiagram /> */}
         {/* <TerminalMcp /> */}
+        <hr className="border-fd-border mx-auto w-full max-w-[760px] border-t" />
         <SphereRow />
         <Manifesto />
         <Faq />
 
         <section className="flex justify-center py-2">
-          <Link
-            href="/docs"
-            className="bg-fd-primary text-fd-primary-foreground inline-flex items-center justify-center gap-2 rounded-full px-6 py-3.5 text-[15px] font-semibold no-underline transition-transform hover:scale-[1.02]"
-          >
-            Try it out now
-            <ArrowRight size={16} />
-          </Link>
+          <DitheredCta href="/docs">Try it out now</DitheredCta>
         </section>
 
         <OssCard />

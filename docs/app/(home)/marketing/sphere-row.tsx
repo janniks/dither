@@ -5,10 +5,11 @@ export function SphereRow() {
   return (
     // Always side-by-side. Sphere uses explicit size at every breakpoint so
     // the rounded-full container stays a circle, not a vertically-stretched
-    // pill. Text first, sphere after — same order on every breakpoint.
-    <section className="grid grid-cols-[1fr_auto] items-center gap-4 sm:gap-6 md:gap-12">
+    // pill. Text first, sphere after — flex justify-around so both sit closer
+    // to the centre instead of being pushed to the outer edges.
+    <section className="flex items-center justify-around gap-4 sm:gap-6 md:gap-12">
       <div className="flex flex-col gap-2 sm:gap-3 md:gap-5">
-        <h2 className="text-[22px] leading-[1.1] font-[650] tracking-[-0.03em] sm:text-3xl md:text-5xl md:leading-[1.05]">
+        <h2 className="text-[22px] leading-[1.1] font-[650] tracking-[-0.03em] sm:text-3xl md:text-4xl md:leading-[1.05]">
           Your data has a center now.
         </h2>
         <p className="text-fd-muted-foreground text-[13px] leading-[18px] sm:text-[14px] sm:leading-[20px] md:max-w-[420px] md:text-[16px] md:leading-[26px]">
@@ -17,12 +18,12 @@ export function SphereRow() {
           used.
         </p>
       </div>
-      <div className="bg-black size-24 overflow-hidden rounded-full sm:size-36 md:size-[280px] lg:size-[360px]">
+      <div className="bg-black size-24 overflow-hidden rounded-full sm:size-32 md:size-[200px] lg:size-[260px]">
         <Dithering
           width="100%"
           height="100%"
           colorBack="#000000"
-          colorFront="#00b3ff"
+          colorFront="#4AB5EC"
           shape="sphere"
           type="8x8"
           size={2}

@@ -17,7 +17,7 @@ export function TerminalMcp() {
       <div className="flex justify-center md:justify-start">
         <Terminal>
           <TypingAnimation>$ dither mcp serve</TypingAnimation>
-          <AnimatedSpan className="text-green-500">
+          <AnimatedSpan className="text-[#99D892]">
             ✔ MCP server listening on stdio
           </AnimatedSpan>
           <AnimatedSpan className="text-fd-muted-foreground">
@@ -29,7 +29,7 @@ export function TerminalMcp() {
           <AnimatedSpan className="text-fd-muted-foreground">
             ready
           </AnimatedSpan>
-          <TypingAnimation className="text-blue-500">
+          <TypingAnimation className="text-[#4AB5EC]">
             $ claude mcp add dither -- dither mcp serve
           </TypingAnimation>
         </Terminal>
