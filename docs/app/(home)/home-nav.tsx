@@ -26,10 +26,13 @@ export function HomeNav() {
   return (
     <div className="sticky top-0 z-40 p-5">
       <div
-        className={`relative mx-auto rounded-[28px] ${
+        // Always render a 1px border so its space is reserved on both
+        // states — only the color toggles, so the unscrolled → scrolled
+        // transition doesn't shift content by a pixel.
+        className={`relative mx-auto rounded-[28px] border ${
           scrolled
-            ? "border bg-fd-background/70 max-w-[880px] shadow-[0_8px_24px_-12px_rgba(0,0,0,0.15),0_1px_1px_rgba(255,255,255,0.08)_inset,0_-1px_1px_rgba(255,255,255,0.08)_inset]"
-            : "max-w-[1080px] shadow-none"
+            ? "border-fd-border bg-fd-background/70 max-w-[880px] shadow-[0_8px_24px_-12px_rgba(0,0,0,0.15),0_1px_1px_rgba(255,255,255,0.08)_inset,0_-1px_1px_rgba(255,255,255,0.08)_inset]"
+            : "border-transparent max-w-[1080px] shadow-none"
         }`}
         style={{
           transition:

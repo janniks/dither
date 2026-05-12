@@ -1,11 +1,14 @@
 import { Boxes, Clock, ShieldCheck, Network } from "lucide-react";
 
 const QMD_URL = "https://github.com/janniks/qmd";
+const DENO_URL = "https://deno.com";
+const TOBI_URL = "https://x.com/tobi";
 
 type Feature = {
   icon: typeof Boxes;
   title: string;
   body: React.ReactNode;
+  tag?: string;
 };
 
 const features: Feature[] = [
@@ -22,6 +25,15 @@ const features: Feature[] = [
           className="text-fd-foreground underline decoration-fd-muted-foreground/40 underline-offset-2 hover:decoration-fd-foreground"
         >
           qmd
+        </a>{" "}
+        by{" "}
+        <a
+          href={TOBI_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="text-fd-foreground underline decoration-fd-muted-foreground/40 underline-offset-2 hover:decoration-fd-foreground"
+        >
+          Tobi Lütke
         </a>
         . Hybrid lexical + semantic in one index, one file.
       </>
@@ -30,17 +42,32 @@ const features: Feature[] = [
   {
     icon: ShieldCheck,
     title: "Deno-sandboxed plugins",
-    body: "Net / fs / env grants are explicit per plugin. Nothing implicit, ever.",
+    body: (
+      <>
+        Permissions are explicit and transparent. Third-party plugin code
+        is secured through{" "}
+        <a
+          href={DENO_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="text-fd-foreground underline decoration-fd-muted-foreground/40 underline-offset-2 hover:decoration-fd-foreground"
+        >
+          Deno
+        </a>
+        .
+      </>
+    ),
   },
   {
     icon: Clock,
     title: "Scheduled & watched",
-    body: "Cron, fs watchers, or one-shot. Hands-off ingest, on your box.",
+    body: "Cron schedules, folder watchers, activity triggers. Your index keeps itself current.",
   },
   {
     icon: Network,
     title: "MCP-ready",
     body: "Expose the index to any agent. Same tools as your CLI.",
+    tag: "coming soon",
   },
 ];
 
@@ -58,8 +85,13 @@ export function FeatureGrid() {
               <Icon size={18} strokeWidth={1.75} />
             </div>
             <div>
-              <h3 className="text-[15px] font-semibold leading-tight tracking-[-0.01em]">
+              <h3 className="flex flex-wrap items-center gap-2 text-[15px] font-semibold leading-tight tracking-[-0.01em]">
                 {f.title}
+                {f.tag ? (
+                  <span className="border-fd-border text-fd-muted-foreground/70 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium tracking-wide uppercase">
+                    {f.tag}
+                  </span>
+                ) : null}
               </h3>
               <p className="text-fd-muted-foreground mt-2 text-[13px] leading-[20px]">
                 {f.body}

@@ -72,7 +72,7 @@ const statusStyles: Record<Status, string> = {
 
 export function PluginMarketplace() {
   return (
-    <section className="flex flex-col gap-6">
+    <section id="marketplace" className="flex scroll-mt-24 flex-col gap-6">
       <div className="max-w-[720px]">
         <h2 className="text-3xl font-[650] tracking-[-0.02em]">
           The plugin marketplace.

@@ -17,7 +17,7 @@ export default function Layout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${inter.className} ${dmSerifText.variable}`}
+      className={`${inter.className} ${dmSerifText.variable} scroll-smooth`}
       suppressHydrationWarning
     >
       <body className="flex flex-col min-h-screen">

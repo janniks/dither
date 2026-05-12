@@ -3,30 +3,32 @@ import { Dithering } from "@paper-design/shaders-react";
 
 export function SphereRow() {
   return (
-    <section className="grid grid-cols-1 items-center gap-10 md:grid-cols-[1fr_1.1fr] md:gap-12">
-      <div className="flex flex-col gap-5">
-        <h2 className="text-4xl font-[650] leading-[1.05] tracking-[-0.03em] md:text-5xl">
+    // Always side-by-side. Sphere uses explicit size at every breakpoint so
+    // the rounded-full container stays a circle, not a vertically-stretched
+    // pill. Text first, sphere after — same order on every breakpoint.
+    <section className="grid grid-cols-[1fr_auto] items-center gap-4 sm:gap-6 md:gap-12">
+      <div className="flex flex-col gap-2 sm:gap-3 md:gap-5">
+        <h2 className="text-[22px] leading-[1.1] font-[650] tracking-[-0.03em] sm:text-3xl md:text-5xl md:leading-[1.05]">
           Your data has a center now.
         </h2>
-        <p className="text-fd-muted-foreground text-[16px] leading-[26px] md:max-w-[420px]">
-          Every note, page, message, bookmark — collected, indexed, and
-          searchable from one CLI. Local-first, sandboxed, yours.
+        <p className="text-fd-muted-foreground text-[13px] leading-[18px] sm:text-[14px] sm:leading-[20px] md:max-w-[420px] md:text-[16px] md:leading-[26px]">
+          Save the things you don&apos;t want to lose and find them again. One
+          local index, designed to outlive any service or app you&apos;ve
+          used.
         </p>
       </div>
-      <div className="flex justify-center md:justify-end">
-        <div className="bg-black aspect-square w-full max-w-[440px] overflow-hidden rounded-full">
-          <Dithering
-            width="100%"
-            height="100%"
-            colorBack="#000000"
-            colorFront="#00b3ff"
-            shape="sphere"
-            type="8x8"
-            size={2}
-            speed={1}
-            scale={0.6}
-          />
-        </div>
+      <div className="bg-black size-24 overflow-hidden rounded-full sm:size-36 md:size-[280px] lg:size-[360px]">
+        <Dithering
+          width="100%"
+          height="100%"
+          colorBack="#000000"
+          colorFront="#00b3ff"
+          shape="sphere"
+          type="8x8"
+          size={2}
+          speed={1}
+          scale={0.6}
+        />
       </div>
     </section>
   );

@@ -3,7 +3,10 @@
 // User will edit "mmry" → "dither" references later.
 export function Manifesto() {
   return (
-    <section className="flex flex-col items-center gap-6">
+    <section
+      id="manifesto"
+      className="flex scroll-mt-24 flex-col items-center gap-6"
+    >
       <p className="text-fd-muted-foreground text-[12px] font-semibold tracking-[0.12em] uppercase">
         Manifesto
       </p>
@@ -33,28 +36,9 @@ export function Manifesto() {
             own memories in houses you&apos;ll never own.
           </p>
           <p>
-            We believe in a simple truth:{" "}
-            <Mark>Your memories belong to you.</Mark>
-          </p>
-          <p>
-            mmry isn&apos;t another cloud service asking for your trust.
-            It&apos;s a tool that works for you, not the other way around.
+            Dither is a tool that works for you, not the other way around.
             Connect your services once. Search everything instantly. Keep
             control always.
-          </p>
-          <p>
-            No algorithms deciding what you should remember. No AI training on
-            your private thoughts. No venture capitalists monetizing your
-            digital soul. Just you, your data, and instant recall when you
-            need it.
-          </p>
-          <p>
-            The internet promised to augment human memory. Instead, it
-            fragmented it. We&apos;re here to put the pieces back together —
-            in your hands, under your control.
-          </p>
-          <p>
-            Your things. Your search. <Mark>Your mmry.</Mark>
           </p>
         </div>
       </article>

@@ -2,9 +2,10 @@ const QMD_URL = "https://github.com/janniks/qmd";
 
 const items = [
   {
-    q: "What's qmd?",
+    q: "Why not just use qmd?",
     a: (
       <>
+        You can — and it&apos;s great.{" "}
         <a
           href={QMD_URL}
           target="_blank"
@@ -13,8 +14,12 @@ const items = [
         >
           qmd
         </a>{" "}
-        is a hybrid (lexical + semantic) search index. dither is a CLI and
-        plugin runtime that wraps it.
+        is an excellent, agentic RAG index, and dither is honestly just a
+        wrapper around it. I was building similar RAG applications as
+        alternatives, decided to cut my losses, and wrapped qmd instead.
+        dither adds the file-management layer around it: collections,
+        plugins, scheduling, watching, and a CLI that ties it all together.
+        If you don&apos;t need that, use qmd directly.
       </>
     ),
   },

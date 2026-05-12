@@ -241,10 +241,14 @@ const TextRotate = forwardRef<TextRotateRef, TextRotateProps>(
                 .slice(0, wordIndex)
                 .reduce((sum, word) => sum + word.characters.length, 0);
 
+              const isLastWord = wordIndex === array.length - 1;
               return (
                 <span
                   key={wordIndex}
-                  className={cn("inline-flex", splitLevelClassName)}
+                  // pr-0.5 on the trailing word so italic right-side bearing
+                  // has room inside the overflow-hidden clip (otherwise the
+                  // last letter gets shaved on serif/italic fonts).
+                  className={cn("inline-flex", splitLevelClassName, isLastWord && "pr-0.5")}
                 >
                   {wordObj.characters.map((char, charIndex) => {
                     const totalIndex = previousCharsCount + charIndex;
@@ -267,7 +271,7 @@ const TextRotate = forwardRef<TextRotateRef, TextRotateProps>(
                               )
                             ),
                           }}
-                          className="inline-block"
+                          className="inline-block will-change-transform"
                         >
                           {char}
                         </motion.span>

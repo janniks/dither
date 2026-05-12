@@ -9,8 +9,9 @@ export function ScheduleWatchDemo() {
           Hands-off ingest.
         </h2>
         <p className="text-fd-muted-foreground text-[15px] leading-[24px]">
-          Cron-style schedules, fs watchers, or one-shot manual runs. Plugins
-          do the same work whether you trigger them or the daemon does.
+          Run on a schedule, watch a folder, or trigger on activity. The
+          plugin works the same way — you just don&apos;t have to think
+          about it.
         </p>
         <ul className="text-fd-muted-foreground mt-2 flex flex-col gap-1 text-[13px]">
           <li>

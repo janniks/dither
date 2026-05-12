@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Boxes, Plug, Sparkles, Terminal } from "lucide-react";
+import { ArrowRight, Boxes, Plug, Quote, Terminal } from "lucide-react";
 import { RotatingHeadline } from "./rotating-headline";
 import { FooterSection } from "./footer-section";
 import { FeatureGrid } from "./marketing/feature-grid";
@@ -7,8 +7,6 @@ import { NoBsStrip } from "./marketing/no-bs-strip";
 import { PluginUsp } from "./marketing/plugin-usp";
 import { WaveRow } from "./marketing/wave-row";
 import { ScheduleWatchDemo } from "./marketing/schedule-watch-demo";
-import { PluginMarketplace } from "./marketing/plugin-marketplace";
-import { TerminalInit } from "./marketing/terminal-init";
 import { ArchitectureDiagram } from "./marketing/architecture-diagram";
 import { TerminalMcp } from "./marketing/terminal-mcp";
 import { SphereRow } from "./marketing/sphere-row";
@@ -46,10 +44,13 @@ export default function HomePage() {
       <div className="flex w-full justify-center px-6 pt-22 pb-18">
         <div className="flex w-full max-w-[1080px] flex-col gap-14">
         <section className="flex max-w-[760px] flex-col items-start">
-          <div className="border bg-fd-card text-fd-muted-foreground inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm leading-5">
-            <Sparkles size={16} />
-            dither documentation
-          </div>
+          <a
+            href="#manifesto"
+            className="border bg-fd-card text-fd-muted-foreground hover:text-fd-foreground hover:border-fd-primary/40 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm leading-5 no-underline transition-colors"
+          >
+            <Quote size={14} />
+            Read Manifesto
+          </a>
           <div className="mt-6 max-w-[820px]">
             <RotatingHeadline />
           </div>
@@ -70,11 +71,12 @@ export default function HomePage() {
               href="/docs/cli"
               className="border bg-fd-card hover:bg-fd-accent inline-flex items-center justify-center rounded-[10px] px-4 py-3 text-sm font-semibold"
             >
-              Browse the CLI
+              CLI Reference
             </Link>
           </div>
         </section>
 
+        {/* Hidden for now — kept for reference / future re-enable.
         <section className="flex flex-wrap gap-4">
           {links.map((item) => {
             const Icon = item.icon;
@@ -98,35 +100,19 @@ export default function HomePage() {
             );
           })}
         </section>
+        */}
 
         <FeatureGrid />
         <NoBsStrip />
         <PluginUsp />
         <WaveRow />
         <ScheduleWatchDemo />
-        <PluginMarketplace />
-        <TerminalInit />
-        <ArchitectureDiagram />
-        <TerminalMcp />
+        {/* <ArchitectureDiagram /> */}
+        {/* <TerminalMcp /> */}
         <SphereRow />
         <Manifesto />
         <Faq />
         <OssCard />
-
-        <section className="border bg-fd-card flex flex-wrap items-center justify-between gap-4 rounded-[20px] p-6">
-          <p className="text-fd-muted-foreground max-w-[720px] text-[15px] leading-[26px]">
-            v0 ships today: a CLI, a markdown-on-disk store, a qmd-backed hybrid
-            search index, and a Deno-sandboxed plugin runtime. Daemon, MCP
-            server, sync, and scheduling come later.
-          </p>
-          <Link
-            href="/docs"
-            className="text-fd-primary inline-flex items-center gap-2 text-sm font-semibold"
-          >
-            Read the overview
-            <ArrowRight size={16} />
-          </Link>
-        </section>
         </div>
       </div>
       <FooterSection />
