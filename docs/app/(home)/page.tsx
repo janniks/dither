@@ -14,6 +14,7 @@ import { Manifesto } from "./marketing/manifesto";
 import { Faq } from "./marketing/faq";
 import { OssCard } from "./marketing/oss-card";
 import { DitheredCta } from "./marketing/dithered-cta";
+import { AgentMarquee } from "./marketing/agent-marquee";
 
 const links = [
   {
@@ -106,6 +107,7 @@ export default function HomePage() {
         <FeatureGrid />
         <NoBsStrip />
         <PluginUsp />
+        {/* <AgentMarquee /> */}
         <WaveRow />
         <ScheduleWatchDemo />
         {/* <ArchitectureDiagram /> */}
