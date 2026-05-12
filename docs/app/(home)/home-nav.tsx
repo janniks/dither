@@ -16,6 +16,7 @@ export function HomeNav() {
   const isDark = mounted && resolvedTheme === "dark";
   const [scrolled, setScrolled] = useState(false);
   const [ready, setReady] = useState(false);
+  const [open, setOpen] = useState(false);
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 50);
     onScroll();
@@ -25,7 +26,7 @@ export function HomeNav() {
   return (
     <div className="sticky top-0 z-40 p-5">
       <div
-        className={`mx-auto rounded-[28px] ${
+        className={`relative mx-auto rounded-[28px] ${
           scrolled
             ? "border bg-fd-background/70 max-w-[880px] shadow-[0_8px_24px_-12px_rgba(0,0,0,0.15),0_1px_1px_rgba(255,255,255,0.08)_inset,0_-1px_1px_rgba(255,255,255,0.08)_inset]"
             : "max-w-[1080px] shadow-none"
@@ -69,7 +70,8 @@ export function HomeNav() {
             </span>
           </Link>
 
-          <div className="ml-auto flex items-center gap-[18px]">
+          {/* desktop links */}
+          <div className="ml-auto hidden items-center gap-[18px] md:flex">
             <Link
               href="/docs"
               className="text-fd-muted-foreground hover:text-fd-foreground text-[13px] font-semibold no-underline"
@@ -108,7 +110,105 @@ export function HomeNav() {
               />
             </a>
           </div>
+
+          {/* mobile hamburger / close */}
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+            className="text-fd-muted-foreground hover:text-fd-foreground ml-auto inline-flex h-8 w-8 items-center justify-center rounded-full md:hidden"
+          >
+            <span className="sr-only">{open ? "Close menu" : "Open menu"}</span>
+            {open ? (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="size-5"
+                aria-hidden
+              >
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+              </svg>
+            ) : (
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="size-5"
+                aria-hidden
+              >
+                <line x1="4" x2="20" y1="6" y2="6" />
+                <line x1="4" x2="20" y1="12" y2="12" />
+                <line x1="4" x2="20" y1="18" y2="18" />
+              </svg>
+            )}
+          </button>
         </nav>
+
+        {/* mobile expandable panel — absolute so it doesn't grow the sticky pill
+            (which would push the rest of the page down on open) */}
+        <div
+          className={`absolute inset-x-2 top-full mt-2 grid overflow-hidden rounded-[20px] border bg-fd-background/85 backdrop-blur-md shadow-[0_12px_24px_-12px_rgba(0,0,0,0.25),0_1px_1px_rgba(255,255,255,0.06)_inset] transition-[grid-template-rows,opacity] duration-300 ease-out md:hidden ${
+            open ? "grid-rows-[1fr] opacity-100" : "pointer-events-none grid-rows-[0fr] opacity-0"
+          }`}
+        >
+          <div className="min-h-0">
+            <div className="flex flex-col gap-1 p-2">
+              <Link
+                href="/docs"
+                onClick={() => setOpen(false)}
+                className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
+              >
+                Docs
+              </Link>
+              <Link
+                href="/logo-lab"
+                onClick={() => setOpen(false)}
+                className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
+              >
+                Logo Lab
+              </Link>
+              <Link
+                href="/nav-lab"
+                onClick={() => setOpen(false)}
+                className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
+              >
+                Nav Lab
+              </Link>
+              <Link
+                href="/terminal-lab"
+                onClick={() => setOpen(false)}
+                className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
+              >
+                Terminal Lab
+              </Link>
+              <a
+                href="https://github.com/janniks/dither"
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setOpen(false)}
+                className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
+              >
+                <span
+                  aria-hidden
+                  className="block size-[18px] bg-linear-to-br from-fd-muted-foreground to-fd-foreground/60 mask-contain mask-center mask-no-repeat"
+                  style={{ maskImage: ghMarkMask, WebkitMaskImage: ghMarkMask }}
+                />
+                GitHub
+              </a>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
