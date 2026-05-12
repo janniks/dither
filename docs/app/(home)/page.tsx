@@ -112,6 +112,17 @@ export default function HomePage() {
         <SphereRow />
         <Manifesto />
         <Faq />
+
+        <section className="flex justify-center py-2">
+          <Link
+            href="/docs"
+            className="bg-fd-primary text-fd-primary-foreground inline-flex items-center justify-center gap-2 rounded-full px-6 py-3.5 text-[15px] font-semibold no-underline transition-transform hover:scale-[1.02]"
+          >
+            Try it out now
+            <ArrowRight size={16} />
+          </Link>
+        </section>
+
         <OssCard />
         </div>
       </div>

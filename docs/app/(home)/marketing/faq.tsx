@@ -24,16 +24,16 @@ const items = [
     ),
   },
   {
-    q: "Does it phone home?",
-    a: "No. dither never sends telemetry. The CLI runs locally, the daemon runs locally, plugins only reach networks they're explicitly granted.",
+    q: "Does dither send telemetry?",
+    a: "No. The CLI runs locally, the daemon runs locally, and plugins only reach networks they're explicitly granted.",
   },
   {
     q: "Can plugins exfiltrate my data?",
-    a: "Plugins run in a Deno sandbox. Net / fs / env grants are explicit per plugin and saved in .dither/grants.toml. Anything not granted is denied at the runtime boundary.",
+    a: "Each plugin runs in a Deno subprocess started with explicit --allow-read / --allow-write / --allow-env / --allow-net flags derived from the grants accepted at install time. Grants are stored per plugin in ~/.dither/grants/<plugin>.json. Anything not in those flags is denied by the runtime; a plugin that requests new permissions has to be reinstalled and re-approved.",
   },
-  {
+    {
     q: "Can I run scheduled plugins on a headless box?",
-    a: "Yes. `dither daemon` runs the scheduler and fs watcher loop. Drop it under systemd / launchd / a tmux pane and forget it.",
+    a: "Yes. `dither daemon start` spawns a detached process that runs the scheduler and watcher loops; `dither daemon stop` and `dither daemon status` manage it. For auto-start on boot, wrap it in systemd / launchd in the usual way.",
   },
   {
     q: "Encryption at rest?",
