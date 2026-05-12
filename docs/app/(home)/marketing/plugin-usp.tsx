@@ -1,3 +1,5 @@
+import { CodeFile } from "@/lib/terminal";
+
 // Tiny inline syntax styling — no external highlighter, just a few colored
 // spans for the keywords/strings/comments that carry the most signal.
 const K = "text-[#B093D8]";
@@ -28,7 +30,7 @@ export function PluginUsp() {
       </div>
 
       <div className="mx-auto w-full max-w-[640px]">
-        <CodeCard filename="plugins/bookmarks/plugin.ts">
+        <CodeFile filename="plugins/bookmarks/plugin.ts">
           <pre className="overflow-auto text-[12px] leading-[20px]">
             <code>
               <span className={K}>import</span>
@@ -75,28 +77,9 @@ export function PluginUsp() {
               {"(b._id),\n      url: b.link,\n      title: b.title,\n      tags: b.tags,\n    },\n  });\n}\n"}
             </code>
           </pre>
-        </CodeCard>
+        </CodeFile>
       </div>
     </section>
   );
 }
 
-function CodeCard({
-  filename,
-  children,
-}: {
-  filename: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="border bg-fd-card flex flex-col overflow-hidden rounded-[16px]">
-      <div className="border-b bg-fd-muted/40 text-fd-muted-foreground flex items-center gap-2 px-4 py-2 text-[12px] font-mono">
-        <span className="bg-red-500/70 h-2 w-2 rounded-full" />
-        <span className="bg-yellow-500/70 h-2 w-2 rounded-full" />
-        <span className="bg-green-500/70 h-2 w-2 rounded-full" />
-        <span className="ml-2">{filename}</span>
-      </div>
-      <div className="p-5 font-mono">{children}</div>
-    </div>
-  );
-}

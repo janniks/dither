@@ -1,5 +1,5 @@
 "use client";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Plus } from "lucide-react";
 import { Dithering } from "@paper-design/shaders-react";
 
 type Status = "shipped" | "wip" | "planned";
@@ -60,13 +60,9 @@ const plugins: Plugin[] = [
     status: "planned",
     color: "#F26522",
   },
-  {
-    name: "reddit-saved",
-    description: "Index your Reddit saved posts.",
-    status: "planned",
-    color: "#FF4500",
-  },
 ];
+
+const REQUEST_PLUGIN_URL = "https://github.com/janniks/dither/discussions/1";
 
 const statusStyles: Record<Status, string> = {
   shipped: "bg-green-500/15 text-green-500 border-green-500/30",
@@ -145,6 +141,27 @@ export function WaveRow() {
             </p>
           </div>
         ))}
+        <a
+          href={REQUEST_PLUGIN_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="border bg-fd-card hover:border-fd-primary/40 hover:bg-fd-accent/40 flex flex-col gap-3 rounded-[14px] p-4 no-underline transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <span
+              aria-hidden
+              className="bg-fd-muted text-fd-muted-foreground inline-flex h-8 w-8 items-center justify-center rounded-[10px]"
+            >
+              <Plus size={18} strokeWidth={2} />
+            </span>
+            <span className="text-fd-foreground text-[14px] font-semibold">
+              Request a plugin
+            </span>
+          </div>
+          <p className="text-fd-muted-foreground text-[13px] leading-[20px]">
+            Missing a source? Open a discussion and pitch it.
+          </p>
+        </a>
       </div>
     </section>
   );
