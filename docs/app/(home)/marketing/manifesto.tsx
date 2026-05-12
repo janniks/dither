@@ -8,10 +8,10 @@ export function Manifesto() {
         Manifesto
       </p>
       <article
-        className="border bg-fd-card max-w-[720px] rounded-[20px] p-10 sm:p-12"
+        className="border bg-fd-card max-w-[720px] rounded-[20px] p-6 sm:p-8 md:p-12"
         style={{ fontFamily: "var(--font-dm-serif), serif" }}
       >
-        <div className="text-fd-foreground space-y-4 text-[18px] leading-[30px]">
+        <div className="text-fd-foreground space-y-3 text-[15px] leading-[24px] sm:space-y-4 sm:text-[16px] sm:leading-[26px] md:text-[18px] md:leading-[30px]">
           <p>Something happened to our digital memories.</p>
           <p>
             They used to belong to us. Photos on hard drives. Emails in

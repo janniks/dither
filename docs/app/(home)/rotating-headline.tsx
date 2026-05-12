@@ -5,18 +5,25 @@ import TextRotate from "@/lib/text-rotate";
 export function RotatingHeadline() {
   return (
     <h1
-      className="font-[650] leading-none tracking-[-0.05em]"
-      style={{ fontSize: "clamp(44px, 7vw, 72px)" }}
+      // Smaller on mobile (default + sm), original clamp on md+ so wide
+      // viewports stay identical. Mobile splits the headline onto 3 lines
+      // instead of 2 (Access all your / chip / as markdown).
+      className="text-[34px] leading-[1.05] font-[650] tracking-[-0.04em] sm:text-[44px] sm:tracking-[-0.05em] md:leading-none md:text-[clamp(44px,7vw,72px)]"
     >
-      <span className="flex flex-wrap items-center">
+      <span className="flex flex-col items-start md:flex-row md:flex-wrap md:items-center">
         <LayoutGroup>
-          <motion.span className="flex whitespace-pre" layout>
+          <motion.span
+            className="flex flex-col items-start md:flex-row md:items-center md:whitespace-pre"
+            layout
+          >
             <motion.span
               className="pt-0.5 sm:pt-1 md:pt-2"
               layout
               transition={{ type: "spring", damping: 30, stiffness: 400 }}
             >
-              Access all your{" "}
+              {/* trailing space only matters on md+ where the row reads inline */}
+              Access all your
+              <span className="hidden md:inline">{" "}</span>
             </motion.span>
             <TextRotate
               texts={[
