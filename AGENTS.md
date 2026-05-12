@@ -31,6 +31,12 @@
 - Tick acceptance criteria and append a phase-log row inside the `-RUNNING.md` plan after each commit.
 - Deferred items: front-matter `status: deferred` on whatever file fits. No dedicated dir.
 
+### Git
+
+- **Never rewrite git history.** No `rebase -i`, no `--amend` of an existing commit, no `filter-branch`, no `rebase --exec` that amends, no `reset --hard` over commits, no force-push. Rewriting risks silently dropping work — including in-progress `specs/`, `plans/`, and `notes/` md files that aren't tracked anywhere else. Fix mistakes with a new follow-up commit (or `git revert`). If a commit must be reworked, ask first.
+- Toolchain is npm with workspaces. Only `package-lock.json` at the repo root is committed; no per-package lockfiles, no `pnpm-lock.yaml` or `yarn.lock`.
+- `~/.npmrc` enforces `min-release-age=7` (no deps published in the last 7 days) and `ignore-scripts=true` for security. Native modules (e.g. `better-sqlite3`) need their install scripts run manually — invoke `npm run install` inside the package dir when a binding is missing.
+
 ## Style Guide
 
 ### General principles (TypeScript)
