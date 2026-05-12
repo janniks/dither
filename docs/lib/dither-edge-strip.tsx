@@ -26,6 +26,8 @@ export type DitherStripOpts = {
   acrossFalloff: number;
   jitter: number;
   densityScale: number;
+  /** override the dither pixel colour (defaults to `--color-fd-background`). */
+  fillColor?: string;
 };
 
 export type DitherStripEdge = "top" | "bottom" | "left" | "right";
@@ -66,9 +68,13 @@ export function EdgeStrip({
       c.style.width = (isHorizontal ? lengthPx : opts.thickness) + "px";
       c.style.height = (isHorizontal ? opts.thickness : lengthPx) + "px";
 
-      const styles = getComputedStyle(document.documentElement);
-      ctx.fillStyle =
-        styles.getPropertyValue("--color-fd-background").trim() || "#0a0a0a";
+      if (opts.fillColor) {
+        ctx.fillStyle = opts.fillColor;
+      } else {
+        const styles = getComputedStyle(document.documentElement);
+        ctx.fillStyle =
+          styles.getPropertyValue("--color-fd-background").trim() || "#0a0a0a";
+      }
       ctx.clearRect(0, 0, w, h);
 
       const safeFalloff = Math.max(0.1, opts.falloff);

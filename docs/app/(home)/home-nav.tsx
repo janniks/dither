@@ -99,6 +99,12 @@ export function HomeNav() {
             >
               Terminal Lab
             </Link>
+            <Link
+              href="/docs"
+              className="inline-flex items-center rounded-lg border border-[#99D892]/30 bg-[#99D892]/15 px-3.5 py-1.5 text-[13px] font-semibold text-[#99D892] no-underline backdrop-blur-md transition-colors hover:bg-[#99D892]/25"
+            >
+              Install
+            </Link>
             <a
               href="https://github.com/janniks/dither"
               target="_blank"
@@ -194,6 +200,13 @@ export function HomeNav() {
                 className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
               >
                 Terminal Lab
+              </Link>
+              <Link
+                href="/docs"
+                onClick={() => setOpen(false)}
+                className="border-[#99D892]/30 bg-[#99D892]/15 text-[#99D892] hover:bg-[#99D892]/25 inline-flex items-center rounded-lg border px-3 py-2 text-[14px] font-semibold no-underline backdrop-blur-md"
+              >
+                Install
               </Link>
               <a
                 href="https://github.com/janniks/dither"
