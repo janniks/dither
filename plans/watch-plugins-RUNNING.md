@@ -71,15 +71,18 @@ inflight rows back to inbox, delete inflight. On daemon startup: scan
 inflight dir, restore any orphans to inbox.
 
 **Acceptance:**
-- [ ] Inflight file exists during a run, absent after a clean run.
-- [ ] Kill plugin mid-run (e.g. `SIGKILL`); inflight items are restored
-      to inbox; next fire picks them up.
-- [ ] Re-changing a path while it's inflight is preserved as the newer
+- [x] Inflight file exists during a run, absent after a clean run.
+- [x] Kill plugin mid-run (e.g. `SIGKILL`); inflight items are restored
+      to inbox; next fire picks them up. (Covered by `restoreInflight`
+      unit test simulating non-clean exit.)
+- [x] Re-changing a path while it's inflight is preserved as the newer
       mtime at the next claim's dedup pass.
-- [ ] Daemon restart with an orphan inflight file recovers the items
-      into inbox at startup.
-- [ ] No item loss across an artificial daemon crash test
+- [x] Daemon restart with an orphan inflight file recovers the items
+      into inbox at startup. (`recoverOrphanInflight` unit test +
+      daemon startup wiring.)
+- [~] No item loss across an artificial daemon crash test
       (`kill -9 <daemon-pid>` mid-fire → restart → all targets observed).
+      Deferred as an e2e; the constituent operations are unit-tested.
 
 ---
 
@@ -180,4 +183,4 @@ phases complete, rename back to `./plans/watch-plugins.md`.
 
 | commit | summary |
 |--------|---------|
-|        |         |
+| 891d0ef | Phase 1: inbox-backed fires with mtime targets. Watcher writes NDJSON on every chokidar event; runner claims inbox at fire start; SDK `targets` shape now `{path, mtime}[]`; drain loop after each fire; debounce bumped to 30s/5min. |

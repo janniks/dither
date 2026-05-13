@@ -1,6 +1,6 @@
-import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { inboxPath } from "./home";
+import { inboxPath, inflightPath, inflightDir } from "./home";
 
 /**
  * Watch-plugin inbox: per-plugin append-only NDJSON. Each chokidar event
@@ -63,24 +63,91 @@ function dedup(rows: WatchTarget[]): WatchTarget[] {
 }
 
 /**
- * Atomically read the inbox + truncate it. Returns the deduped set of
- * targets. Used at fire start.
+ * Read the inbox, dedup, write the result to inflight, then truncate the
+ * inbox. Inflight is the at-least-once safety net: if the plugin crashes
+ * or the daemon dies, inflight survives on disk; on next startup or run-
+ * result, inflight gets restored to the inbox so nothing is lost.
  *
  * Race note: between read and truncate, new chokidar events could append
- * to the inbox. We mitigate by writing an empty file via temp+rename and
- * only deduping what was in the file at read time. Newly-appended rows
- * survive in the inbox for the next fire. We accept a tiny window where
- * an event appended after our read but before our rename gets clobbered;
- * Phase 2's inflight model closes this fully.
+ * to the inbox. We accept a tiny window where a row appended after our
+ * read but before our rename gets clobbered. Closing that fully would
+ * require fs-level locking; for personal-scale workloads it's not worth
+ * the complexity — the next chokidar event will surface the same path
+ * again.
  */
 export async function claimInbox(plugin: string): Promise<WatchTarget[]> {
   const rows = await readInbox(plugin);
   if (rows.length === 0) return [];
+  const deduped = dedup(rows);
+
+  // Write inflight first, then truncate inbox. Crash between → orphan
+  // inflight; daemon startup recovery handles it.
+  const inflight = inflightPath(plugin);
+  await mkdir(dirname(inflight), { recursive: true });
+  await writeFile(inflight, deduped.map((r) => `${JSON.stringify(r)}\n`).join(""));
+
   const file = inboxPath(plugin);
   const tmp = `${file}.tmp`;
   await writeFile(tmp, "");
   await rename(tmp, file);
-  return dedup(rows);
+
+  return deduped;
+}
+
+/** Delete the inflight file. Called after a clean run. */
+export async function clearInflight(plugin: string): Promise<void> {
+  try {
+    await unlink(inflightPath(plugin));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+}
+
+/**
+ * Append the inflight rows back to the inbox, then delete inflight. Called
+ * after a non-clean exit (or on daemon startup for orphan inflight files).
+ * The append is plain — no dedup, no ordering preservation; the next
+ * `claimInbox()` deduplicates everything by path.
+ */
+export async function restoreInflight(plugin: string): Promise<void> {
+  let raw: string;
+  try {
+    raw = await readFile(inflightPath(plugin), "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw err;
+  }
+  if (raw.length > 0) {
+    const file = inboxPath(plugin);
+    await mkdir(dirname(file), { recursive: true });
+    await appendFile(file, raw);
+  }
+  await unlink(inflightPath(plugin)).catch((err) => {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  });
+}
+
+/**
+ * Scan the inflight dir for orphan files (plugin name doesn't matter — any
+ * inflight file at daemon start means the previous run didn't get to clear
+ * or restore it). Restore each. Returns the list of plugins recovered.
+ */
+export async function recoverOrphanInflight(): Promise<string[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(inflightDir());
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+  const out: string[] = [];
+  for (const f of entries) {
+    if (!f.endsWith(".ndjson")) continue;
+    const plugin = f.slice(0, -".ndjson".length);
+    await restoreInflight(plugin);
+    out.push(plugin);
+  }
+  return out;
 }
 
 export async function inboxHasItems(plugin: string): Promise<boolean> {

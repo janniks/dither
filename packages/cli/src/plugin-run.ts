@@ -15,7 +15,7 @@ import { acquire as acquireLock, release as releaseLock } from "./locks";
 import { startRun, type RunJournal } from "./journal";
 import { isMacOS, findProtectedPathInError, formatFdaError, FDA_REQUIRED } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
-import { claimInbox, type WatchTarget } from "./inbox";
+import { claimInbox, clearInflight, restoreInflight, type WatchTarget } from "./inbox";
 
 export interface ProgressMessage {
   message: string;
@@ -196,6 +196,7 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
 
   try {
     const promoted = await runPluginLocked(opts, home, pluginDir, journal, runId, trigger);
+    await clearInflight(opts.name).catch(() => {});
     await journal.close({
       status: "ok",
       finishedAt: new Date().toISOString(),
@@ -203,6 +204,10 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
     });
     return { runId, promoted };
   } catch (err) {
+    // At-least-once: any non-clean path returns inflight rows to the
+    // inbox so a future fire picks them up. Includes thrown errors,
+    // non-zero exits, and signal kills (all funnel through here).
+    await restoreInflight(opts.name).catch(() => {});
     const message = err instanceof Error ? err.message : String(err);
     const exitCode = (err as { exitCode?: number }).exitCode;
     await journal.append("error", { message }).catch(() => {});

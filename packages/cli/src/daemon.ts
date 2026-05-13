@@ -9,7 +9,7 @@ import { Watcher, type WatchEntry } from "./watcher";
 import { runPlugin } from "./plugin-run";
 import { readFile as readFileAsync } from "node:fs/promises";
 import { LoopDetector, type HaltRecord } from "./loop-detector";
-import { inboxHasItems } from "./inbox";
+import { inboxHasItems, recoverOrphanInflight } from "./inbox";
 
 /**
  * Long-lived daemon process. In phase 3 the inner loop is a quiet heartbeat
@@ -232,6 +232,13 @@ export async function runDaemon(): Promise<void> {
   }
 
   await writePidFile();
+  // Restore any inflight rows from a crashed prior run before reconciling —
+  // ensures the first fire of each watch plugin sees items that were in
+  // flight when the daemon went down.
+  const recovered = await recoverOrphanInflight().catch(() => [] as string[]);
+  if (recovered.length > 0) {
+    console.error(`[daemon] recovered inflight for: ${recovered.join(", ")}`);
+  }
   await reconcile();
   await writeStatusSnapshot(state, scheduler, watcher, detector);
 

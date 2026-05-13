@@ -69,3 +69,11 @@ export function binDir(): string {
 export function inboxPath(plugin: string): string {
   return join(resolveHome(), "inboxes", `${plugin}.ndjson`);
 }
+
+export function inflightPath(plugin: string): string {
+  return join(resolveHome(), "inflight", `${plugin}.ndjson`);
+}
+
+export function inflightDir(): string {
+  return join(resolveHome(), "inflight");
+}
