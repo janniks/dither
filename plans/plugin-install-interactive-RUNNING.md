@@ -73,14 +73,13 @@ review. Multi-select with pre-checked manifest entries and a `+ Add
 custom…` row. Custom collection patterns validated inline.
 
 **Acceptance:**
-- [ ] `prompt.ts` exports `promptMultiSelect` (pre-check + add-custom +
+- [x] `prompt.ts` exports `promptMultiSelect` (pre-check + add-custom +
       validator hook).
-- [ ] Net hosts shown as multi-select on every interactive install.
-- [ ] Collections shown as multi-select with `validateGrantPattern` on
+- [x] Net hosts shown as multi-select on every interactive install.
+- [x] Collections shown as multi-select with `validateGrantPattern` on
       any custom entry; re-prompts on invalid pattern.
-- [ ] If `promptMultiSelect`'s "add custom" row can't be expressed in
-      consola, degrade to a follow-up yes/no + text-prompt pair (spec
-      Q4 caveat).
+- [x] Add-custom uses the spec Q4 fallback: multi-select then text-prompt
+      loop (blank to stop). consola has no inline "+ Add row" affordance.
 
 ---
 
@@ -129,4 +128,5 @@ preview, and the install/run cross-references in `meta.description`.
 | commit | summary |
 |--|--|
 | e359133 | phase 1 — pure planner, `MissingInputsError` enumerates all missing required fields, `installPluginOrExit` exits 1 cleanly. 13 unit tests. |
-| _pending_ | phase 2 — interactive env + file prompts on TTY via `promptSelect`/`promptText`; `mergeInputs` overlays prompt answers on flag inputs; Ctrl-C aborts with exit 130. Non-TTY path verified manually with `read-file` fixture. |
+| f0a5450 | phase 2 — interactive env + file prompts on TTY via `promptSelect`/`promptText`; `mergeInputs` overlays prompt answers on flag inputs; Ctrl-C aborts with exit 130. Non-TTY path verified manually with `read-file` fixture. |
+| _pending_ | phase 3 — net + collections review via `promptMultiSelect`; pre-checked from flag-or-manifest; add-custom loop with `validateGrantPattern` on collection entries (spec Q4 fallback — blank line ends add loop). `promptMissing` renamed to `promptInteractive` to reflect always-runs-on-TTY scope. |

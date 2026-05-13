@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, openSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { installPlugin, MissingInputsError, type InstallOptions, type InstalledPlugin } from "../plugin-install";
-import { mergeInputs, planInstall, promptMissing, readPackage } from "../plugin-install-interactive";
+import { mergeInputs, planInstall, promptInteractive, readPackage } from "../plugin-install-interactive";
 import { runPlugin, PLUGIN_NOT_INSTALLED } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
 import { removePlugin } from "../plugin-remove";
@@ -25,10 +25,9 @@ async function installPluginOrExit(opts: InstallOptions): Promise<InstalledPlugi
     try {
       const parsed = await readPackage(opts.source);
       const plan = await planInstall(parsed, opts);
-      if (!plan.ok) {
-        const extra = await promptMissing(parsed, plan.missing);
-        merged = { source: opts.source, ...mergeInputs(opts, extra) };
-      }
+      const missing = plan.ok ? [] : plan.missing;
+      const extra = await promptInteractive(parsed, opts, missing);
+      merged = { source: opts.source, ...mergeInputs(opts, extra) };
     } catch (err) {
       // Ctrl-C from consola.prompt rejects; treat that (and any other
       // pre-install failure surfaced during planning) as a clean abort
