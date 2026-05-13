@@ -71,11 +71,11 @@ That's the install-time **default**. At install you can override or extend it vi
 dither plugin install ./my-plugin --allow-collection 'messages/tom/**'
 ```
 
-Glob semantics are standard: `notes` matches only the literal `notes` collection, `messages/**` matches all descendants of `messages` (but not the bare `messages` itself), `messages/*` matches direct children only, `messages/2026-*` is partial-segment match. To grant a parent and all descendants, list both: `notes,notes/**`.
+Glob semantics: `notes` matches only the literal `notes` collection, `messages/*` matches direct children only, `messages/2026-*` is partial-segment match, and `messages/**` matches **both `messages` itself and any descendant** — the runner special-cases the `<X>/**` form to also cover the bare `<X>` parent, since plugin authors granting a subtree almost always want the parent included.
 
 If you pass no flag, the grant defaults to whatever the manifest declared. The manifest is **not** a ceiling — your `--allow-collection` flag is what actually ends up in the grants file, and that's what gates promote. Promote validates each output's `collection:` frontmatter against the grant set; values matching no glob are rejected.
 
-Plugins can write to nested paths: `writeEntry({ collection: "messages/tom" })` lands at `<library>/messages/tom/<id>.md`. Path identifiers must use `[a-zA-Z0-9._-]` per segment, joined by `/`, with no `..`, no leading/trailing `/`, and no `.md` suffix.
+Plugins can write to nested paths: `writeEntry({ collection: "messages/tom" })` lands at `<library>/messages/tom/<id>.md`. Path identifiers must use `[a-zA-Z0-9._-]` per segment, must not start a segment with `.` (no dotfile-style folders like `.git`), joined by `/`, with no `..`, no leading/trailing `/`, no empty segments, and no `.md` suffix on the path itself.
 
 Plugins do not "auto-create" collections. The directory under `<library>/<...path>/` is created lazily on the first promote into it; nothing else changes — collections remain just folders.
 
@@ -114,7 +114,9 @@ Plugin runs trigger this automatically when they promote new entries (scoped to 
 
 ## Hand-editing entries
 
-dither doesn't fight you. Open any `.md` under your library in your editor, change the body, change the frontmatter, rename the file — it's all fine. The host doesn't lock files, doesn't watch them, and doesn't impose body conventions. After a manual edit, run `dither index update` to refresh the search index.
+dither doesn't fight you. Open any `.md` under your library in your editor, change the body, change the frontmatter, rename the file — it's all fine. The host doesn't lock files and doesn't impose body conventions. After a manual edit, run `dither index update` to refresh the search index.
+
+If you have an installed plugin with a `watch` block that points at the collection you're editing, the daemon will pick up your changes via chokidar and fire that plugin — useful when intentional, surprising when not. Plugins with no `watch` block (the common case for ingest plugins) don't react to hand edits.
 
 If you delete or move a file by hand, run `dither index update` to drop stale entries from the index.
 

@@ -3,7 +3,7 @@ title: dither plugin
 description: Install, run, list, and remove plugins.
 ---
 
-Plugins are small Deno programs that write markdown into collections you've granted them. The CLI manages four lifecycle actions. All four refuse with the standard pre-init error until [`dither init`](/docs/cli/init) has run.
+Plugins are small Deno programs that write markdown into collections you've granted them. The CLI manages four lifecycle actions: `install`, `run`, `list`, and `remove`. `install` and `run` refuse with the standard pre-init error until [`dither init`](/docs/cli/init) has run; `list` and `remove` work without init (a fresh install has nothing to list or remove anyway).
 
 > Plugins run under Deno. dither downloads and pins its own Deno at `<dither-home>/bin/deno-<version>` on first need; no `PATH` install required. Set `DITHER_USE_SYSTEM_DENO=1` to use the system `deno` instead.
 
@@ -84,21 +84,23 @@ dither plugin run my-plugin --env "MAX_RETRIES=10"
 dither plugin run ./my-plugin --env "FOO=bar"
 ```
 
-| Argument / flag      | Description                                                                                                    |
-| -------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `target`             | Positional. Installed plugin name OR path to a plugin directory. Required.                                     |
-| `--detach`           | Fork the run into the background and return immediately. Stdout/stderr go to `<dither-home>/logs/<name>-<ts>.log`. |
-| `--env`              | Literal env values (override).                                                                                 |
-| `--allow-env`        | Additional global env names this run may read.                                                                 |
-| `--file`             | File path overrides (added to `--allow-read` for this run).                                                    |
-| `--allow-net`        | Additional hosts for this run.                                                                                 |
-| `--allow-collection` | Additional collections for this run.                                                                           |
+| Argument / flag      | Description                                                                                                            |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `target`             | Positional. Installed plugin name OR path to a plugin directory. Required.                                             |
+| `--detach`           | Fork the run into the background and return immediately. Stdout/stderr go to `<dither-home>/logs/<name>-<ms>.log` (where `<ms>` is the spawn epoch in milliseconds). |
+| `-v, --verbose`      | Forward plugin stderr (Deno output, console.log/error) to your terminal in real time. Default off.                     |
+| `--no-auto-open`     | macOS only. Suppress the `Open System Settings now? [Y/n]` prompt that appears on a recognised Full Disk Access failure. |
+| `--env`              | Literal env values (override).                                                                                         |
+| `--allow-env`        | Additional global env names this run may read.                                                                         |
+| `--file`             | File path overrides (added to `--allow-read` for this run).                                                            |
+| `--allow-net`        | Additional hosts for this run.                                                                                         |
+| `--allow-collection` | Additional collections for this run.                                                                                   |
 
 By default, `run` blocks until the plugin exits. While it runs, the host overwrites a single status line with the latest `progress({ message })` the plugin emitted. On a non-TTY each message lands on its own line.
 
 ```bash
 $ dither plugin run import-folder
-run 4c0d…  promoted 3 entries:
+run 20260507T084600-import-folder-a1b2 promoted 3 entries:
   /Users/me/Documents/dither/imported/note-1.md
   /Users/me/Documents/dither/imported/note-2.md
   /Users/me/Documents/dither/imported/note-3.md
@@ -108,13 +110,18 @@ detached run for imessage (pid 41210)
   logs: /Users/me/.dither/logs/imessage-1746543210123.log
 ```
 
+Run-time errors carry specific exit codes:
+
+- Plugin not installed → exit 1 with `error: plugin not installed: '<name>'` plus a hint to run `dither plugin list`.
+- macOS Full Disk Access required (detected from the plugin's stderr) → exit with the plugin's exit code, and on a TTY an interactive `Open System Settings now? [Y/n]` prompt that opens the FDA pane. Use `--no-auto-open` to suppress.
+
 ## list
 
 ```bash
 dither plugin list
 ```
 
-Tab-separated: `<name>\t<version>\t<collections>\t<schedule>`. Prints `(no plugins installed)` when `~/.dither/grants/` is empty or missing.
+Tab-separated: `<name>\t<version>\t<collections>\t<schedule>`. Prints `(no plugins installed)` when `<dither-home>/grants/` is empty or missing.
 
 ```bash
 $ dither plugin list
@@ -122,7 +129,7 @@ import-folder  0.0.1  imported  -
 arxiv-watch    0.2.0  papers    daily
 ```
 
-The `schedule` column shows the manifest's declared schedule, but **scheduled execution is not implemented in v0** — you still need to invoke `dither plugin run` yourself.
+The `schedule` column shows the manifest's declared schedule. If a plugin has `schedule` or `watch.collections`, `dither plugin install` (and `run <path>`) will lazily start the daemon so it picks up the cron / file-watch trigger; you can also invoke runs manually at any time. See `dither daemon start` for the long-running side.
 
 ## remove
 

@@ -11,25 +11,27 @@ dither --help
 
 ## Subcommands
 
-| Command                                            | What it does                                                           |
-| -------------------------------------------------- | ---------------------------------------------------------------------- |
-| [`dither init`](/docs/cli/init)                    | Required first step: write config, set library path, prefetch weights. |
-| [`dither search <query>`](/docs/cli/search)        | Search across entries (hybrid by default, `--mode lex` for BM25-only). |
-| [`dither get <ref>`](/docs/cli/get)                | Print the body of an entry by display path or docid.                   |
-| [`dither index update`](/docs/cli/index-update)    | Re-scan the library and refresh the qmd index.                         |
-| [`dither plugin install <path>`](/docs/cli/plugin) | Install a plugin from a local directory.                               |
-| [`dither plugin run <target>`](/docs/cli/plugin)   | Run a plugin once, by name or path, with optional per-run overrides.   |
-| [`dither plugin list`](/docs/cli/plugin)           | List installed plugins.                                                |
-| [`dither plugin remove <name>`](/docs/cli/plugin)  | Uninstall a plugin (deletes code, state, grants).                      |
-| [`dither env set/get/unset/list`](/docs/cli/env)   | Manage the dither global env store at `<dither-home>/env.json`.        |
-| [`dither status`](/docs/cli/status)                | Print where dither is installed and what it contains.                  |
+| Command                                            | What it does                                                                |
+| -------------------------------------------------- | --------------------------------------------------------------------------- |
+| [`dither init`](/docs/cli/init)                    | Required first step: write config, set library path, prefetch weights.      |
+| [`dither search <query>`](/docs/cli/search)        | Search across entries (hybrid by default, `--mode lex` for BM25-only).      |
+| [`dither get <ref>`](/docs/cli/get)                | Print the body of an entry by display path or docid.                        |
+| [`dither index update`](/docs/cli/index-update)    | Re-scan the library and refresh the qmd index.                              |
+| [`dither plugin install <path>`](/docs/cli/plugin) | Install a plugin from a local directory.                                    |
+| [`dither plugin run <target>`](/docs/cli/plugin)   | Run a plugin once, by name or path, with optional per-run overrides.        |
+| [`dither plugin list`](/docs/cli/plugin)           | List installed plugins.                                                     |
+| [`dither plugin remove <name>`](/docs/cli/plugin)  | Uninstall a plugin (deletes code, state, grants).                           |
+| [`dither env set/get/unset/list`](/docs/cli/env)   | Manage the dither global env store at `<dither-home>/env.json`.             |
+| `dither runs list/tail`                            | Inspect the persistent run journal under `<dither-home>/history/`.          |
+| `dither daemon start/stop/status/reload`           | Manage the background daemon that schedules plugin runs and watches files. |
+| [`dither status`](/docs/cli/status)                | Print where dither is installed, library health, and daemon state.          |
 
-Library-needing commands (everything above except `init`, `env`, and `status`) refuse with a clear error until `dither init` has run.
+Library-needing commands refuse with a clear error until `dither init` has run. Today that gate is enforced on `search`, `get`, `index update`, `plugin install`, `plugin run`, and `daemon start`. Everything else (`env`, `plugin list`, `plugin remove`, `runs`, `daemon status/stop/reload`, `status`, `init` itself) works without init.
 
 ## Exit codes
 
-The CLI does not yet enforce a documented exit code contract. Today, citty surfaces a non-zero exit on any thrown error and zero on success. Don't script around specific non-zero codes.
+The CLI does not yet enforce a documented exit code contract. Today, citty surfaces a non-zero exit on any thrown error and zero on success. A few commands set specific exit codes — `dither env get/unset` exit 1 on "no such env", `dither init` exits 2 when `--library` is required but missing on a non-TTY, `dither daemon stop` exits 1 on timeout — but don't script around the full set.
 
 ## Output format
 
-Most commands print plain tab- or space-separated lines on stdout, suited to piping through `awk`, `cut`, or `fzf`. There is no `--json` flag yet.
+Most commands print plain tab- or space-separated lines on stdout, suited to piping through `awk`, `cut`, or `fzf`. `dither status` and `dither daemon status` accept `--json` for structured output.

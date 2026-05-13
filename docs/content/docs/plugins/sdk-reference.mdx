@@ -3,34 +3,9 @@ title: "@dither/plugin SDK reference"
 description: Every export from @dither/plugin with signatures, behavior, and examples.
 ---
 
-`@dither/plugin` is the author SDK for dither plugins. It is a tiny module: six exports, no transitive runtime deps, designed to be imported under Deno via the import map the host injects.
+`@dither/plugin` is the author SDK for dither plugins. It is a tiny module with no transitive runtime deps, designed to be imported under Deno via the import map the host injects.
 
-The SDK relies on five environment variables set by the plugin host. Every function except `VERSION` will throw if invoked outside that environment:
-
-| Env var              | Purpose                                                                                      |
-| -------------------- | -------------------------------------------------------------------------------------------- |
-| `DITHER_RUN_DIR`     | Per-run scratch directory. `writeEntry` writes here.                                         |
-| `DITHER_INPUT_FILE`  | Path to the `input.json` produced from your grants file. `readInput` reads this.             |
-| `DITHER_STATE_FILE`  | Path to the plugin's persistent `state.json`. `readState` / `writeState` use this.           |
-| `DITHER_TRIGGER`     | `"scheduled" \| "watch" \| "manual"` — what caused this run.                                 |
-| `DITHER_PLUGIN_NAME` | The plugin's name from `package.json`. Auto-stamped onto every entry's `source` frontmatter. |
-
-If any of these is missing, the SDK throws:
-
-> `<NAME> is not set; this code must run inside the dither plugin host.`
-
-## `VERSION`
-
-```ts
-export const VERSION: string;
-```
-
-The SDK's package version (currently `"0.0.1"`). Useful for plugins that want to log or branch on SDK capabilities.
-
-```ts
-import { VERSION } from "@dither/plugin";
-console.log(`SDK ${VERSION}`);
-```
+Every function must be called from inside a plugin run — the host sets up the surrounding environment, and the SDK will throw if invoked outside of it.
 
 ## `interface PluginInput`
 
@@ -50,7 +25,7 @@ Fields:
 - `trigger` — what fired the run. Plugins that behave differently on scheduled vs. manual runs can branch on this.
 - `env` — resolved env values keyed by the manifest's declared `name`. **All values are strings.** Plugins coerce in code (`Number(input.env.MAX_RUNS)`, `input.env.DEBUG === "true"`). Optional values that the user did not supply and that have no `default` will simply be missing keys.
 - `files` — absolute paths to the user's file/folder inputs, keyed by `id`. Each path is on Deno's `--allow-read` allowlist. Optional file inputs that the user did not supply will simply be missing keys.
-- `targets` — currently always `[]`. Reserved for future watch-trigger payloads (the entries that changed, etc.).
+- `targets` — populated for watch-triggered runs with the paths that changed. Empty for manual and scheduled runs.
 
 ## `interface EntryOptions`
 
@@ -68,10 +43,10 @@ The argument to `writeEntry()`.
 - `collection` — target collection. May be a nested path (e.g. `"messages/tom"`). Promotion matches it against the plugin's `dither.collections` grants (each is a glob pattern); if no grant glob matches, the file is rejected. Path rules: per-segment `[a-zA-Z0-9._-]`, no `..`, no leading/trailing `/`, no `.md` suffix.
 - `body` — markdown body. Do **not** include your own frontmatter fence; the SDK emits one for you.
 - `frontmatter` — optional fields. **Three keys are reserved: `id`, `source`, `collection`.** Any value you put under those keys is overwritten by the SDK before writing:
-  - `id` — if you set `frontmatter.id` to a string, it is used as the entry id (and as the default filename). Otherwise a UUID is generated.
-  - `source` — always overwritten with `DITHER_PLUGIN_NAME`.
+  - `id` — if you set `frontmatter.id` to a string, it is used as the entry id (and as the default filename). The id must be a flat name — no `/` or `\\`, and not `.` or `..` — or `writeEntry` throws. Otherwise a UUID is generated.
+  - `source` — always overwritten with the plugin's name.
   - `collection` — always overwritten with `opts.collection`.
-- `filename` — optional output filename inside `DITHER_RUN_DIR`. Defaults to `<id>.md`. Rarely useful; collisions overwrite silently.
+- `filename` — optional output filename inside the run dir. Defaults to `<id>.md`. Must be a flat name (same rules as `id`). Two outputs with the same filename in the same run overwrite each other; at promote, a clash with an existing entry written by a *different* plugin is rejected (a clash with this plugin's own previous output is allowed and overwrites).
 
 ## `readInput()`
 
@@ -261,7 +236,7 @@ Emit a status update to the host. Synchronous: writes one NDJSON line to stderr 
 **Display:**
 
 - `dither plugin run <name>` (blocking) overwrites a single status line on a TTY. On a non-TTY it appends each message on its own line.
-- `dither plugin run <name> --detach` writes every message into the log file at `~/.dither/logs/<plugin>-<ts>.log`.
+- `dither plugin run <name> --detach` writes every message into the log file at `<dither-home>/logs/<plugin>-<ms>.log` (where `<ms>` is the spawn epoch in milliseconds).
 
 **Example:**
 
@@ -283,7 +258,7 @@ progress({ message: `done — ${ids.length} items`, done: ids.length, total: ids
 A complete plugin that uses every export:
 
 ```ts
-import { VERSION, readInput, readState, writeEntry, writeState } from "@dither/plugin";
+import { readInput, readState, writeEntry, writeState } from "@dither/plugin";
 
 interface State {
   lastSeen: string;
@@ -292,7 +267,7 @@ interface State {
 const input = await readInput();
 const state = await readState<State>({ lastSeen: "" });
 
-console.error(`plugin SDK ${VERSION}, trigger=${input.trigger}`);
+console.error(`trigger=${input.trigger}`);
 
 const now = new Date().toISOString();
 

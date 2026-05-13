@@ -80,10 +80,10 @@ Every field below is optional unless noted. The full schema lives in `packages/c
 
 ### Triggers
 
-| Field      | Type                                       | Notes                                                                   |
-| ---------- | ------------------------------------------ | ----------------------------------------------------------------------- |
-| `schedule` | `string` (cron expression)                 | Stored, not yet runtime-enforced. Manual `dither plugin run` works now. |
-| `watch`    | `{ collections: string[]; glob?: string }` | Stored, not yet runtime-enforced.                                       |
+| Field      | Type                                       | Notes                                                                                                                          |
+| ---------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `schedule` | `string` (cron expression or `daily`/`hourly`) | Fired by the dither daemon. Installing a plugin with `schedule` lazily starts the daemon. Manual `dither plugin run` still works. |
+| `watch`    | `{ collections: string[]; glob?: string }` | Fired by the daemon via chokidar when a matching file changes in any of the declared collections. Triggering paths land in `input.targets`. |
 
 ### `env[]`
 
@@ -149,12 +149,11 @@ Glob patterns naming the collections this plugin may emit into. The manifest lis
 Collection paths are nestable. Each entry is a glob over a path identifier:
 
 - `notes` — exact match (only the literal `notes` collection).
-- `messages/**` — all descendants of `messages` (`messages/tom`, `messages/tom/2026`, …) but **not** `messages` itself.
-- `messages/*` — direct children of `messages` only (`messages/tom`, not `messages/tom/anything`).
+- `messages/**` — `messages` itself **and** every descendant. The runner special-cases the `<X>/**` form to also cover the bare parent.
+- `messages/*` — direct children of `messages` only (`messages/tom`, not `messages/tom/anything`, and not `messages` itself).
 - `messages/2026-*` — partial-segment match.
-- `messages,messages/**` — to grant both the bare collection and all descendants, list both.
 
-Path identifiers in `writeEntry({ collection })` and in entry frontmatter must use `[a-zA-Z0-9._-]` per segment, joined by `/`. No `..`, no leading/trailing `/`, no `.md` suffix.
+Path identifiers in `writeEntry({ collection })` and in entry frontmatter must use `[a-zA-Z0-9._-]` per segment, with no leading-dot segments. Joined by `/`, no `..`, no leading/trailing `/`, no empty segments, no `.md` suffix.
 
 There is no separate `reads` / `writes` split today. Collections are created on demand at promote time.
 
@@ -320,7 +319,7 @@ dither plugin run hello-world --allow-collection "experiments"
 
 `run` blocks by default. While the plugin executes, the host overwrites a single status line with the latest `progress()` message (see §6a). When the plugin exits, the status line is cleared and promoted entries are printed.
 
-`--detach` forks the run into the background and returns immediately. Stdout and stderr are captured to `<dither-home>/logs/<plugin>-<timestamp>.log`. The plugin keeps running after your shell exits; tail the log to watch progress.
+`--detach` forks the run into the background and returns immediately. Stdout and stderr are captured to `<dither-home>/logs/<plugin>-<ms>.log` (where `<ms>` is the spawn epoch in milliseconds). The plugin keeps running after your shell exits; tail the log to watch progress, or use `dither runs tail <runId>` once the runner has emitted a journal entry.
 
 The host:
 
@@ -411,7 +410,7 @@ A plugin cannot read or write outside those paths, cannot reach hosts off the `n
 
 - **Env values are stored plaintext.** `<dither-home>/grants/<name>.json` and `<dither-home>/env.json` are JSON files. Don't store credentials you wouldn't put there. Keychain integration is a later phase.
 - **No git/registry installs.** Only local paths. Cloning your plugin yourself first is the workaround.
-- **`schedule` and `watch` don't fire anything yet.** Declare them, but trigger your plugin manually until the daemon and watcher ship.
+- **The daemon must be running for `schedule` and `watch` to fire.** Installing a plugin with either declaration lazily starts the daemon; if you kill it, the triggers stop. Manual `dither plugin run` always works regardless.
 - **CLI flag parsing has no escape syntax.** A comma in a value will be treated as a pair separator. If you need a comma in a value, install programmatically via the `installPlugin()` API instead.
 - **Output filename collisions overwrite.** If two `writeEntry()` calls in one run produce the same `<id>.md` (e.g. you supplied the same `frontmatter.id`), the second overwrites the first inside the run dir, and only one is promoted.
-- **Detached runs aren't tracked.** `--detach` writes a log file and `unref()`s the child. There is no `dither plugin status` to query, no PID file, no stop command yet. Tail the printed log path; kill via `kill <pid>` if needed.
+- **Detached runs aren't supervised after the fork.** `--detach` writes a log file and `unref()`s the child, so there's no `dither plugin stop`. The run is still recorded in `<dither-home>/history/<runId>/` — use `dither runs list` / `dither runs tail` to inspect it, or tail the printed log path; kill via `kill <pid>` if needed.

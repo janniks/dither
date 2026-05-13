@@ -5,28 +5,39 @@ description: Summarize the dither install.
 
 ```bash
 dither status
+dither status --json
 ```
 
-Prints where dither is installed and a quick count of what's in the configured library. No flags, no arguments. Works before [`dither init`](/docs/cli/init) — collections and entries report `0` when no config exists.
+Prints where dither is installed, library health, plugin/collection/entry counts, and daemon state. Works before [`dither init`](/docs/cli/init) — the library line reports "not configured" and content counts show `—` instead of numbers.
+
+## Arguments
+
+| Flag       | Effect                                                  |
+| ---------- | ------------------------------------------------------- |
+| `--json`   | Emit structured JSON instead of human-readable text.    |
 
 ## Output
 
 ```
-home:        /Users/me/.dither
+config dir:  ~/.dither
+library:     ~/.dither/library
+
 plugins:     2
 collections: 3
 entries:     142
+
+daemon:      idle (pid 14675)
 ```
 
-| Line          | Meaning                                                                   |
-| ------------- | ------------------------------------------------------------------------- |
-| `home`        | Resolved dither home. `$DITHER_HOME` if set, else `~/.dither`.            |
-| `plugins`     | Number of grants files under `<dither-home>/grants/` (one per installed plugin). |
-| `collections` | Number of top-level directories under the configured library.            |
-| `entries`     | Recursive count of `*.md` files under the configured library.            |
+| Line          | Meaning                                                                                                |
+| ------------- | ------------------------------------------------------------------------------------------------------ |
+| `config dir`  | Resolved dither home (`$DITHER_DIR` → `$XDG_CONFIG_HOME/dither` → `$DITHER_HOME` → `~/.dither`). When `$DITHER_DIR` is set, a `Note: Using ENV DITHER_DIR=…` header is printed above. |
+| `library`     | Configured library path, or `(not configured — run dither init)`. Annotated `⚠ missing` / `⚠ unreadable` if the directory is gone or not readable. |
+| `plugins`     | Number of grants files under `<dither-home>/grants/` (one per installed plugin).                       |
+| `collections` | Number of top-level directories under the configured library. `—` if library is unconfigured / missing / unreadable. |
+| `entries`     | Recursive count of `*.md` files under the configured library. `—` if library is unconfigured / missing / unreadable. |
+| `daemon`      | `idle (pid N)`, `running (pid N, K plugin[s])`, `running (pid N)` if no snapshot, or `not running`.   |
 
-If init hasn't run, `collections` and `entries` are reported as `0`.
-
-This is a filesystem walk, not an index lookup, so the count reflects what's on disk regardless of whether the qmd index is up to date. To make the index match what `status` reports, run [`dither index update`](/docs/cli/index-update).
+This is a filesystem walk, not an index lookup, so the counts reflect what's on disk regardless of whether the qmd index is up to date. To make the index match what `status` reports, run [`dither index update`](/docs/cli/index-update).
 
 See also: [CLI overview](/docs/cli).

@@ -34,11 +34,11 @@ The plugin imports from `@dither/plugin` and writes markdown entries via `writeE
 
 Every plugin declares (implicitly or explicitly) how it wants to be invoked:
 
-- **Manual** — `dither plugin run <name|path>`. Always available. The only trigger actually wired today.
-- **Scheduled** — `schedule: "*/15 * * * *"` in the manifest. Stored, but the daemon that fires plugins on a cron is a later phase.
-- **Watched** — `watch: { collections: [...], glob: "..." }`. Same story — schema-only today; the watcher is a later phase.
+- **Manual** — `dither plugin run <name|path>`. Always available.
+- **Scheduled** — `schedule: "*/15 * * * *"` (or `"daily"` / `"hourly"`) in the manifest. The dither daemon fires the plugin on that cron. If you install a plugin with a `schedule`, the CLI lazily starts the daemon so it picks up the new entry.
+- **Watched** — `watch: { collections: [...], glob: "..." }`. The daemon uses chokidar to watch the declared collections under the library and fires the plugin when matching files change. The triggering paths land in `input.targets`.
 
-Whichever trigger fires, the value lands in `input.trigger` (`"manual" | "scheduled" | "watch"`) so a plugin can branch on it later.
+Whichever trigger fires, the value lands in `input.trigger` (`"manual" | "scheduled" | "watch"`) so a plugin can branch on it.
 
 ## Lifecycle
 
@@ -57,7 +57,7 @@ Whichever trigger fires, the value lands in `input.trigger` (`"manual" | "schedu
 
 - **Env values are stored plaintext.** Per-plugin grants live in `<dither-home>/grants/<name>.json`; shared values live in `<dither-home>/env.json`. Both are plain JSON. Don't hand a plugin a credential you wouldn't put in a file there. Keychain integration is a later phase.
 - **Only local-path installs work today.** Git URLs, registries, and remote sources are not implemented.
-- **`schedule` and `watch` don't fire anything yet.** They parse and persist; the daemon and watcher land in later phases.
+- **The daemon must be running for `schedule` and `watch` to fire.** Installing a plugin with either declaration lazily starts the daemon. If you kill the daemon, neither trigger fires until you bring it back with `dither daemon start`.
 
 ## Next
 

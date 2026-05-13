@@ -35,17 +35,20 @@ node packages/cli/dist/cli.mjs --help
 
 dither separates two roots:
 
-- **dither home** — bookkeeping (config, plugins, grants, runs, qmd index). Default `~/.dither/`. Override with `DITHER_HOME`.
+- **dither home** — bookkeeping (config, plugins, grants, runs, history, qmd index, daemon state). Default `~/.dither/`. Override with `$DITHER_DIR` (or `$XDG_CONFIG_HOME/dither`; `$DITHER_HOME` is the deprecated alias).
 - **library** — your markdown content. Default `<dither-home>/library/`; configurable via `dither init --library <path>`.
 
 ```
 <dither-home>/
   config.json                 schema + library.path
   plugins/<name>/             installed plugin code + state
-  grants/<name>.json          plugin manifest + resolved inputs
+  grants/<name>.json          plugin manifest + resolved grants
   qmd-index.sqlite            derived search index
-  runs/<runId>/               per-run scratch (cleaned up)
+  runs/<runId>/               per-run scratch (always cleaned up)
+  history/<runId>/            persistent run journal
+  logs/                       daemon.log + detached-run logs
   env.json                    global env store
+  dither.pid, status.json     daemon state
 
 <library>/                    your canonical markdown
   <collection>/**/*.md
@@ -58,8 +61,9 @@ See [Storage layout](/docs/concepts/storage) for the full picture.
 ```bash
 # Initialize dither (required first step).
 dither init
-# → initialized dither at /Users/me/.dither
-#     library: /Users/me/.dither/library
+# → ✓ wrote ~/.dither/config.json
+#   ✓ created library at ~/.dither/library
+#   ✓ pre-downloaded model weights
 
 # Drop a markdown file into a collection.
 mkdir -p ~/.dither/library/notes
@@ -84,10 +88,10 @@ dither search hello
 dither get notes/hello.md
 ```
 
-Want your library somewhere else? Re-run init with `--library`:
+Want your library somewhere else? Pass `--library` on the first init (re-init isn't supported — if you've already initialised, remove `~/.dither/config.json` first):
 
 ```bash
-dither init --force --library ~/Documents/dither
+dither init --library ~/Documents/dither
 ```
 
 ## Where to go next

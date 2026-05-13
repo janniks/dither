@@ -10,14 +10,14 @@ dither plugins are not trusted code running with your full user privileges. Each
 The model has three distinct layers. Keeping them straight is the easiest way to reason about what a plugin can and can't do.
 
 1. **Manifest** — declared by the plugin author in `package.json` under the `dither` block. It describes what the plugin would like and seeds the install-time defaults. It is **not** an enforcement boundary; it's a description.
-2. **Grants** — written by dither at install time to `~/.dither/grants/<name>.json`. This is the **actual** allowance for this plugin on this machine, and the only thing that gates promote at run time. When you pass a `--allow-*` flag at install, that's the grant; when you don't, the manifest's declaration is used as the default. The user is the source of truth — the manifest cannot constrain a grant the user explicitly authorized.
-3. **Globals** — managed env values shared across plugins, stored in `~/.dither/env.json`. A plugin granted `--allow-env OPENAI_API_KEY` reads the current global value at every run. Rotate the global once; every plugin sees the new value next run. See [`dither env`](/docs/cli/env).
+2. **Grants** — written by dither at install time to `<dither-home>/grants/<name>.json`. This is the **actual** allowance for this plugin on this machine, and the only thing that gates promote at run time. When you pass a `--allow-*` flag at install, that's the grant; when you don't, the manifest's declaration is used as the default. The user is the source of truth — the manifest cannot constrain a grant the user explicitly authorized.
+3. **Globals** — managed env values shared across plugins, stored in `<dither-home>/env.json`. A plugin granted `--allow-env OPENAI_API_KEY` reads the current global value at every run. Rotate the global once; every plugin sees the new value next run. See [`dither env`](/docs/cli/env).
 
 The user is the only one who can move a value from the manifest into a grant. Plugins request; you authorize.
 
 ## The four grant kinds
 
-Each grant in `~/.dither/grants/<name>.json` is one of these:
+Each grant in `<dither-home>/grants/<name>.json` is one of these:
 
 ### `env` — literal env values
 
@@ -25,7 +25,7 @@ A plain `Record<string, string>` of values you supplied via `--env "KEY=VALUE,..
 
 ### `envRefs` — references to globals
 
-A list of names in `~/.dither/env.json` the plugin is allowed to read. Granted via `--allow-env KEY,KEY2`. At every run, dither resolves each name to its current global value and adds it to `input.env`. If the global isn't set, the plugin sees nothing for that key.
+A list of names in `<dither-home>/env.json` the plugin is allowed to read. Granted via `--allow-env KEY,KEY2`. At every run, dither resolves each name to its current global value and adds it to `input.env`. If the global isn't set, the plugin sees nothing for that key.
 
 ### `files` — granted file/folder paths
 
@@ -93,9 +93,8 @@ Any failure throws and stops the promote. The run dir is removed regardless.
 - **Env values and globals are stored plaintext.** Both `<dither-home>/grants/<name>.json` and `<dither-home>/env.json` are plain JSON on local disk, scoped by Unix permissions. The architecture commits to OS keychain integration (macOS Keychain, libsecret on Linux); none today. Anything that can read your home dir can read your secrets.
 - **Plugin output filenames are not validated for path traversal.** A malicious plugin can emit a file with a `filename` like `"../foo.md"` and the SDK's `join(runDir, name)` will write outside the run dir. Don't run plugins you don't trust.
 - **Promote does a blind copy.** If a plugin emits `notes.md` for collection `notes` and you already have a hand-authored `<library>/notes/notes.md`, the plugin's file overwrites yours with no warning. Back up the library before installing a plugin that writes into a collection you also author into by hand.
-- **The frontmatter parser used at promote is regex-based** and can be confused by escaped quotes inside YAML string values. The SDK emits well-formed values, but this is brittle and will be replaced with a real YAML parser.
 - **CLI flag values are comma-separated and not escaped.** A grant value containing `,` or `=` cannot be expressed through `--env`/`--file` etc. and needs the programmatic API. The schema doesn't reject pathological values.
-- **`grants.net` accepts the empty string and `*`.** A grant of `[""]` or `["*"]` produces an empty `--allow-net=` flag, which Deno interprets as "all hosts." Audit a manifest before granting; don't rely on the schema.
+- **`grants.net = ["*"]` grants any host.** The runner detects the sole `*` entry and passes a bare `--allow-net` flag to Deno, which is unrestricted. Audit a manifest's declared `net` before granting; if you want to narrow it, pass an explicit `--allow-net host1,host2` instead of relying on the manifest default.
 
 ## Threat model
 
