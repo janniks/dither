@@ -29,7 +29,7 @@ If you don't pass `--library` on a TTY, init drops into an interactive prompt fo
    - If the path exists and is a regular file, error out.
    - If the path exists and isn't writable, error out.
    - Resolve symlinks via `realpath` and store the canonical target in config.
-4. Write `<dither-home>/config.json` (`schema.version: 1`, `library.path`).
+4. Write `<dither-home>/config.json` (`schema.version: 2`, `library.path`, empty `collections.external`).
 5. Run `store.update()` once over the library so the qmd SQLite exists with schema applied. Empty libraries skip this — the SQLite is created lazily on first plugin promote.
 6. Unless `--no-download`, attempt to pre-download embedding/rerank model weights. Failure is non-fatal — the summary flags it and search degrades to lex-only until weights land.
 

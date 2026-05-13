@@ -25,7 +25,7 @@ The split keeps "your stuff" (markdown) cleanly separated from "dither's bookkee
 
 | Path                                            | Purpose                                                                                | Written by                                       |
 | ----------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `<dither-home>/config.json`                     | The library path and schema version. Hand-editable; supports `//` and `/* */` comments. | `dither init`                                    |
+| `<dither-home>/config.json`                     | Library path, schema version, and the external-collection registry (`collections.external`). Hand-editable; supports `//` and `/* */` comments. | `dither init`, `dither collection add/remove`    |
 | `<dither-home>/qmd-index.sqlite`                | The qmd search index over the library.                                                 | `dither index update`, plugin runs               |
 | `<dither-home>/env.json`                        | The dither-managed global env store. Plain JSON, names → values.                       | `dither env set/unset`                           |
 | `<dither-home>/plugins/<name>/`                 | Installed plugin source — copied verbatim from the install path.                       | `dither plugin install`                          |
@@ -44,7 +44,7 @@ The split keeps "your stuff" (markdown) cleanly separated from "dither's bookkee
 
 ## The library
 
-The library is one directory containing your markdown. Each top-level subdirectory is a [collection](/docs/concepts/collections). Plugins promote files into collection subdirs after their grants are checked.
+The library is one directory containing your markdown. Each top-level subdirectory is a [collection](/docs/concepts/collections). Plugins promote files into collection subdirs after their grants are checked. You can also register pre-existing folders outside the library as external collections via `dither collection add`; they show up in search and accept plugin writes just like library subdirs, without being moved.
 
 ```
 <library>/

@@ -21,12 +21,13 @@ dither --help
 | [`dither plugin run <target>`](/docs/cli/plugin)   | Run a plugin once, by name or path, with optional per-run overrides.        |
 | [`dither plugin list`](/docs/cli/plugin)           | List installed plugins.                                                     |
 | [`dither plugin remove <name>`](/docs/cli/plugin)  | Uninstall a plugin (deletes code, state, grants).                           |
+| `dither collection add/list/remove`                | Register a pre-existing folder as an external collection alongside library subdirs. |
 | [`dither env set/get/unset/list`](/docs/cli/env)   | Manage the dither global env store at `<dither-home>/env.json`.             |
 | `dither runs list/tail`                            | Inspect the persistent run journal under `<dither-home>/history/`.          |
 | `dither daemon start/stop/status/reload`           | Manage the background daemon that schedules plugin runs and watches files. |
 | [`dither status`](/docs/cli/status)                | Print where dither is installed, library health, and daemon state.          |
 
-Library-needing commands refuse with a clear error until `dither init` has run. Today that gate is enforced on `search`, `get`, `index update`, `plugin install`, `plugin run`, and `daemon start`. Everything else (`env`, `plugin list`, `plugin remove`, `runs`, `daemon status/stop/reload`, `status`, `init` itself) works without init.
+Library-needing commands refuse with a clear error until `dither init` has run. Today that gate is enforced on `search`, `get`, `index update`, `plugin install`, `plugin run`, `daemon start`, and `collection add/list/remove`. Everything else (`env`, `plugin list`, `plugin remove`, `runs`, `daemon status/stop/reload`, `status`, `init` itself) works without init.
 
 ## Exit codes
 
