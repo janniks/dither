@@ -115,7 +115,7 @@ Auto-create is library-only: a plugin writing `collection: "brand-new-name"` alw
 
 ## How the index sees collections
 
-dither doesn't store entries in a database. Search is provided by [qmd](https://github.com/tobilu/qmd), which builds a SQLite index over the directory tree. Every top-level subdirectory of the library AND every registered external collection is registered as a qmd collection on open, and qmd indexes `**/*.md` underneath each.
+dither doesn't store entries in a database. Search is provided by [qmd](https://github.com/tobi/qmd), which builds a SQLite index over the directory tree. Every top-level subdirectory of the library AND every registered external collection is registered as a qmd collection on open, and qmd indexes `**/*.md` underneath each.
 
 The index file lives at `<dither-home>/qmd-index.sqlite` — in dither home, not the library. Don't edit it; it's regenerable from your markdown. See [Storage](/docs/concepts/storage).
 
