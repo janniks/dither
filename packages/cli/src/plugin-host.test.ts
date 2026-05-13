@@ -339,6 +339,148 @@ await writeEntry({
     rmSync(dir, { recursive: true, force: true });
   }, 60000);
 
+  it("external collection: promote lands at the external path, not the library", async () => {
+    const ext = mkdtempSync(join(tmpdir(), "dither-ext-work-"));
+    const { saveConfig, loadConfig } = await import("./config");
+    const cfg = await loadConfig();
+    await saveConfig({
+      ...cfg!,
+      collections: { external: [{ name: "work-notes", path: ext }] },
+    });
+
+    const dir = mkdtempSync(join(tmpdir(), "dither-extwriter-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "extwriter",
+        version: "0.0.1",
+        dither: { collections: ["work-notes/**", "work-notes"] },
+      }),
+    );
+    writeFileSync(
+      join(dir, "plugin.ts"),
+      `import { writeEntry } from "@dither/plugin";
+await writeEntry({ collection: "work-notes", body: "in external" });
+`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+    await installPlugin({ source: dir });
+    const result = await runPlugin({ name: "extwriter" });
+    expect(result.promoted.length).toBe(1);
+
+    // File landed in the external mount, NOT under the library.
+    const files = readdirSync(ext).filter((f) => f.endsWith(".md"));
+    expect(files.length).toBe(1);
+    expect(existsSync(join(home, "entries", "work-notes"))).toBe(false);
+
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(ext, { recursive: true, force: true });
+  }, 60000);
+
+  it("external collection: nested path resolves under the external root", async () => {
+    const ext = mkdtempSync(join(tmpdir(), "dither-ext-nested-"));
+    const { saveConfig, loadConfig } = await import("./config");
+    await saveConfig({
+      ...(await loadConfig())!,
+      collections: { external: [{ name: "work-notes", path: ext }] },
+    });
+
+    const dir = mkdtempSync(join(tmpdir(), "dither-extnest-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "extnest",
+        version: "0.0.1",
+        dither: { collections: ["work-notes/**"] },
+      }),
+    );
+    writeFileSync(
+      join(dir, "plugin.ts"),
+      `import { writeEntry } from "@dither/plugin";
+await writeEntry({ collection: "work-notes/sub/2026", body: "deep" });
+`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+    await installPlugin({ source: dir });
+    const result = await runPlugin({ name: "extnest" });
+    expect(result.promoted.length).toBe(1);
+
+    const target = join(ext, "sub", "2026");
+    expect(existsSync(target)).toBe(true);
+    const files = readdirSync(target).filter((f) => f.endsWith(".md"));
+    expect(files.length).toBe(1);
+
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(ext, { recursive: true, force: true });
+  }, 60000);
+
+  it("unregistered collection auto-creates under the library (regression guard)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dither-autocreate-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "autocreator",
+        version: "0.0.1",
+        dither: { collections: ["fresh"] },
+      }),
+    );
+    writeFileSync(
+      join(dir, "plugin.ts"),
+      `import { writeEntry } from "@dither/plugin";
+await writeEntry({ collection: "fresh", body: "library auto" });
+`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+    await installPlugin({ source: dir });
+    const result = await runPlugin({ name: "autocreator" });
+    expect(result.promoted.length).toBe(1);
+
+    const freshDir = join(home, "entries", "fresh");
+    expect(existsSync(freshDir)).toBe(true);
+    expect(readdirSync(freshDir).filter((f) => f.endsWith(".md")).length).toBe(1);
+
+    rmSync(dir, { recursive: true, force: true });
+  }, 60000);
+
+  it("external collection: promote errors when the external path is missing", async () => {
+    const ext = mkdtempSync(join(tmpdir(), "dither-ext-missing-"));
+    const { saveConfig, loadConfig } = await import("./config");
+    await saveConfig({
+      ...(await loadConfig())!,
+      collections: { external: [{ name: "vanished", path: ext }] },
+    });
+    rmSync(ext, { recursive: true, force: true });
+
+    const dir = mkdtempSync(join(tmpdir(), "dither-extmissing-"));
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "missingwriter",
+        version: "0.0.1",
+        dither: { collections: ["vanished/**", "vanished"] },
+      }),
+    );
+    writeFileSync(
+      join(dir, "plugin.ts"),
+      `import { writeEntry } from "@dither/plugin";
+await writeEntry({ collection: "vanished", body: "ghost" });
+`,
+    );
+
+    const { installPlugin } = await import("./plugin-install");
+    const { runPlugin } = await import("./plugin-run");
+    await installPlugin({ source: dir });
+    await expect(runPlugin({ name: "missingwriter" })).rejects.toThrow(/path is missing/);
+
+    rmSync(dir, { recursive: true, force: true });
+  }, 60000);
+
   it("SDK writeEntry rejects '..' in filename and frontmatter.id", async () => {
     const dir = mkdtempSync(join(tmpdir(), "dither-sdk-traversal-"));
     writeFileSync(

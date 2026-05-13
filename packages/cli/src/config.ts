@@ -3,11 +3,17 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { resolveHome } from "./home";
 
-export const CONFIG_SCHEMA_VERSION = 1;
+export const CONFIG_SCHEMA_VERSION = 2;
+
+export interface ExternalCollection {
+  name: string;
+  path: string;
+}
 
 export interface DitherConfig {
   schema: { version: number };
   library: { path: string };
+  collections: { external: ExternalCollection[] };
 }
 
 export class NotInitializedError extends Error {
@@ -96,18 +102,40 @@ function validate(parsed: unknown, path: string): DitherConfig {
   if (!schema || typeof schema !== "object" || typeof schema.version !== "number") {
     throw new Error(`config at ${path} is missing schema.version`);
   }
-  if (schema.version !== CONFIG_SCHEMA_VERSION) {
+  // v1 (pre-external-collections) is accepted transparently and loaded as
+  // v2 with an empty external registry. Saves always emit v2; v1 files
+  // are not rewritten in place until the next saveConfig.
+  if (schema.version !== 1 && schema.version !== CONFIG_SCHEMA_VERSION) {
     throw new Error(
-      `config at ${path} has schema.version=${schema.version}, expected ${CONFIG_SCHEMA_VERSION}`,
+      `config at ${path} has schema.version=${schema.version}, expected 1 or ${CONFIG_SCHEMA_VERSION}`,
     );
   }
   const library = obj.library as Record<string, unknown> | undefined;
   if (!library || typeof library !== "object" || typeof library.path !== "string") {
     throw new Error(`config at ${path} is missing library.path`);
   }
+  const collections = obj.collections as Record<string, unknown> | undefined;
+  const externalRaw = collections?.external;
+  const external: ExternalCollection[] = [];
+  if (externalRaw !== undefined) {
+    if (!Array.isArray(externalRaw)) {
+      throw new Error(`config at ${path} has non-array collections.external`);
+    }
+    for (const entry of externalRaw) {
+      if (!entry || typeof entry !== "object") {
+        throw new Error(`config at ${path} has malformed collections.external entry`);
+      }
+      const e = entry as Record<string, unknown>;
+      if (typeof e.name !== "string" || typeof e.path !== "string") {
+        throw new Error(`config at ${path} has malformed collections.external entry`);
+      }
+      external.push({ name: e.name, path: e.path });
+    }
+  }
   return {
-    schema: { version: schema.version },
+    schema: { version: CONFIG_SCHEMA_VERSION },
     library: { path: library.path },
+    collections: { external },
   };
 }
 

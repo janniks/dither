@@ -8,6 +8,7 @@ import { envCommand } from "./commands/env";
 import { runsCommand } from "./commands/runs";
 import { daemonCommand } from "./commands/daemon";
 import { initCommand } from "./commands/init";
+import { collectionCommand } from "./commands/collection";
 
 export const main = defineCommand({
   meta: {
@@ -22,6 +23,7 @@ export const main = defineCommand({
     plugin: pluginCommand,
     env: envCommand,
     index: indexCommand,
+    collection: collectionCommand,
     runs: runsCommand,
     daemon: daemonCommand,
     status: statusCommand,

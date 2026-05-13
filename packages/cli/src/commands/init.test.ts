@@ -53,8 +53,9 @@ describe("dither init (Phase 1)", () => {
     const { loadConfig } = await import("../config");
     const cfg = await loadConfig();
     expect(cfg).toEqual({
-      schema: { version: 1 },
+      schema: { version: 2 },
       library: { path: realpathSync(lib) },
+      collections: { external: [] },
     });
     expect(existsSync(lib)).toBe(true);
   });
@@ -85,8 +86,9 @@ describe("dither init (Phase 1)", () => {
   it("re-running init prints existing config and does not overwrite", async () => {
     const { saveConfig } = await import("../config");
     await saveConfig({
-      schema: { version: 1 },
+      schema: { version: 2 },
       library: { path: "/somewhere/else" },
+      collections: { external: [] },
     });
 
     const { main } = await import("../main");
@@ -106,8 +108,9 @@ describe("dither init (Phase 1)", () => {
   it("re-running init with --library notes the flag is ignored", async () => {
     const { saveConfig } = await import("../config");
     await saveConfig({
-      schema: { version: 1 },
+      schema: { version: 2 },
       library: { path: "/somewhere/else" },
+      collections: { external: [] },
     });
 
     const { main } = await import("../main");
