@@ -22,7 +22,7 @@ export const getCommand = defineCommand({
     ref: {
       type: "positional",
       required: true,
-      description: "Display path (notes/foo.md) or docid (#abc123)",
+      description: "Display path (notes/foo.md) or docid (abc123)",
     },
     lines: {
       type: "string",

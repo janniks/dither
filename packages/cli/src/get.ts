@@ -1,7 +1,7 @@
 import { openStore } from "./store";
 
 export interface GetOptions {
-  /** Display path (e.g. `notes/auth.md`) or qmd docid (e.g. `#abc123`). */
+  /** Display path (e.g. `notes/auth.md`) or qmd docid (e.g. `abc123`). */
   ref: string;
   /** Inclusive 1-based start line. */
   fromLine?: number;
