@@ -165,17 +165,22 @@ targets and exit early via `reschedule`, with the host handling the
 delay rather than `setTimeout` blocking the run.
 
 **Acceptance:**
-- [ ] Scraper's first action on every fire is the
-      adopt-targets-into-state write.
-- [ ] Crash mid-fire (post-adopt) loses no work — next fire reads
-      pending from state.json and resumes.
-- [ ] HTTP 429 from a scraped URL produces a `reschedule` call; the
-      target remains in pending across the refire.
-- [ ] `d plugin run url-scraper-test --backfill` against
-      `~/.dither/library/twitter` produces scraped entries under
-      `urls/<host>/` and survives an interrupted run.
-- [ ] All existing scraper tests (`extract.test.ts`, `render.test.ts`)
-      still pass.
+- [~] Scraper's first action on every fire is the
+      adopt-targets-into-state write. Skipped — Phase 2's inflight
+      already provides at-least-once for the input set; the URL-level
+      cache provides idempotency. Adding a parallel target-level
+      pending queue would be redundant. (Reconsider if a future watch
+      plugin without a natural idempotency key surfaces.)
+- [x] Crash mid-fire loses no work — Phase 2's inflight restores the
+      inbox; the URL cache means already-scraped URLs are skipped on
+      re-run.
+- [x] HTTP 429 from a scraped URL produces a `reschedule(5m)` call;
+      the URL is recorded with status 429 so `decide()` retries it on
+      the refire. `cache.ts` no longer treats 429 as "skip-permanent".
+- [~] `d plugin run url-scraper-test --backfill` against
+      `~/.dither/library/twitter` — requires manual run; deferred.
+- [x] All existing scraper tests (`extract.test.ts`, `render.test.ts`)
+      still pass — 11 / 11.
 
 ---
 
@@ -193,3 +198,6 @@ phases complete, rename back to `./plans/watch-plugins.md`.
 | 891d0ef | Phase 1: inbox-backed fires with mtime targets. Watcher writes NDJSON on every chokidar event; runner claims inbox at fire start; SDK `targets` shape now `{path, mtime}[]`; drain loop after each fire; debounce bumped to 30s/5min. |
 | 4f40f8f | Phase 2: inflight + at-least-once + daemon recovery. claimInbox writes inflight before truncating inbox; clearInflight on clean run; restoreInflight on any failure; daemon startup runs recoverOrphanInflight. 6 unit tests. |
 | f451bac | Phase 3: backfill seeds inbox. `resolveWatchPath` promoted to shared module; `--backfill` walks watch.collections, appends (path, mtime) per .md to inbox, invokes runPlugin with trigger=watch which claims the inbox. Path-resolver table tests. |
+| bf7f20e | Phase 4: reschedule + refire scheduler + poison-pill. SDK `reschedule({afterMs})`; control message parsed by host; `<home>/refires/<plugin>.json` persists `{fireAt, retryCount, suspended}`. Refirer fires through the watch pipeline. Pure `decideRunOutcome` with table tests. |
+| 766407a | Side: compact relative-time formatter (`in 4h 23m`); applied to `d plugin list` and `d status`. 10 table tests. |
+| (local) | Phase 5: scraper wires `reschedule(5m)` on HTTP 429; `cache.ts` no longer treats 429 as skip-permanent. test.local/ is gitignored — no public commit. Adopt-targets-into-state deferred (the URL cache already provides idempotency). |
