@@ -37,8 +37,8 @@ export function HomeNav() {
         style={{
           transition:
             "max-width 1200ms cubic-bezier(0.32, 0.72, 0, 1), background-color 800ms, box-shadow 800ms, backdrop-filter 800ms, border-color 800ms",
-          backdropFilter: scrolled ? "blur(12px)" : "blur(0px)",
-          WebkitBackdropFilter: scrolled ? "blur(12px)" : "blur(0px)",
+          backdropFilter: scrolled ? "blur(12px)" : undefined,
+          WebkitBackdropFilter: scrolled ? "blur(12px)" : undefined,
         }}
       >
         <nav className="flex items-center gap-5 py-3 pr-4 pl-6">
@@ -164,66 +164,71 @@ export function HomeNav() {
           </button>
         </nav>
 
-        {/* mobile expandable panel — absolute so it doesn't grow the sticky pill
-            (which would push the rest of the page down on open) */}
-        <div
-          className={`absolute inset-x-2 top-full mt-2 grid overflow-hidden rounded-[20px] border bg-fd-background/60 backdrop-blur-xl shadow-[0_12px_24px_-12px_rgba(0,0,0,0.25),0_1px_1px_rgba(255,255,255,0.06)_inset] transition-[grid-template-rows,opacity] duration-300 ease-out md:hidden ${
-            open ? "grid-rows-[1fr] opacity-100" : "pointer-events-none grid-rows-[0fr] opacity-0"
-          }`}
-        >
-          <div className="min-h-0">
-            <div className="flex flex-col gap-1 p-2">
-              <Link
-                href="/docs"
-                onClick={() => setOpen(false)}
-                className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
-              >
-                Documentation
-              </Link>
-              <Link
-                href="/#marketplace"
-                onClick={() => setOpen(false)}
-                className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
-              >
-                Plugins
-              </Link>
-              <Link
-                href="/#manifesto"
-                onClick={() => setOpen(false)}
-                className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
-              >
-                Manifesto
-              </Link>
-              <Link
-                href="/#faq"
-                onClick={() => setOpen(false)}
-                className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
-              >
-                FAQs
-              </Link>
-              <Link
-                href="/docs"
-                onClick={() => setOpen(false)}
-                className="border-[#99D892]/30 bg-[#99D892]/15 text-[#99D892] hover:bg-[#99D892]/25 inline-flex items-center rounded-lg border px-3 py-2 text-[14px] font-semibold no-underline backdrop-blur-md"
-              >
-                Install
-              </Link>
-              <a
-                href="https://github.com/janniks/dither"
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => setOpen(false)}
-                className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
-              >
-                <span
-                  aria-hidden
-                  className="block size-[18px] bg-linear-to-br from-fd-muted-foreground to-fd-foreground/60 mask-contain mask-center mask-no-repeat"
-                  style={{ maskImage: ghMarkMask, WebkitMaskImage: ghMarkMask }}
-                />
-                GitHub
-              </a>
-            </div>
-          </div>
+      </div>
+
+      {/* mobile expandable panel — rendered as a sibling of the pill so no
+          ancestor backdrop-filter breaks the blur. Sized to its content. */}
+      <div
+        className={`pointer-events-none absolute inset-x-7 top-[82px] z-30 grid overflow-hidden rounded-[20px] border border-fd-border bg-fd-background/50 shadow-[0_12px_24px_-12px_rgba(0,0,0,0.25),0_1px_1px_rgba(255,255,255,0.06)_inset] transition-[grid-template-rows,opacity] duration-300 ease-out md:hidden ${
+          open ? "!pointer-events-auto grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+        }`}
+        style={{
+          backdropFilter: "blur(20px) saturate(140%)",
+          WebkitBackdropFilter: "blur(20px) saturate(140%)",
+        }}
+      >
+        <div className="min-h-0">
+          <div className="flex flex-col gap-1 p-2">
+          <Link
+            href="/docs"
+            onClick={() => setOpen(false)}
+            className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
+          >
+            Documentation
+          </Link>
+          <Link
+            href="/#marketplace"
+            onClick={() => setOpen(false)}
+            className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
+          >
+            Plugins
+          </Link>
+          <Link
+            href="/#manifesto"
+            onClick={() => setOpen(false)}
+            className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
+          >
+            Manifesto
+          </Link>
+          <Link
+            href="/#faq"
+            onClick={() => setOpen(false)}
+            className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
+          >
+            FAQs
+          </Link>
+          <Link
+            href="/docs"
+            onClick={() => setOpen(false)}
+            className="border-[#99D892]/30 bg-[#99D892]/15 text-[#99D892] hover:bg-[#99D892]/25 inline-flex items-center rounded-lg border px-3 py-2 text-[14px] font-semibold no-underline"
+          >
+            Install
+          </Link>
+          <a
+            href="https://github.com/janniks/dither"
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => setOpen(false)}
+            className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
+          >
+            <span
+              aria-hidden
+              className="block size-[18px] bg-linear-to-br from-fd-muted-foreground to-fd-foreground/60 mask-contain mask-center mask-no-repeat"
+              style={{ maskImage: ghMarkMask, WebkitMaskImage: ghMarkMask }}
+            />
+            GitHub
+          </a>
+        </div>
         </div>
       </div>
     </div>
