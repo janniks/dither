@@ -5,6 +5,7 @@ import { daemonLogPath } from "../home";
 import { assertInitialized } from "../config";
 import { startDaemon, stopDaemon, getDaemonStatus, reloadDaemon } from "../daemon-control";
 import { runDaemon } from "../daemon";
+import { formatRelTime } from "../relative-time";
 
 const PREVIEW_LIMIT = 4;
 
@@ -78,9 +79,10 @@ const statusSubcommand = defineCommand({
       console.log(`startedAt:   ${s.snapshot.startedAt}`);
       console.log(`lastTick:    ${s.snapshot.lastTick}`);
       console.log(`schedules:   ${s.snapshot.schedules}`);
-      printPreview(s.snapshot.scheduleEntries, (e) =>
-        `  - ${e.name}: ${e.pattern} (next ${e.nextRun ?? "—"})`,
-      );
+      printPreview(s.snapshot.scheduleEntries, (e) => {
+        const next = e.nextRun ? formatRelTime(Date.parse(e.nextRun)) : "—";
+        return `  - ${e.name}: ${e.pattern} (next ${next})`;
+      });
       console.log(`watches:     ${s.snapshot.watches}`);
       printPreview(s.snapshot.watchEntries, (e) =>
         `  - ${e.name}: ${e.collections.join(", ")} ${e.glob}`,

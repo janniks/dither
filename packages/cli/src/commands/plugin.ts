@@ -6,6 +6,8 @@ import { join, resolve } from "node:path";
 import { libraryRoot } from "../paths";
 import { resolveWatchPath } from "../watch-paths";
 import { appendToInbox, type WatchTarget } from "../inbox";
+import { Cron } from "croner";
+import { formatRelTime } from "../relative-time";
 import { installPlugin, MISSING_ENV, type InstallOptions, type InstalledPlugin } from "../plugin-install";
 import { runPlugin, PLUGIN_NOT_INSTALLED } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
@@ -384,7 +386,17 @@ const listSubcommand = defineCommand({
     for (const p of plugins) {
       const cols = p.collections.length ? p.collections.join(",") : "-";
       const sched = p.schedule ?? "-";
-      console.log(`${p.name}\t${p.version}\t${cols}\t${sched}`);
+      let next = "";
+      if (p.schedule) {
+        try {
+          const job = new Cron(p.schedule);
+          const at = job.nextRun();
+          if (at) next = `\t${formatRelTime(at.getTime())}`;
+        } catch {
+          // malformed cron — leave next blank rather than crash the list.
+        }
+      }
+      console.log(`${p.name}\t${p.version}\t${cols}\t${sched}${next}`);
     }
     return plugins;
   },
