@@ -203,13 +203,23 @@ const installSubcommand = defineCommand({
       required: true,
       description: "Path to the plugin directory",
     },
+    symlink: {
+      type: "boolean",
+      description:
+        "Dev mode: symlink the install destination to the source path instead of copying. Author edits take effect without reinstall; node_modules + deno.json from the source are used as-is.",
+      default: false,
+    },
     ...grantArgs,
   },
   async run({ args }) {
     await assertInitialized();
     const grants = readGrantArgs(args);
-    const result = await installPluginOrExit({ source: args.source, ...grants });
-    console.log(`installed ${result.name}@${result.version}`);
+    const result = await installPluginOrExit({
+      source: args.source,
+      ...grants,
+      ...(args.symlink ? { symlink: true } : {}),
+    });
+    console.log(`installed ${result.name}@${result.version}${args.symlink ? " (symlinked)" : ""}`);
     console.log(`  → ${result.dest}`);
     await ensureDaemonForPlugin(result.name).catch(() => {});
     return result;
@@ -253,6 +263,12 @@ const runSubcommand = defineCommand({
         "For watch plugins: walk every entry under the manifest's `watch.collections` and fire the plugin once with them all as targets. Use to seed an installed watch plugin against existing library state.",
       default: false,
     },
+    symlink: {
+      type: "boolean",
+      description:
+        "When the target is a path, install via symlink instead of copying (dev mode). See `plugin install --symlink`.",
+      default: false,
+    },
     ...grantArgs,
   },
   async run({ args }) {
@@ -268,10 +284,14 @@ const runSubcommand = defineCommand({
     const candidatePath = resolve(args.target);
     const isPath = existsSync(candidatePath) && existsSync(join(candidatePath, "package.json"));
     if (isPath) {
-      const installed = await installPluginOrExit({ source: candidatePath, ...grants });
+      const installed = await installPluginOrExit({
+        source: candidatePath,
+        ...grants,
+        ...(args.symlink ? { symlink: true } : {}),
+      });
       pluginName = installed.name;
       runOverrides = null;
-      console.log(`installed ${installed.name}@${installed.version}`);
+      console.log(`installed ${installed.name}@${installed.version}${args.symlink ? " (symlinked)" : ""}`);
       await ensureDaemonForPlugin(installed.name).catch(() => {});
     }
 
