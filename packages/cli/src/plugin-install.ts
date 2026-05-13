@@ -1,12 +1,16 @@
-import { mkdir, cp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdir, cp, writeFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { resolveHome } from "./home";
-import { parsePackage, type ParsedPackage } from "./manifest";
 import { validateGrantPattern } from "./collection-paths";
 import { maybeWarnInstall } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
-import { MissingInputsError, planInstall, type InstallInputs } from "./plugin-install-interactive";
+import {
+  MissingInputsError,
+  planInstall,
+  readPackage,
+  type InstallInputs,
+} from "./plugin-install-interactive";
 
 export type InstallOptions = InstallInputs & { source: string };
 
@@ -24,16 +28,7 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
   await ensureDeno();
 
   const sourcePath = resolve(opts.source);
-  if (!existsSync(sourcePath)) {
-    throw new Error(`Plugin source not found: ${sourcePath}`);
-  }
-  const pkgPath = join(sourcePath, "package.json");
-  if (!existsSync(pkgPath)) {
-    throw new Error(`No package.json at ${sourcePath}`);
-  }
-
-  const pkgRaw = JSON.parse(await readFile(pkgPath, "utf-8")) as unknown;
-  const parsed: ParsedPackage = parsePackage(pkgRaw);
+  const parsed = await readPackage(sourcePath);
 
   // Validate everything before touching disk so a missing-required failure
   // rolls back cleanly with no half-installed state.

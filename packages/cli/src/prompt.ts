@@ -25,6 +25,37 @@ export interface PromptTextOptions {
   validate?: (value: string) => string | null | Promise<string | null>;
 }
 
+export interface PromptSelectOption<T extends string = string> {
+  label: string;
+  value: T;
+  hint?: string;
+}
+
+export interface PromptSelectOptions<T extends string = string> {
+  message: string;
+  options: PromptSelectOption<T>[];
+  /** Value to pre-highlight. Defaults to the first option. */
+  initial?: T;
+}
+
+export async function promptSelect<T extends string = string>(
+  opts: PromptSelectOptions<T>,
+): Promise<T> {
+  const raw = (await consola.prompt(opts.message, {
+    type: "select",
+    options: opts.options,
+    initial: opts.initial ?? opts.options[0]?.value,
+    cancel: "reject",
+  })) as unknown;
+  // consola returns the option object in some versions, the bare value in
+  // others — normalise both shapes.
+  if (typeof raw === "string") return raw as T;
+  if (raw && typeof raw === "object" && "value" in raw) {
+    return (raw as { value: T }).value;
+  }
+  throw new Error("promptSelect: unexpected consola response shape");
+}
+
 export async function promptText(opts: PromptTextOptions): Promise<string> {
   for (;;) {
     const formattedMessage = opts.hint

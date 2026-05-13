@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { formatMissing, planInstall } from "./plugin-install-interactive";
+import { formatMissing, mergeInputs, planInstall } from "./plugin-install-interactive";
 import type { ParsedPackage } from "./manifest";
 
 function pkg(manifest: ParsedPackage["manifest"]): ParsedPackage {
@@ -151,5 +151,24 @@ describe("formatMissing", () => {
   it("omits empty groups", () => {
     expect(formatMissing([{ kind: "env", name: "A" }])).toMatch(/env: A\b/);
     expect(formatMissing([{ kind: "env", name: "A" }])).not.toMatch(/file:/);
+  });
+});
+
+describe("mergeInputs", () => {
+  it("overlays env literals and dedupes allow-env refs", () => {
+    const merged = mergeInputs(
+      { env: { A: "from-flag" }, envRefs: ["X"] },
+      { env: { B: "from-prompt" }, envRefs: ["X", "Y"] },
+    );
+    expect(merged.env).toEqual({ A: "from-flag", B: "from-prompt" });
+    expect(merged.envRefs).toEqual(["X", "Y"]);
+  });
+
+  it("prompt-supplied file paths win over flag-supplied", () => {
+    const merged = mergeInputs(
+      { files: { cfg: "/from/flag" } },
+      { files: { cfg: "/from/prompt" } },
+    );
+    expect(merged.files).toEqual({ cfg: "/from/prompt" });
   });
 });

@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
-import { lstat, realpath } from "node:fs/promises";
-import { resolve } from "node:path";
-import type { Manifest, ParsedPackage } from "./manifest";
+import { lstat, readFile, realpath } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { parsePackage, type Manifest, type ParsedPackage } from "./manifest";
+import { promptSelect, promptText } from "./prompt";
 
 /**
  * Inputs the user supplied (via flags or, later, interactive prompts).
@@ -147,3 +148,88 @@ export async function planInstall(
   }
   return { ok: true, resolved: { env, envRefs, files, net, collections } };
 }
+
+/**
+ * Read + parse a plugin's package.json. Same code path used by
+ * `installPlugin`, exposed so the CLI's interactive layer can plan
+ * before kicking off the install.
+ */
+export async function readPackage(source: string): Promise<ParsedPackage> {
+  const sourcePath = resolve(source);
+  if (!existsSync(sourcePath)) {
+    throw new Error(`Plugin source not found: ${sourcePath}`);
+  }
+  const pkgPath = join(sourcePath, "package.json");
+  if (!existsSync(pkgPath)) {
+    throw new Error(`No package.json at ${sourcePath}`);
+  }
+  return parsePackage(JSON.parse(await readFile(pkgPath, "utf-8")));
+}
+
+/**
+ * Walk the missing-required fields and prompt the user for each. Returns
+ * a partial `InstallInputs` with the user's answers — the caller merges
+ * these on top of the original inputs and re-plans.
+ *
+ * Phase 2 scope: env and file prompts only. Net / collections prompts
+ * land in phase 3.
+ */
+export async function promptMissing(
+  parsed: ParsedPackage,
+  missing: MissingField[],
+): Promise<InstallInputs> {
+  const env: Record<string, string> = {};
+  const envRefs: string[] = [];
+  const files: Record<string, string> = {};
+
+  for (const field of missing) {
+    if (field.kind === "env") {
+      const def = (parsed.manifest.env ?? []).find((e) => e.name === field.name);
+      const desc = def?.description ? ` — ${def.description}` : "";
+      const mode = await promptSelect<"literal" | "ref">({
+        message: `Env ${field.name}${desc}`,
+        options: [
+          { label: "Enter a literal value", value: "literal" },
+          { label: "Read from global dither env", value: "ref" },
+        ],
+      });
+      if (mode === "ref") {
+        envRefs.push(field.name);
+        continue;
+      }
+      env[field.name] = await promptText({
+        message: `  value for ${field.name}`,
+      });
+      continue;
+    }
+    // kind === "file"
+    const def = (parsed.manifest.files ?? []).find((f) => f.id === field.name);
+    const label = def?.name ?? field.name;
+    files[field.name] = await promptText({
+      message: `Path for ${label}`,
+      validate: (v) => {
+        if (!v.trim()) return "path cannot be empty";
+        const abs = resolve(v);
+        if (!existsSync(abs)) return `path does not exist: ${abs}`;
+        return null;
+      },
+    });
+  }
+
+  return { env, envRefs, files };
+}
+
+/**
+ * Merge a partial `InstallInputs` (from prompts) on top of the user's
+ * original inputs. The partial wins for any field it provides.
+ */
+export function mergeInputs(base: InstallInputs, extra: InstallInputs): InstallInputs {
+  return {
+    env: { ...base.env, ...extra.env },
+    envRefs: Array.from(new Set([...(base.envRefs ?? []), ...(extra.envRefs ?? [])])),
+    files: { ...base.files, ...extra.files },
+    net: extra.net ?? base.net,
+    collections: extra.collections ?? base.collections,
+  };
+}
+

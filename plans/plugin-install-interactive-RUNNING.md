@@ -53,14 +53,14 @@ per-file text prompt. Net/collections continue to take manifest defaults
 in this phase.
 
 **Acceptance:**
-- [ ] `prompt.ts` exports `promptSelect`.
-- [ ] On a TTY, missing required env triggers a select; literal entry
+- [x] `prompt.ts` exports `promptSelect`.
+- [x] On a TTY, missing required env triggers a select; literal entry
       drills into a text prompt.
-- [ ] On a TTY, missing required file triggers a text prompt validated
+- [x] On a TTY, missing required file triggers a text prompt validated
       by `resolveFiles` rules.
-- [ ] Ctrl-C mid-prompt exits 130 with no grants written, no plugin code
+- [x] Ctrl-C mid-prompt exits 130 with no grants written, no plugin code
       copied.
-- [ ] `plugin run <path>` benefits from the same prompts (no duplication).
+- [x] `plugin run <path>` benefits from the same prompts (no duplication).
 
 ---
 
@@ -128,4 +128,5 @@ preview, and the install/run cross-references in `meta.description`.
 
 | commit | summary |
 |--|--|
-| _pending_ | phase 1 — pure planner, `MissingInputsError` enumerates all missing required fields, `installPluginOrExit` exits 1 cleanly. 13 unit tests. |
+| e359133 | phase 1 — pure planner, `MissingInputsError` enumerates all missing required fields, `installPluginOrExit` exits 1 cleanly. 13 unit tests. |
+| _pending_ | phase 2 — interactive env + file prompts on TTY via `promptSelect`/`promptText`; `mergeInputs` overlays prompt answers on flag inputs; Ctrl-C aborts with exit 130. Non-TTY path verified manually with `read-file` fixture. |

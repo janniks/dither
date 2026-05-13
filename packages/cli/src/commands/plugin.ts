@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, openSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { installPlugin, MissingInputsError, type InstallOptions, type InstalledPlugin } from "../plugin-install";
+import { mergeInputs, planInstall, promptMissing, readPackage } from "../plugin-install-interactive";
 import { runPlugin, PLUGIN_NOT_INSTALLED } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
 import { removePlugin } from "../plugin-remove";
@@ -13,12 +14,34 @@ import { installAutostart } from "../persistence";
 import { readFileSync } from "node:fs";
 import { FDA_SETTINGS_URI, FDA_REQUIRED } from "../tcc-hint";
 
-// Install a plugin, but surface MissingInputsError as a clean stderr line
-// listing every missing field at once + exit 1, instead of citty's stack
-// trace. Phase 2 will branch on TTY to run prompts here first.
+// Install a plugin. On a TTY, drop into the interactive flow when the
+// manifest declares required env/files the caller didn't satisfy. On a
+// pipe / CI, surface MissingInputsError as a single enumerated stderr
+// line + exit 1, instead of citty's stack trace.
 async function installPluginOrExit(opts: InstallOptions): Promise<InstalledPlugin> {
+  const interactive = process.stdin.isTTY && process.stdout.isTTY;
+  let merged = opts;
+  if (interactive) {
+    try {
+      const parsed = await readPackage(opts.source);
+      const plan = await planInstall(parsed, opts);
+      if (!plan.ok) {
+        const extra = await promptMissing(parsed, plan.missing);
+        merged = { source: opts.source, ...mergeInputs(opts, extra) };
+      }
+    } catch (err) {
+      // Ctrl-C from consola.prompt rejects; treat that (and any other
+      // pre-install failure surfaced during planning) as a clean abort
+      // with no plugin code copied, no grants written.
+      if (isCancel(err)) {
+        process.stderr.write("\ninstall cancelled.\n");
+        process.exit(130);
+      }
+      throw err;
+    }
+  }
   try {
-    return await installPlugin(opts);
+    return await installPlugin(merged);
   } catch (err) {
     if (err instanceof MissingInputsError) {
       process.stderr.write(`error: ${err.message}\n`);
@@ -26,6 +49,12 @@ async function installPluginOrExit(opts: InstallOptions): Promise<InstalledPlugi
     }
     throw err;
   }
+}
+
+// consola's cancel-on-reject path throws a plain `Error("[consola] Prompt
+// cancelled.")`. Match the message rather than relying on a stable type.
+function isCancel(err: unknown): boolean {
+  return err instanceof Error && /cancel/i.test(err.message);
 }
 
 async function ensureDaemonForPlugin(name: string): Promise<void> {
