@@ -1,7 +1,9 @@
 import { defineCommand } from "citty";
 import { spawn } from "node:child_process";
 import { mkdirSync, openSync, existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readdir, stat } from "node:fs/promises";
+import { isAbsolute, join, resolve } from "node:path";
+import { libraryRoot } from "../paths";
 import { installPlugin, MISSING_ENV, type InstallOptions, type InstalledPlugin } from "../plugin-install";
 import { runPlugin, PLUGIN_NOT_INSTALLED } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
@@ -92,6 +94,55 @@ function parseList(value: string | undefined): string[] {
     .split(",")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
+}
+
+async function walkMd(dir: string): Promise<Array<{ path: string; mtime: string }>> {
+  const out: Array<{ path: string; mtime: string }> = [];
+  let entries;
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return out;
+  }
+  for (const name of entries) {
+    const full = join(dir, name);
+    const s = await stat(full).catch(() => null);
+    if (!s) continue;
+    if (s.isDirectory()) out.push(...(await walkMd(full)));
+    else if (s.isFile() && name.endsWith(".md")) {
+      out.push({ path: full, mtime: new Date(s.mtimeMs).toISOString() });
+    }
+  }
+  return out;
+}
+
+// Resolve a `watch.collections` entry the same way the daemon's Watcher does:
+// absolute paths pass through, `./rel` is library-relative, bare strings are
+// collection-or-subfolder under the library.
+function resolveWatchPath(root: string, entry: string): string {
+  if (isAbsolute(entry)) return entry;
+  if (entry.startsWith("./")) return join(root, entry.slice(2));
+  return join(root, entry);
+}
+
+async function collectBackfillTargets(
+  name: string,
+): Promise<Array<{ path: string; mtime: string }>> {
+  const grantsPath = join(resolveHome(), "grants", `${name}.json`);
+  const blob = JSON.parse(readFileSync(grantsPath, "utf-8")) as {
+    manifest?: { watch?: { collections?: string[] } };
+  };
+  const collections = blob.manifest?.watch?.collections ?? [];
+  if (collections.length === 0) {
+    process.stderr.write(
+      `error: --backfill needs a 'watch.collections' grant; '${name}' has none.\n`,
+    );
+    process.exit(1);
+  }
+  const root = await libraryRoot();
+  const targets: Array<{ path: string; mtime: string }> = [];
+  for (const c of collections) targets.push(...(await walkMd(resolveWatchPath(root, c))));
+  return targets;
 }
 
 const grantArgs = {
@@ -191,6 +242,12 @@ const runSubcommand = defineCommand({
         "Suppress the 'Open System Settings now? [Y/n]' prompt on a recognized FDA failure.",
       default: false,
     },
+    backfill: {
+      type: "boolean",
+      description:
+        "For watch plugins: walk every entry under the manifest's `watch.collections` and fire the plugin once with them all as targets. Use to seed an installed watch plugin against existing library state.",
+      default: false,
+    },
     ...grantArgs,
   },
   async run({ args }) {
@@ -229,12 +286,15 @@ const runSubcommand = defineCommand({
       return { detached: true, pid: child.pid, logPath };
     }
 
+    const backfillTargets = args.backfill ? await collectBackfillTargets(pluginName) : undefined;
+
     const tty = process.stderr.isTTY;
     let result;
     try {
       result = await runPlugin({
         name: pluginName,
         ...runOverrides,
+        ...(backfillTargets ? { targets: backfillTargets, trigger: "manual" as const } : {}),
         verbose: args.verbose,
         onProgress: (msg) => {
           if (tty) {

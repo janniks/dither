@@ -15,6 +15,7 @@ import { acquire as acquireLock, release as releaseLock } from "./locks";
 import { startRun, type RunJournal } from "./journal";
 import { isMacOS, findProtectedPathInError, formatFdaError, FDA_REQUIRED } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
+import { claimInbox, type WatchTarget } from "./inbox";
 
 export interface ProgressMessage {
   message: string;
@@ -35,8 +36,9 @@ export interface RunOptions {
   net?: string[];
   /** Per-run collection grant additions. */
   collections?: string[];
-  /** Files that triggered this run (for watch fires). Surfaced in input.json.targets. */
-  targets?: string[];
+  /** Files that triggered this run. Surfaced in input.json.targets. Watch
+   *  fires usually leave this unset — the runner claims the inbox itself. */
+  targets?: WatchTarget[];
   /** Called for every `progress()` NDJSON message the plugin emits on stderr. */
   onProgress?: (msg: ProgressMessage) => void;
   /** Forward plugin stderr (Deno output, console.log/error) to the host's stderr in real time. */
@@ -264,6 +266,13 @@ async function runPluginLocked(
     await mkdir(stateDir, { recursive: true });
     const stateFile = join(stateDir, "state.json");
 
+    // Watch fires claim from the inbox; manual/scheduled use whatever the
+    // caller passes (typically nothing). The inbox claim is what makes
+    // backfill seeding (Phase 3) and daemon-driven watch dispatch share
+    // one fire pipeline.
+    const targets: WatchTarget[] =
+      opts.targets ?? (trigger === "watch" ? await claimInbox(opts.name) : []);
+
     const inputFile = join(runDir, "input.json");
     await writeFile(
       inputFile,
@@ -272,7 +281,7 @@ async function runPluginLocked(
           trigger,
           env: resolvedEnv,
           files: grantFiles,
-          targets: opts.targets ?? [],
+          targets,
         },
         null,
         2,
@@ -294,7 +303,7 @@ async function runPluginLocked(
       runDir,
       sdkPath,
       ...Object.values(grantFiles),
-      ...(opts.targets ?? []),
+      ...targets.map((t) => t.path),
     ].join(",");
     const allowWrite = [stateDir, runDir].join(",");
     const allowEnv = DITHER_ENV_VARS.join(",");

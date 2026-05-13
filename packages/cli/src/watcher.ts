@@ -1,17 +1,38 @@
 import { FSWatcher, watch } from "chokidar";
-import { join } from "node:path";
+import type { Stats } from "node:fs";
+import { stat } from "node:fs/promises";
+import { isAbsolute, join } from "node:path";
 import picomatch from "picomatch";
+import { appendToInbox } from "./inbox";
+
+/**
+ * Resolve a `watch.collections` entry to an absolute filesystem path.
+ *
+ *   "github"                 → <library>/github          (collection)
+ *   "github/repositories"    → <library>/github/repositories (subfolder)
+ *   "./foo"                  → <library>/foo             (library-relative)
+ *   "/abs/path"              → /abs/path                 (absolute)
+ */
+function resolveWatchPath(libraryRoot: string, entry: string): string {
+  if (isAbsolute(entry)) return entry;
+  if (entry.startsWith("./")) return join(libraryRoot, entry.slice(2));
+  return join(libraryRoot, entry);
+}
 
 /**
  * File watcher for plugins with a `watch` block. The daemon owns one Watcher
  * across all plugins; `set(entries)` replaces the active set wholesale, like
- * the scheduler. Each plugin's events are coalesced through a per-plugin
- * debounce — bursts of N file changes within the window become one fire,
- * carrying every changed path in `input.json.targets`.
+ * the scheduler.
+ *
+ * Phase-1 contract: each chokidar event becomes an inbox row (path + mtime),
+ * written immediately for durability. A per-plugin debounce timer schedules
+ * the fire signal — the runner reads the inbox at fire start, the callback
+ * doesn't carry targets. This separates durability (inbox write) from
+ * scheduling (debounce timer).
  *
  * Self-trigger suppression: plugins are *also* writers in the entries tree,
  * so we maintain a recently-promoted-paths map (TTL ~2 s). Chokidar events
- * for paths in that map are dropped before they reach the debounce.
+ * for paths in that map are dropped before the inbox write.
  */
 
 export interface WatchEntry {
@@ -20,7 +41,7 @@ export interface WatchEntry {
   glob?: string;
 }
 
-export type WatchCallback = (name: string, targets: string[]) => void | Promise<void>;
+export type WatchCallback = (name: string) => void | Promise<void>;
 
 export interface WatcherStats {
   count: number;
@@ -29,53 +50,63 @@ export interface WatcherStats {
 
 interface PluginWatcher {
   entry: WatchEntry;
-  pendingTargets: Set<string>;
   flushTimer: NodeJS.Timeout | null;
   windowStart: number | null;
   matcher: (path: string) => boolean;
 }
 
 const DEFAULT_GLOB = "**/*.md";
-const DEBOUNCE_MS = 5_000;
-const DEBOUNCE_CAP_MS = 30_000;
+const DEBOUNCE_MS = 30_000;
+const DEBOUNCE_CAP_MS = 300_000;
 const SUPPRESS_TTL_MS = 2_000;
+
+export interface WatcherOptions {
+  /** Override the per-burst debounce window (ms). Tests use a small value. */
+  debounceMs?: number;
+  /** Override the burst-cap window (ms). */
+  debounceCapMs?: number;
+}
 
 export class Watcher {
   private fsWatcher: FSWatcher | null = null;
   private plugins = new Map<string, PluginWatcher>();
   private suppress = new Map<string, number>();
   private libraryRoot = "";
+  private debounceMs: number;
+  private debounceCapMs: number;
 
-  constructor(private readonly onFire: WatchCallback) {}
+  constructor(private readonly onFire: WatchCallback, opts: WatcherOptions = {}) {
+    this.debounceMs = opts.debounceMs ?? DEBOUNCE_MS;
+    this.debounceCapMs = opts.debounceCapMs ?? DEBOUNCE_CAP_MS;
+  }
 
   set(libraryRoot: string, entries: readonly WatchEntry[]): void {
     this.stop();
     this.libraryRoot = libraryRoot;
     if (entries.length === 0) return;
 
-    const entriesRoot = libraryRoot;
     const watchPaths = new Set<string>();
     for (const entry of entries) {
       const matcher = picomatch(entry.glob ?? DEFAULT_GLOB, { dot: false });
       this.plugins.set(entry.name, {
         entry,
-        pendingTargets: new Set(),
         flushTimer: null,
         windowStart: null,
         matcher,
       });
       for (const c of entry.collections) {
-        watchPaths.add(join(entriesRoot, c));
+        watchPaths.add(resolveWatchPath(libraryRoot, c));
       }
     }
 
     this.fsWatcher = watch(Array.from(watchPaths), {
       ignoreInitial: true,
       persistent: true,
+      alwaysStat: true,
       awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
     });
-    this.fsWatcher.on("add", (path) => this.onChange(path));
-    this.fsWatcher.on("change", (path) => this.onChange(path));
+    this.fsWatcher.on("add", (path, stats) => void this.onChange(path, stats));
+    this.fsWatcher.on("change", (path, stats) => void this.onChange(path, stats));
   }
 
   /**
@@ -108,7 +139,7 @@ export class Watcher {
     return { count: entries.length, entries };
   }
 
-  private onChange(path: string): void {
+  private async onChange(path: string, stats: Stats | undefined): Promise<void> {
     const expiry = this.suppress.get(path);
     if (expiry !== undefined) {
       if (expiry > Date.now()) {
@@ -117,7 +148,6 @@ export class Watcher {
       }
       this.suppress.delete(path);
     }
-    // Garbage-collect stale suppression entries opportunistically.
     if (this.suppress.size > 64) {
       const now = Date.now();
       for (const [k, v] of this.suppress) {
@@ -125,13 +155,20 @@ export class Watcher {
       }
     }
 
+    // chokidar's `alwaysStat: true` usually provides Stats; fall back to a
+    // syscall if it's somehow missing. Either way, mtime is what reaches
+    // the inbox.
+    const mtimeMs = stats?.mtimeMs ?? (await stat(path).catch(() => null))?.mtimeMs;
+    if (mtimeMs === undefined) return;
+    const mtime = new Date(mtimeMs).toISOString();
+
     for (const plugin of this.plugins.values()) {
       if (!matchesAnyCollection(this.libraryRoot, path, plugin.entry.collections)) continue;
       const relative = relativeToCollections(this.libraryRoot, path, plugin.entry.collections);
       if (relative === null) continue;
       if (!plugin.matcher(relative)) continue;
 
-      plugin.pendingTargets.add(path);
+      await appendToInbox(plugin.entry.name, { path, mtime });
       if (plugin.windowStart === null) plugin.windowStart = Date.now();
       this.scheduleFlush(plugin);
     }
@@ -140,31 +177,28 @@ export class Watcher {
   private scheduleFlush(plugin: PluginWatcher): void {
     if (plugin.flushTimer) clearTimeout(plugin.flushTimer);
     const windowAge = plugin.windowStart === null ? 0 : Date.now() - plugin.windowStart;
-    const remainingCap = Math.max(0, DEBOUNCE_CAP_MS - windowAge);
-    const wait = Math.min(DEBOUNCE_MS, remainingCap);
+    const remainingCap = Math.max(0, this.debounceCapMs - windowAge);
+    const wait = Math.min(this.debounceMs, remainingCap);
 
     plugin.flushTimer = setTimeout(() => {
-      const targets = Array.from(plugin.pendingTargets);
-      plugin.pendingTargets.clear();
       plugin.windowStart = null;
       plugin.flushTimer = null;
-      if (targets.length === 0) return;
-      void this.onFire(plugin.entry.name, targets);
+      void this.onFire(plugin.entry.name);
     }, wait);
   }
 }
 
 function matchesAnyCollection(root: string, path: string, collections: string[]): boolean {
   for (const c of collections) {
-    const prefix = `${join(root, c)}/`;
-    if (path.startsWith(prefix) || path === join(root, c)) return true;
+    const base = resolveWatchPath(root, c);
+    if (path === base || path.startsWith(`${base}/`)) return true;
   }
   return false;
 }
 
 function relativeToCollections(root: string, path: string, collections: string[]): string | null {
   for (const c of collections) {
-    const prefix = `${join(root, c)}/`;
+    const prefix = `${resolveWatchPath(root, c)}/`;
     if (path.startsWith(prefix)) return path.slice(prefix.length);
   }
   return null;

@@ -9,6 +9,7 @@ import { Watcher, type WatchEntry } from "./watcher";
 import { runPlugin } from "./plugin-run";
 import { readFile as readFileAsync } from "node:fs/promises";
 import { LoopDetector, type HaltRecord } from "./loop-detector";
+import { inboxHasItems } from "./inbox";
 
 /**
  * Long-lived daemon process. In phase 3 the inner loop is a quiet heartbeat
@@ -93,7 +94,6 @@ async function fireWithSuppress(
   detector: LoopDetector,
   name: string,
   trigger: "scheduled" | "watch",
-  targets?: string[],
 ): Promise<void> {
   const source = `${trigger}:${name}`;
   if (detector.shouldHalt(source, name)) {
@@ -104,11 +104,18 @@ async function fireWithSuppress(
   detector.record(source, name, true);
 
   try {
-    const result = await runPlugin({ name, trigger, targets });
+    const result = await runPlugin({ name, trigger });
     for (const path of result.promoted) watcher.suppressOnce(path);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[daemon] ${trigger} fire of '${name}' failed: ${message}`);
+  }
+
+  // Drain loop: if events landed in the inbox during the run, keep firing
+  // until the inbox is empty (or the next event lands a fresh debounce).
+  if (trigger === "watch") {
+    const stillPending = await inboxHasItems(name).catch(() => false);
+    if (stillPending) void fireWithSuppress(watcher, detector, name, "watch");
   }
 }
 
@@ -202,8 +209,8 @@ export async function runDaemon(): Promise<void> {
   const detector = new LoopDetector();
   // eslint-disable-next-line prefer-const
   let watcher!: Watcher;
-  watcher = new Watcher((name: string, targets: string[]) =>
-    fireWithSuppress(watcher, detector, name, "watch", targets),
+  watcher = new Watcher((name: string) =>
+    fireWithSuppress(watcher, detector, name, "watch"),
   );
   const scheduler = new Scheduler((name: string) =>
     fireWithSuppress(watcher, detector, name, "scheduled"),

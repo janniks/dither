@@ -65,3 +65,7 @@ export function locksDirPath(): string {
 export function binDir(): string {
   return join(resolveHome(), "bin");
 }
+
+export function inboxPath(plugin: string): string {
+  return join(resolveHome(), "inboxes", `${plugin}.ndjson`);
+}

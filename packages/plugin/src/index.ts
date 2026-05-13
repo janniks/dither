@@ -24,14 +24,27 @@ import { randomUUID } from "node:crypto";
 
 export const VERSION = "0.0.1";
 
+/**
+ * One entry that the host wants the plugin to look at. `path` is absolute and
+ * already in the Deno `--allow-read` allowlist. `mtime` is ISO-8601 UTC at
+ * the moment the host observed the change — plugins can use it as a cursor
+ * (e.g. resume after a reschedule from "highest fully-processed mtime").
+ */
+export interface WatchTarget {
+  path: string;
+  mtime: string;
+}
+
 export interface PluginInput {
   trigger: "scheduled" | "watch" | "manual";
   /** Resolved env values keyed by name. All strings — coerce in plugin code. */
   env: Record<string, string>;
   /** Resolved absolute paths for declared `files[]`, keyed by id. */
   files: Record<string, string>;
-  /** For watch-triggered runs: the entries that changed. Always [] today. */
-  targets: string[];
+  /** For watch-triggered runs: the entries (path + mtime) the host has
+   *  queued for this fire. Empty array on scheduled/manual runs unless the
+   *  caller supplied explicit targets. */
+  targets: WatchTarget[];
 }
 
 export interface EntryOptions {
