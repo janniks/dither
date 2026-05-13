@@ -9,6 +9,8 @@ import { WaveRow } from "./marketing/wave-row";
 import { ScheduleWatchDemo } from "./marketing/schedule-watch-demo";
 import { ArchitectureDiagram } from "./marketing/architecture-diagram";
 import { TerminalMcp } from "./marketing/terminal-mcp";
+import { TerminalTabs } from "./marketing/terminal-tabs";
+import { JustMarkdown } from "./marketing/just-markdown";
 import { SphereRow } from "./marketing/sphere-row";
 import { Manifesto } from "./marketing/manifesto";
 import { Faq } from "./marketing/faq";
@@ -57,7 +59,7 @@ export default function HomePage() {
             <RotatingHeadline />
           </div>
           <p className="text-fd-muted-foreground mt-6 max-w-[660px] text-lg leading-[30px]">
-            Local-first, plugin-driven, sandboxed. Drop markdown into
+            Open source, local-first, and sandboxed. Drop markdown into
             collections, run plugins to pull data in, and search across
             everything from one CLI.
           </p>
@@ -104,6 +106,8 @@ export default function HomePage() {
         </section>
         */}
 
+        <TerminalTabs />
+        <JustMarkdown />
         <FeatureGrid />
         <NoBsStrip />
         <PluginUsp />

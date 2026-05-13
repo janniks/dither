@@ -82,7 +82,7 @@ export function HomeNav() {
               Documentation
             </Link>
             <Link
-              href="/#marketplace"
+              href="/#plugins"
               className="text-fd-muted-foreground hover:text-fd-foreground text-[13px] font-semibold no-underline"
             >
               Plugins
@@ -187,7 +187,7 @@ export function HomeNav() {
             Documentation
           </Link>
           <Link
-            href="/#marketplace"
+            href="/#plugins"
             onClick={() => setOpen(false)}
             className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
           >

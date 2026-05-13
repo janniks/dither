@@ -19,7 +19,25 @@ const items = [
         alternatives, decided to cut my losses, and wrapped qmd instead.
         dither adds the file-management layer around it: collections,
         plugins, scheduling, watching, and a CLI that ties it all together.
-        If you don&apos;t need that, use qmd directly.
+        The plugin runtime is where most of the work went — every plugin
+        is a Deno subprocess started with explicit{" "}
+        <code className="bg-fd-muted text-fd-foreground rounded-md px-1 py-0.5 font-mono text-[13px]">
+          --allow-read
+        </code>{" "}
+        /{" "}
+        <code className="bg-fd-muted text-fd-foreground rounded-md px-1 py-0.5 font-mono text-[13px]">
+          --allow-write
+        </code>{" "}
+        /{" "}
+        <code className="bg-fd-muted text-fd-foreground rounded-md px-1 py-0.5 font-mono text-[13px]">
+          --allow-net
+        </code>{" "}
+        flags derived from grants you approve at install time, scoped to the
+        paths and hosts that plugin actually needs. Nothing in the runtime is
+        ambient: a plugin can&apos;t read another plugin&apos;s collection,
+        can&apos;t escape its sandbox, and can&apos;t silently broaden its
+        grants — any change forces a reinstall and re-approval. If you
+        don&apos;t need any of that, use qmd directly.
       </>
     ),
   },
@@ -36,8 +54,12 @@ const items = [
     a: "Yes. `dither daemon start` spawns a detached process that runs the scheduler and watcher loops; `dither daemon stop` and `dither daemon status` manage it. For auto-start on boot, wrap it in systemd / launchd in the usual way.",
   },
   {
-    q: "Encryption at rest?",
-    a: "Use FileVault, LUKS, or your platform's equivalent. dither doesn't reinvent the wheel — your filesystem already does it well.",
+    q: "Will I get rugpulled?",
+    a: "No backend, no account, no telemetry. The CLI is MIT-licensed and the index is just markdown files on your disk — you can read them with anything, including without dither. The core stays free and open source forever. If paid addons ever happen (e.g. a sync service to your phone), they'll be optional and base dither won't change.",
+  },
+  {
+    q: "Does it play nice with Obsidian (or my existing markdown folder)?",
+    a: "Yes. dither operates on plain markdown files on disk; it never moves or deletes them. Point a collection at your Obsidian vault (or any folder) and it indexes in place. Plugins can update entries if you wire them to existing files, but you can also set them up against a separate collection so nothing in your vault is ever touched.",
   },
 ];
 
