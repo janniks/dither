@@ -1,12 +1,17 @@
-import { mkdir, cp, readFile, writeFile, rm, lstat, realpath, symlink } from "node:fs/promises";
+import { mkdir, cp, writeFile, rm, symlink } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { resolveHome } from "./home";
-import { parsePackage, type Manifest, type ParsedPackage } from "./manifest";
 import { validateGrantPattern } from "./collection-paths";
 import { maybeWarnInstall } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
+import {
+  MissingInputsError,
+  planInstall,
+  readPackage,
+  type InstallInputs,
+} from "./plugin-install-interactive";
 
 /**
  * Write a fresh deno.json at the install destination. The plugin author's
@@ -56,23 +61,13 @@ function shouldSkipDuringCopy(src: string): boolean {
   return base === "deno.json" || base === "deno.jsonc" || base === "deno.lock";
 }
 
-export interface InstallOptions {
+export type InstallOptions = InstallInputs & {
   source: string;
-  /** Per-plugin literal env values, keyed by name. */
-  env?: Record<string, string>;
-  /** Names of global env values this plugin may read. */
-  envRefs?: string[];
-  /** Paths for the manifest's declared `files[]`, keyed by `id`. */
-  files?: Record<string, string>;
-  /** Net hosts the plugin may reach (subset of manifest `net`). Empty / undefined → grant manifest's full declaration. */
-  net?: string[];
-  /** Collections the plugin may write to (subset of manifest `collections`). Empty / undefined → grant manifest's full declaration. */
-  collections?: string[];
   /** Dev mode: symlink the install destination to the source path so author
    *  edits take effect without reinstall. Uses the source's existing
    *  node_modules + deno.json as-is. */
   symlink?: boolean;
-}
+};
 
 export interface InstalledPlugin {
   name: string;
@@ -80,88 +75,7 @@ export interface InstalledPlugin {
   dest: string;
 }
 
-export const MISSING_ENV = "MISSING_ENV";
-
-function resolveEnv(
-  declared: Manifest["env"],
-  provided: Record<string, string> | undefined,
-  envRefs: string[],
-): Record<string, string> {
-  const result: Record<string, string> = {};
-  const refSet = new Set(envRefs);
-  for (const def of declared ?? []) {
-    const userValue = provided?.[def.name];
-    if (userValue !== undefined) {
-      result[def.name] = userValue;
-      continue;
-    }
-    if (refSet.has(def.name)) {
-      // Grant resolves at run time from global env; literal not stored here.
-      continue;
-    }
-    if (def.default !== undefined) {
-      result[def.name] = def.default;
-      continue;
-    }
-    const err = new Error(
-      `required env '${def.name}' was not provided. Pass it with --env ${def.name}=… or grant it with --allow-env ${def.name}.`,
-    ) as Error & { code: string };
-    err.code = MISSING_ENV;
-    throw err;
-  }
-  return result;
-}
-
-async function resolveFiles(
-  declared: Manifest["files"],
-  provided: Record<string, string> | undefined,
-): Promise<Record<string, string>> {
-  const result: Record<string, string> = {};
-  for (const def of declared ?? []) {
-    const userValue = provided?.[def.id];
-    if (userValue === undefined) {
-      if (def.required) {
-        throw new Error(`Required file '${def.id}' was not provided.`);
-      }
-      continue;
-    }
-    const inputPath = resolve(userValue);
-    if (!existsSync(inputPath)) {
-      throw new Error(`File '${def.id}' path does not exist: ${inputPath}`);
-    }
-    // Canonicalise at install. Deno's --allow-read follows symlinks at
-    // runtime, so if we stored the user's potentially-symlinked path,
-    // replacing the link later would silently widen access to wherever
-    // the new target points. Storing the realpath pins the grant to its
-    // install-time destination.
-    const absPath = await realpath(inputPath);
-    const stats = await lstat(absPath);
-    if (def.kind === "file" && !stats.isFile()) {
-      throw new Error(`File '${def.id}' must be a file, got: ${absPath}`);
-    }
-    if (def.kind === "folder" && !stats.isDirectory()) {
-      throw new Error(`File '${def.id}' must be a folder, got: ${absPath}`);
-    }
-    result[def.id] = absPath;
-  }
-  return result;
-}
-
-/**
- * Resolve a grant list at install time. The manifest declaration is a
- * *default seed* — used when the user doesn't pass an explicit flag.
- * When the user does pass one, it wins, full stop. Manifest is no longer
- * a ceiling; the grants file is the source of truth at promote.
- */
-function resolveAllowList(
-  declared: string[] | undefined,
-  provided: string[] | undefined,
-): string[] {
-  if (!provided || provided.length === 0) {
-    return Array.from(new Set(declared ?? []));
-  }
-  return Array.from(new Set(provided));
-}
+export { MissingInputsError } from "./plugin-install-interactive";
 
 export async function installPlugin(opts: InstallOptions): Promise<InstalledPlugin> {
   // Trigger the managed-deno bootstrap on first install so the user pays the
@@ -169,44 +83,31 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
   await ensureDeno();
 
   const sourcePath = resolve(opts.source);
-  if (!existsSync(sourcePath)) {
-    throw new Error(`Plugin source not found: ${sourcePath}`);
-  }
-  const pkgPath = join(sourcePath, "package.json");
-  if (!existsSync(pkgPath)) {
-    throw new Error(`No package.json at ${sourcePath}`);
-  }
-
-  const pkgRaw = JSON.parse(await readFile(pkgPath, "utf-8")) as unknown;
-  const parsed: ParsedPackage = parsePackage(pkgRaw);
+  const parsed = await readPackage(sourcePath);
 
   // Validate everything before touching disk so a missing-required failure
   // rolls back cleanly with no half-installed state.
-  const envRefs = opts.envRefs ?? [];
-  const env = resolveEnv(parsed.manifest.env, opts.env, envRefs);
-  const files = await resolveFiles(parsed.manifest.files, opts.files);
-  const net = resolveAllowList(parsed.manifest.net, opts.net);
-  const collections = resolveAllowList(parsed.manifest.collections, opts.collections);
+  const plan = await planInstall(parsed, opts);
+  if (!plan.ok) throw new MissingInputsError(plan.missing);
+  const { env, envRefs, files, net, collections } = plan.resolved;
   for (const pattern of collections) validateGrantPattern(pattern);
 
   const home = resolveHome();
   const destDir = join(home, "plugins", parsed.name);
 
   // Reinstall is intentionally non-atomic for v0 simplicity: rm → mkdir → cp.
-  // If the cp fails midway (disk full, permission, killed), the previous
-  // install is gone and the new one is half-copied. Acceptable until we have
-  // real users — the user can re-run install. A tmpdir-then-rename pattern is
-  // the future fix; tracked in the review report.
   if (existsSync(destDir)) {
     await rm(destDir, { recursive: true, force: true });
   }
-  await mkdir(destDir, { recursive: true });
   if (opts.symlink) {
     // Dev mode: symlink dest → source so author edits flow through without
     // reinstall. node_modules + deno.json from the source location are
-    // used as-is; the author owns whatever's in there.
+    // used as-is; the author owns whatever's in there. Only mkdir the
+    // parent — symlink would EEXIST against destDir itself.
+    await mkdir(join(destDir, ".."), { recursive: true });
     await symlink(sourcePath, destDir);
   } else {
+    await mkdir(destDir, { recursive: true });
     // Skip node_modules + any deno.* files during copy. Deno's `.deno/`
     // symlink trees often use absolute paths back to the source dir, and
     // the author's deno.json may pin `@dither/plugin` to a dev path that
@@ -249,8 +150,6 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
     ),
   );
 
-  // macOS-only proactive hint: warn if any granted file path lives under a
-  // TCC-protected prefix (Messages, Mail, Photos, etc.). No-op elsewhere.
   maybeWarnInstall(files);
 
   return { name: parsed.name, version: parsed.version, dest: destDir };

@@ -8,7 +8,16 @@ import { resolveWatchPath } from "../watch-paths";
 import { appendToInbox, type WatchTarget } from "../inbox";
 import { Cron } from "croner";
 import { formatRelTime } from "../relative-time";
-import { installPlugin, MISSING_ENV, type InstallOptions, type InstalledPlugin } from "../plugin-install";
+import { installPlugin, MissingInputsError, type InstallOptions, type InstalledPlugin } from "../plugin-install";
+import {
+  InstallCancelledError,
+  mergeInputs,
+  planInstall,
+  promptInteractive,
+  readExistingGrants,
+  readPackage,
+} from "../plugin-install-interactive";
+import { parseSchedule } from "../schedule-parser";
 import { runPlugin, PLUGIN_NOT_INSTALLED } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
 import { removePlugin } from "../plugin-remove";
@@ -19,20 +28,99 @@ import { installAutostart } from "../persistence";
 import { readFileSync } from "node:fs";
 import { FDA_SETTINGS_URI, FDA_REQUIRED } from "../tcc-hint";
 
-// Install a plugin and convert known user-facing failures (e.g. missing env)
-// into a clean stderr line + exit(1) instead of citty's default stack trace.
+// Install a plugin. On a TTY, drop into the interactive flow when the
+// manifest declares required env/files the caller didn't satisfy. On a
+// pipe / CI, surface MissingInputsError as a single enumerated stderr
+// line + exit 1, instead of citty's stack trace.
 async function installPluginOrExit(opts: InstallOptions): Promise<InstalledPlugin> {
+  const interactive = process.stdin.isTTY && process.stdout.isTTY;
+  let merged = opts;
+  if (interactive) {
+    try {
+      const parsed = await readPackage(opts.source);
+      // Layer existing grants under the flag inputs (flags win) so a
+      // reinstall pre-fills the prompts with the user's prior answers.
+      const existing = await readExistingGrants(parsed.name);
+      const base = existing ? mergeInputs(existing, opts) : opts;
+      const plan = await planInstall(parsed, base);
+      const missing = plan.ok ? [] : plan.missing;
+      const extra = await promptInteractive(parsed, base, missing);
+      merged = { source: opts.source, ...mergeInputs(base, extra) };
+      if (opts.symlink) merged.symlink = true;
+    } catch (err) {
+      // Ctrl-C from consola.prompt rejects; treat that (and any other
+      // pre-install failure surfaced during planning) as a clean abort
+      // with no plugin code copied, no grants written.
+      if (err instanceof InstallCancelledError || isCancel(err)) {
+        process.stderr.write("\ninstall cancelled.\n");
+        process.exit(130);
+      }
+      throw err;
+    }
+  }
   try {
-    return await installPlugin(opts);
+    return await installPlugin(merged);
   } catch (err) {
-    const e = err as Error & { code?: string };
-    if (e?.code === MISSING_ENV) {
-      process.stderr.write(`error: ${e.message}\n`);
+    if (err instanceof MissingInputsError) {
+      process.stderr.write(`error: ${err.message}\n`);
       process.exit(1);
     }
     throw err;
   }
 }
+
+// consola's cancel-on-reject path throws a plain `Error("[consola] Prompt
+// cancelled.")`. Match the message rather than relying on a stable type.
+function isCancel(err: unknown): boolean {
+  return err instanceof Error && /cancel/i.test(err.message);
+}
+
+/**
+ * End-of-install hint pointing at the obvious next action. Pulls the
+ * just-written grants file to inspect the manifest:
+ *   - `schedule:` plugin → relative + absolute next-fire preview + manual hint
+ *   - `watch:` plugin → "this runs automatically" + manual hint
+ *   - everything else → `next: dither plugin run <name>`
+ *
+ * When called from `plugin run <path>`, the focus shifts to "future runs"
+ * — the install just happened, the run is happening right now.
+ */
+function printInstallHint(name: string, fromRunPath: boolean): void {
+  const grantsPath = join(resolveHome(), "grants", `${name}.json`);
+  let manifest: { schedule?: string; watch?: { collections?: string[] } } = {};
+  try {
+    const blob = JSON.parse(readFileSync(grantsPath, "utf-8")) as { manifest?: typeof manifest };
+    manifest = blob.manifest ?? {};
+  } catch {
+    return;
+  }
+  if (fromRunPath) {
+    process.stdout.write(`\nnote: grants persisted. future runs: 'dither plugin run ${name}'.\n`);
+    return;
+  }
+  if (manifest.schedule) {
+    try {
+      const next = new Cron(parseSchedule(manifest.schedule)).nextRun();
+      if (next) {
+        process.stdout.write(`\nnext run: ${formatRelTime(next.getTime())} (${next.toISOString()})\n`);
+      }
+    } catch {
+      // Invalid schedule — daemon will surface the real error at fire time.
+    }
+    process.stdout.write(`next: dither plugin run ${name} (manual one-shot fire)\n`);
+    return;
+  }
+  const watch = manifest.watch?.collections ?? [];
+  if (watch.length > 0) {
+    process.stdout.write(
+      `\nnote: runs automatically when files change in: ${watch.join(", ")}\n` +
+        `      'dither plugin run ${name}' fires it once.\n`,
+    );
+    return;
+  }
+  process.stdout.write(`\nnext: dither plugin run ${name}\n`);
+}
+
 
 async function ensureDaemonForPlugin(name: string): Promise<void> {
   // Read the just-written grants file to see if the plugin has schedule or watch.
@@ -195,7 +283,8 @@ function readGrantArgs(args: GrantArgs) {
 const installSubcommand = defineCommand({
   meta: {
     name: "install",
-    description: "Install a plugin from a local path.",
+    description:
+      "Install a plugin from a local path. Persists grants but doesn't run the plugin — use 'dither plugin run' for that.",
   },
   args: {
     source: {
@@ -222,6 +311,7 @@ const installSubcommand = defineCommand({
     console.log(`installed ${result.name}@${result.version}${args.symlink ? " (symlinked)" : ""}`);
     console.log(`  → ${result.dest}`);
     await ensureDaemonForPlugin(result.name).catch(() => {});
+    printInstallHint(result.name, false);
     return result;
   },
 });
@@ -230,7 +320,7 @@ const runSubcommand = defineCommand({
   meta: {
     name: "run",
     description:
-      "Run a plugin once. Accepts an installed plugin name or a path to a plugin directory (auto-installs).",
+      "Fire a plugin once. Accepts an installed plugin name, or a path to a plugin directory (auto-installs via 'dither plugin install' first).",
   },
   args: {
     target: {
@@ -293,6 +383,7 @@ const runSubcommand = defineCommand({
       runOverrides = null;
       console.log(`installed ${installed.name}@${installed.version}${args.symlink ? " (symlinked)" : ""}`);
       await ensureDaemonForPlugin(installed.name).catch(() => {});
+      printInstallHint(installed.name, true);
     }
 
     if (args.detach) {

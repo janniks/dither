@@ -33,6 +33,81 @@ export interface PromptTextOptions {
   validate?: (value: string) => string | null | Promise<string | null>;
 }
 
+export interface PromptSelectOption<T extends string = string> {
+  label: string;
+  value: T;
+  hint?: string;
+}
+
+export interface PromptSelectOptions<T extends string = string> {
+  message: string;
+  options: PromptSelectOption<T>[];
+  /** Value to pre-highlight. Defaults to the first option. */
+  initial?: T;
+}
+
+export async function promptSelect<T extends string = string>(
+  opts: PromptSelectOptions<T>,
+): Promise<T> {
+  const raw = (await consola.prompt(opts.message, {
+    type: "select",
+    options: opts.options,
+    initial: opts.initial ?? opts.options[0]?.value,
+    cancel: "reject",
+  })) as unknown;
+  // consola returns the option object in some versions, the bare value in
+  // others — normalise both shapes.
+  if (typeof raw === "string") return raw as T;
+  if (raw && typeof raw === "object" && "value" in raw) {
+    return (raw as { value: T }).value;
+  }
+  throw new Error("promptSelect: unexpected consola response shape");
+}
+
+export interface PromptMultiSelectOptions<T extends string = string> {
+  message: string;
+  options: PromptSelectOption<T>[];
+  /** Values pre-checked when the prompt opens. */
+  initial?: T[];
+}
+
+/**
+ * Multi-select checklist. Pre-checked entries come from `initial`. Returns
+ * the user's final selection. For arbitrary user-supplied entries (e.g.
+ * a host not in the manifest), call this together with `promptText` in a
+ * follow-up loop — consola's multiselect doesn't natively support an
+ * inline "+ Add custom…" row.
+ */
+export async function promptMultiSelect<T extends string = string>(
+  opts: PromptMultiSelectOptions<T>,
+): Promise<T[]> {
+  const initialSet = new Set(opts.initial ?? []);
+  const raw = (await consola.prompt(opts.message, {
+    type: "multiselect",
+    options: opts.options.map((o) => ({ ...o, selected: initialSet.has(o.value) })),
+    cancel: "reject",
+  })) as unknown;
+  if (!Array.isArray(raw)) {
+    throw new Error("promptMultiSelect: unexpected consola response shape");
+  }
+  return raw.map((item) =>
+    typeof item === "string" ? (item as T) : (item as { value: T }).value,
+  );
+}
+
+/**
+ * Yes/no confirmation. Enter accepts `defaultValue`. Returns the user's
+ * choice as a boolean. Ctrl-C rejects (caller handles cancel).
+ */
+export async function promptConfirm(message: string, defaultValue = true): Promise<boolean> {
+  const raw = (await consola.prompt(message, {
+    type: "confirm",
+    initial: defaultValue,
+    cancel: "reject",
+  })) as unknown;
+  return Boolean(raw);
+}
+
 export async function promptText(opts: PromptTextOptions): Promise<string> {
   for (;;) {
     const raw = (await consola.prompt(opts.message, {
