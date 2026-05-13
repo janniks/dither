@@ -10,6 +10,8 @@ import { runPlugin } from "./plugin-run";
 import { readFile as readFileAsync } from "node:fs/promises";
 import { LoopDetector, type HaltRecord } from "./loop-detector";
 import { inboxHasItems, recoverOrphanInflight } from "./inbox";
+import { Refirer } from "./refirer";
+import { readRefire } from "./refire";
 
 /**
  * Long-lived daemon process. In phase 3 the inner loop is a quiet heartbeat
@@ -91,6 +93,7 @@ async function loadWatchEntries(): Promise<WatchEntry[]> {
 
 async function fireWithSuppress(
   watcher: Watcher,
+  refirer: Refirer,
   detector: LoopDetector,
   name: string,
   trigger: "scheduled" | "watch",
@@ -111,11 +114,17 @@ async function fireWithSuppress(
     console.error(`[daemon] ${trigger} fire of '${name}' failed: ${message}`);
   }
 
+  // Pick up any refire row the run just wrote (plugin asked to be refired,
+  // or the post-failure backoff scheduled a retry). Without this, the row
+  // sits on disk until SIGHUP / restart.
+  const row = await readRefire(name).catch(() => null);
+  if (row && !row.suspended) refirer.set(name, Date.parse(row.fireAt));
+
   // Drain loop: if events landed in the inbox during the run, keep firing
   // until the inbox is empty (or the next event lands a fresh debounce).
   if (trigger === "watch") {
     const stillPending = await inboxHasItems(name).catch(() => false);
-    if (stillPending) void fireWithSuppress(watcher, detector, name, "watch");
+    if (stillPending) void fireWithSuppress(watcher, refirer, detector, name, "watch");
   }
 }
 
@@ -209,11 +218,18 @@ export async function runDaemon(): Promise<void> {
   const detector = new LoopDetector();
   // eslint-disable-next-line prefer-const
   let watcher!: Watcher;
+  // eslint-disable-next-line prefer-const
+  let refirer!: Refirer;
   watcher = new Watcher((name: string) =>
-    fireWithSuppress(watcher, detector, name, "watch"),
+    fireWithSuppress(watcher, refirer, detector, name, "watch"),
   );
   const scheduler = new Scheduler((name: string) =>
-    fireWithSuppress(watcher, detector, name, "scheduled"),
+    fireWithSuppress(watcher, refirer, detector, name, "scheduled"),
+  );
+  // Refirer drives plugin-initiated reschedules + post-failure retries. Fires
+  // through the same watch-trigger pipeline (drains inbox, runs plugin).
+  refirer = new Refirer((name: string) =>
+    fireWithSuppress(watcher, refirer, detector, name, "watch"),
   );
   // reconcile() loads config + grants fresh on every call, so SIGHUP
   // (`dither daemon reload`) is the supported way to pick up a library
@@ -240,6 +256,14 @@ export async function runDaemon(): Promise<void> {
     console.error(`[daemon] recovered inflight for: ${recovered.join(", ")}`);
   }
   await reconcile();
+  // Refire registry is independent of grants — load it once at startup and
+  // again on SIGHUP. A new refire row written by a finishing run is picked
+  // up by the next reconcile (or could trigger an inline refirer.set() —
+  // deferred for now since plugins exit and the daemon reconciles often
+  // enough in practice).
+  await refirer.reload().catch((err) => {
+    console.error(`[daemon] refire reload failed: ${err instanceof Error ? err.message : String(err)}`);
+  });
   await writeStatusSnapshot(state, scheduler, watcher, detector);
 
   let resolveExit: () => void;
@@ -261,6 +285,7 @@ export async function runDaemon(): Promise<void> {
     clearInterval(tickHandle);
     scheduler.stop();
     watcher.stop();
+    refirer.stop();
     // Wait for in-flight plugin children (manual or scheduled) to finish.
     const start = Date.now();
     while (Date.now() - start < SHUTDOWN_GRACE_MS) {
@@ -274,7 +299,7 @@ export async function runDaemon(): Promise<void> {
 
   function onHup(): void {
     state.reloadRequested = true;
-    void reconcile().catch((err) => {
+    void Promise.all([reconcile(), refirer.reload()]).catch((err) => {
       console.error(`[daemon] reload failed: ${err instanceof Error ? err.message : String(err)}`);
     });
   }

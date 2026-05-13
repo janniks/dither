@@ -16,6 +16,7 @@ import { startRun, type RunJournal } from "./journal";
 import { isMacOS, findProtectedPathInError, formatFdaError, FDA_REQUIRED } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
 import { claimInbox, clearInflight, restoreInflight, type WatchTarget } from "./inbox";
+import { clearRefire, decideRunOutcome, readRefire, writeRefire } from "./refire";
 
 export interface ProgressMessage {
   message: string;
@@ -74,17 +75,36 @@ interface ParsedFrontmatter {
   collection?: unknown;
 }
 
-function parseControl(line: string): ProgressMessage | null {
+interface RescheduleMessage {
+  kind: "reschedule";
+  afterMs: number;
+  reason?: string;
+}
+
+type ControlMessage = (ProgressMessage & { kind: "progress" }) | RescheduleMessage;
+
+function parseControl(line: string): ControlMessage | null {
   if (!line || line[0] !== "{") return null;
   try {
     const obj = JSON.parse(line) as Record<string, unknown>;
-    if (obj._dither !== "progress") return null;
-    if (typeof obj.message !== "string") return null;
-    return {
-      message: obj.message,
-      done: typeof obj.done === "number" ? obj.done : undefined,
-      total: typeof obj.total === "number" ? obj.total : undefined,
-    };
+    if (obj._dither === "progress") {
+      if (typeof obj.message !== "string") return null;
+      return {
+        kind: "progress",
+        message: obj.message,
+        done: typeof obj.done === "number" ? obj.done : undefined,
+        total: typeof obj.total === "number" ? obj.total : undefined,
+      };
+    }
+    if (obj._dither === "reschedule") {
+      if (typeof obj.afterMs !== "number" || obj.afterMs <= 0) return null;
+      return {
+        kind: "reschedule",
+        afterMs: obj.afterMs,
+        reason: typeof obj.reason === "string" ? obj.reason : undefined,
+      };
+    }
+    return null;
   } catch {
     return null;
   }
@@ -195,8 +215,32 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
   const { journal, runId } = await startRun(opts.name, trigger);
 
   try {
-    const promoted = await runPluginLocked(opts, home, pluginDir, journal, runId, trigger);
-    await clearInflight(opts.name).catch(() => {});
+    const { promoted, reschedule } = await runPluginLocked(
+      opts,
+      home,
+      pluginDir,
+      journal,
+      runId,
+      trigger,
+    );
+
+    // Decide what to do with inflight + refire row given the success outcome.
+    const prior = await readRefire(opts.name).catch(() => null);
+    const decision = decideRunOutcome({
+      exitCode: 0,
+      rescheduleMs: reschedule?.afterMs ?? null,
+      ...(reschedule?.reason ? { rescheduleReason: reschedule.reason } : {}),
+      prior,
+    });
+
+    if (decision.kind === "ok-cleared") {
+      await clearInflight(opts.name).catch(() => {});
+      await clearRefire(opts.name).catch(() => {});
+    } else if (decision.kind === "ok-rescheduled") {
+      // Keep inflight on disk — the refire will re-deliver these rows.
+      await writeRefire(opts.name, decision.row);
+    }
+
     await journal.close({
       status: "ok",
       finishedAt: new Date().toISOString(),
@@ -208,8 +252,19 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
     // inbox so a future fire picks them up. Includes thrown errors,
     // non-zero exits, and signal kills (all funnel through here).
     await restoreInflight(opts.name).catch(() => {});
+
+    const exitCode = (err as { exitCode?: number }).exitCode ?? 1;
+    const prior = await readRefire(opts.name).catch(() => null);
+    const decision = decideRunOutcome({
+      exitCode,
+      rescheduleMs: null,
+      prior,
+    });
+    if (decision.kind === "failed-retry" || decision.kind === "failed-suspended") {
+      await writeRefire(opts.name, decision.row).catch(() => {});
+    }
+
     const message = err instanceof Error ? err.message : String(err);
-    const exitCode = (err as { exitCode?: number }).exitCode;
     await journal.append("error", { message }).catch(() => {});
     await journal
       .close({
@@ -232,7 +287,7 @@ async function runPluginLocked(
   journal: RunJournal,
   runId: string,
   trigger: string,
-): Promise<string[]> {
+): Promise<{ promoted: string[]; reschedule: { afterMs: number; reason?: string } | null }> {
   const pkgRaw = JSON.parse(await readFile(join(pluginDir, "package.json"), "utf-8")) as unknown;
   const parsed = parsePackage(pkgRaw);
 
@@ -348,6 +403,7 @@ async function runPluginLocked(
     // unless `verbose` is set — otherwise Deno's coloured stack traces leak
     // into the user's terminal alongside the helpful headline.
     let sawProtectedEpermPath: string | null = null;
+    let lastReschedule: { afterMs: number; reason?: string } | null = null;
 
     const denoPath = await ensureDeno();
     await new Promise<void>((res, rej) => {
@@ -360,12 +416,23 @@ async function runPluginLocked(
       const handleLine = (line: string): void => {
         const msg = parseControl(line);
         if (msg) {
-          void journal.append("progress", {
-            message: msg.message,
-            done: msg.done,
-            total: msg.total,
-          });
-          if (opts.onProgress) opts.onProgress(msg);
+          if (msg.kind === "progress") {
+            void journal.append("progress", {
+              message: msg.message,
+              done: msg.done,
+              total: msg.total,
+            });
+            if (opts.onProgress) {
+              opts.onProgress({ message: msg.message, done: msg.done, total: msg.total });
+            }
+          } else {
+            // Last reschedule wins if a plugin sends multiple. Journal each.
+            lastReschedule = { afterMs: msg.afterMs, reason: msg.reason };
+            void journal.append("reschedule", {
+              afterMs: msg.afterMs,
+              ...(msg.reason ? { reason: msg.reason } : {}),
+            });
+          }
           return;
         }
         void journal.append("stderr", { line });
@@ -426,7 +493,7 @@ async function runPluginLocked(
       await updateIndex(touchedCollections);
     }
 
-    return promoted;
+    return { promoted, reschedule: lastReschedule };
   } finally {
     // Always clean up the run dir — failed runs would otherwise leave
     // input.json (containing plaintext env values, possibly secrets) on disk.

@@ -211,3 +211,35 @@ export function progress(opts: ProgressOptions): void {
   if (typeof opts.total === "number") payload.total = opts.total;
   process.stderr.write(`${JSON.stringify(payload)}\n`);
 }
+
+export interface RescheduleOptions {
+  /** Delay before the host refires this plugin. Clamped to >= 1000 by the host. */
+  afterMs: number;
+  /** Optional human-readable reason (logged by the host; not surfaced to UI). */
+  reason?: string;
+}
+
+/**
+ * Ask the host to fire this plugin again later — typically after a rate-limit
+ * cooldown, transient network failure, or a self-imposed pacing pause. The
+ * plugin then exits cleanly (code 0). The host treats this as:
+ *   - inflight rows stay preserved (carried into the refire),
+ *   - a refire is scheduled at now + afterMs,
+ *   - the consecutive-failure counter is *not* incremented (this is a
+ *     cooperative pause, not a crash).
+ *
+ * Multiple calls in one run are allowed but only the last `afterMs` wins.
+ * Plugins should typically call `reschedule()` and `return` (or `Deno.exit(0)`)
+ * immediately after, rather than continuing to process targets.
+ */
+export function reschedule(opts: RescheduleOptions): void {
+  if (!Number.isFinite(opts.afterMs) || opts.afterMs <= 0) {
+    throw new Error("reschedule() requires a positive 'afterMs'.");
+  }
+  const payload: Record<string, unknown> = {
+    _dither: "reschedule",
+    afterMs: opts.afterMs,
+  };
+  if (opts.reason) payload.reason = opts.reason;
+  process.stderr.write(`${JSON.stringify(payload)}\n`);
+}

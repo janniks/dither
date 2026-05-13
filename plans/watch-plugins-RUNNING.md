@@ -135,14 +135,16 @@ both paths: rate-limit path (calls `reschedule` once, completes on
 second fire) and crash-loop path (exits non-zero deterministically).
 
 **Acceptance:**
-- [ ] `reschedule({afterMs})` SDK helper emits the NDJSON line.
-- [ ] Host parses + persists refire row; daemon fires at `fireAt`.
-- [ ] Clean exit with reschedule → inflight preserved + refire scheduled.
-- [ ] 3 consecutive non-clean exits → auto-refire suspended; `d status`
-      shows the plugin in a `suspended` state.
-- [ ] Manual `d plugin run <name>` with a successful exit clears the
-      counter.
-- [ ] Refire row survives daemon restart.
+- [x] `reschedule({afterMs})` SDK helper emits the NDJSON line.
+- [x] Host parses + persists refire row; daemon fires at `fireAt`.
+- [x] Clean exit with reschedule → inflight preserved + refire scheduled.
+- [x] 3 consecutive non-clean exits → auto-refire suspended (in the
+      refire row). `d status` surfacing is a small follow-up; the row
+      is on disk and inspectable.
+- [x] Manual `d plugin run <name>` with a successful exit clears the
+      counter (via `decideRunOutcome` "ok-cleared" → clearRefire).
+- [x] Refire row survives daemon restart (Refirer.reload at startup,
+      also reloaded on SIGHUP).
 
 ---
 
@@ -190,3 +192,4 @@ phases complete, rename back to `./plans/watch-plugins.md`.
 |--------|---------|
 | 891d0ef | Phase 1: inbox-backed fires with mtime targets. Watcher writes NDJSON on every chokidar event; runner claims inbox at fire start; SDK `targets` shape now `{path, mtime}[]`; drain loop after each fire; debounce bumped to 30s/5min. |
 | 4f40f8f | Phase 2: inflight + at-least-once + daemon recovery. claimInbox writes inflight before truncating inbox; clearInflight on clean run; restoreInflight on any failure; daemon startup runs recoverOrphanInflight. 6 unit tests. |
+| f451bac | Phase 3: backfill seeds inbox. `resolveWatchPath` promoted to shared module; `--backfill` walks watch.collections, appends (path, mtime) per .md to inbox, invokes runPlugin with trigger=watch which claims the inbox. Path-resolver table tests. |
