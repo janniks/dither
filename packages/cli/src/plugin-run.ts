@@ -17,6 +17,8 @@ import { isMacOS, findProtectedPathInError, formatFdaError, FDA_REQUIRED } from 
 import { ensureDeno } from "./deno-bootstrap";
 import { claimInbox, clearInflight, restoreInflight, type WatchTarget } from "./inbox";
 import { clearRefire, decideRunOutcome, readRefire, writeRefire } from "./refire";
+import { resolveWatchPath } from "./watch-paths";
+import { libraryRoot as resolveLibraryRoot } from "./paths";
 
 export interface ProgressMessage {
   message: string;
@@ -358,12 +360,29 @@ async function runPluginLocked(
       }),
     );
 
+    // For watch plugins, grant read access to each watched collection root
+    // (a directory) rather than enumerating every target path. With a
+    // backfill spanning ~130k files, per-target paths blow past ARG_MAX
+    // when joined into the `--allow-read=` argv. Directory grants cover
+    // every file under them.
+    const watchCollections = parsed.manifest.watch?.collections ?? [];
+    const watchRoots = watchCollections.length > 0
+      ? await Promise.all(
+          watchCollections.map(async (c) => resolveWatchPath(await resolveLibraryRoot(), c)),
+        )
+      : [];
+
     const allowRead = [
       pluginDir,
       runDir,
       sdkPath,
       ...Object.values(grantFiles),
-      ...targets.map((t) => t.path),
+      ...watchRoots,
+      // If watch roots cover the targets (the normal case for watch fires
+      // and backfill), per-target paths are redundant. We still include
+      // them for explicit-target callers (e.g. ad-hoc `runPlugin` use
+      // outside the watch pipeline) but only when no watch roots exist.
+      ...(watchRoots.length > 0 ? [] : targets.map((t) => t.path)),
     ].join(",");
     const allowWrite = [stateDir, runDir].join(",");
     const allowEnv = DITHER_ENV_VARS.join(",");
