@@ -1,8 +1,13 @@
-import { describe, it, expect } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { describe, it, expect, afterEach, beforeEach } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { formatMissing, mergeInputs, planInstall } from "./plugin-install-interactive";
+import {
+  formatMissing,
+  mergeInputs,
+  planInstall,
+  readExistingGrants,
+} from "./plugin-install-interactive";
 import type { ParsedPackage } from "./manifest";
 
 function pkg(manifest: ParsedPackage["manifest"]): ParsedPackage {
@@ -170,5 +175,82 @@ describe("mergeInputs", () => {
       { files: { cfg: "/from/prompt" } },
     );
     expect(merged.files).toEqual({ cfg: "/from/prompt" });
+  });
+});
+
+describe("readExistingGrants", () => {
+  let home: string;
+  let prev: string | undefined;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "dither-grants-"));
+    prev = process.env.DITHER_DIR;
+    process.env.DITHER_DIR = home;
+  });
+  afterEach(() => {
+    if (prev === undefined) delete process.env.DITHER_DIR;
+    else process.env.DITHER_DIR = prev;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it("returns null when no grants file exists", async () => {
+    expect(await readExistingGrants("nope")).toBeNull();
+  });
+
+  it("returns the previously persisted grant fields", async () => {
+    mkdirSync(join(home, "grants"));
+    writeFileSync(
+      join(home, "grants", "p.json"),
+      JSON.stringify({
+        name: "p",
+        env: { A: "v" },
+        envRefs: ["TOKEN"],
+        files: { cfg: "/tmp/c" },
+        net: ["x.example.com"],
+        collections: ["a/**"],
+      }),
+    );
+    const g = await readExistingGrants("p");
+    expect(g).toEqual({
+      env: { A: "v" },
+      envRefs: ["TOKEN"],
+      files: { cfg: "/tmp/c" },
+      net: ["x.example.com"],
+      collections: ["a/**"],
+    });
+  });
+
+  it("treats a corrupt grants file as a fresh install", async () => {
+    mkdirSync(join(home, "grants"));
+    writeFileSync(join(home, "grants", "p.json"), "not json");
+    expect(await readExistingGrants("p")).toBeNull();
+  });
+});
+
+describe("planInstall with pre-fill (existing grants merged under flags)", () => {
+  it("uses existing grant value when no flag passed → not missing", async () => {
+    const existing = { env: { TOKEN: "from-grants" } };
+    const merged = mergeInputs(existing, {});
+    const r = await planInstall(pkg({ env: [{ name: "TOKEN" }] }), merged);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.resolved.env).toEqual({ TOKEN: "from-grants" });
+  });
+
+  it("flag value wins over existing grant value", async () => {
+    const existing = { env: { TOKEN: "from-grants" } };
+    const opts = { env: { TOKEN: "from-flag" } };
+    const r = await planInstall(pkg({ env: [{ name: "TOKEN" }] }), mergeInputs(existing, opts));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.resolved.env).toEqual({ TOKEN: "from-flag" });
+  });
+
+  it("a newly-declared env not in existing grants is missing", async () => {
+    const existing = { env: { OLD: "v" } };
+    const r = await planInstall(
+      pkg({ env: [{ name: "OLD" }, { name: "NEW_FIELD" }] }),
+      mergeInputs(existing, {}),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.missing).toEqual([{ kind: "env", name: "NEW_FIELD" }]);
   });
 });

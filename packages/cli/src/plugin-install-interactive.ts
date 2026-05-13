@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { parsePackage, type Manifest, type ParsedPackage } from "./manifest";
 import { promptMultiSelect, promptSelect, promptText } from "./prompt";
 import { validateGrantPattern } from "./collection-paths";
+import { resolveHome } from "./home";
 
 /**
  * Inputs the user supplied (via flags or, later, interactive prompts).
@@ -155,6 +156,36 @@ export async function planInstall(
  * `installPlugin`, exposed so the CLI's interactive layer can plan
  * before kicking off the install.
  */
+/**
+ * Read a plugin's existing grants file, if any. Returns the previously
+ * persisted answers as a partial `InstallInputs` — the caller layers
+ * these under the user's current flag inputs (flags win) so reinstall
+ * is Enter-through unless the user wants to change something.
+ */
+export async function readExistingGrants(name: string): Promise<InstallInputs | null> {
+  const grantsPath = join(resolveHome(), "grants", `${name}.json`);
+  if (!existsSync(grantsPath)) return null;
+  try {
+    const blob = JSON.parse(await readFile(grantsPath, "utf-8")) as {
+      env?: Record<string, string>;
+      envRefs?: string[];
+      files?: Record<string, string>;
+      net?: string[];
+      collections?: string[];
+    };
+    return {
+      env: blob.env,
+      envRefs: blob.envRefs,
+      files: blob.files,
+      net: blob.net,
+      collections: blob.collections,
+    };
+  } catch {
+    // Corrupt grants file shouldn't block reinstall — treat as fresh.
+    return null;
+  }
+}
+
 export async function readPackage(source: string): Promise<ParsedPackage> {
   const sourcePath = resolve(source);
   if (!existsSync(sourcePath)) {

@@ -3,7 +3,13 @@ import { spawn } from "node:child_process";
 import { mkdirSync, openSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { installPlugin, MissingInputsError, type InstallOptions, type InstalledPlugin } from "../plugin-install";
-import { mergeInputs, planInstall, promptInteractive, readPackage } from "../plugin-install-interactive";
+import {
+  mergeInputs,
+  planInstall,
+  promptInteractive,
+  readExistingGrants,
+  readPackage,
+} from "../plugin-install-interactive";
 import { runPlugin, PLUGIN_NOT_INSTALLED } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
 import { removePlugin } from "../plugin-remove";
@@ -24,10 +30,14 @@ async function installPluginOrExit(opts: InstallOptions): Promise<InstalledPlugi
   if (interactive) {
     try {
       const parsed = await readPackage(opts.source);
-      const plan = await planInstall(parsed, opts);
+      // Layer existing grants under the flag inputs (flags win) so a
+      // reinstall pre-fills the prompts with the user's prior answers.
+      const existing = await readExistingGrants(parsed.name);
+      const base = existing ? mergeInputs(existing, opts) : opts;
+      const plan = await planInstall(parsed, base);
       const missing = plan.ok ? [] : plan.missing;
-      const extra = await promptInteractive(parsed, opts, missing);
-      merged = { source: opts.source, ...mergeInputs(opts, extra) };
+      const extra = await promptInteractive(parsed, base, missing);
+      merged = { source: opts.source, ...mergeInputs(base, extra) };
     } catch (err) {
       // Ctrl-C from consola.prompt rejects; treat that (and any other
       // pre-install failure surfaced during planning) as a clean abort

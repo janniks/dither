@@ -91,12 +91,12 @@ Planner reads existing `grants/<name>.json` and pre-fills prompt defaults
 per field. New manifest fields show unprefilled. CLI flags still win.
 
 **Acceptance:**
-- [ ] Reinstall of an existing plugin pre-fills env literals, allow-refs,
+- [x] Reinstall of an existing plugin pre-fills env literals, allow-refs,
       file paths, granted net hosts, and granted collections.
-- [ ] A new env added in the manifest since the last install appears in
+- [x] A new env added in the manifest since the last install appears in
       the prompt flow with no pre-fill.
-- [ ] CLI flag values override grants pre-fills.
-- [ ] Pre-fill matrix tests against `planInstall`.
+- [x] CLI flag values override grants pre-fills.
+- [x] Pre-fill matrix tests against `planInstall`.
 
 ---
 
@@ -129,4 +129,5 @@ preview, and the install/run cross-references in `meta.description`.
 |--|--|
 | e359133 | phase 1 — pure planner, `MissingInputsError` enumerates all missing required fields, `installPluginOrExit` exits 1 cleanly. 13 unit tests. |
 | f0a5450 | phase 2 — interactive env + file prompts on TTY via `promptSelect`/`promptText`; `mergeInputs` overlays prompt answers on flag inputs; Ctrl-C aborts with exit 130. Non-TTY path verified manually with `read-file` fixture. |
-| _pending_ | phase 3 — net + collections review via `promptMultiSelect`; pre-checked from flag-or-manifest; add-custom loop with `validateGrantPattern` on collection entries (spec Q4 fallback — blank line ends add loop). `promptMissing` renamed to `promptInteractive` to reflect always-runs-on-TTY scope. |
+| 7081ab4 | phase 3 — net + collections review via `promptMultiSelect`; pre-checked from flag-or-manifest; add-custom loop with `validateGrantPattern` on collection entries (spec Q4 fallback — blank line ends add loop). `promptMissing` renamed to `promptInteractive` to reflect always-runs-on-TTY scope. |
+| _pending_ | phase 4 — reinstall pre-fills prompts from existing `grants/<name>.json`. `readExistingGrants` layered under flag inputs via `mergeInputs`; flags win. New manifest fields show as fresh missing prompts. 6 new tests. |
