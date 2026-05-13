@@ -1,7 +1,7 @@
 import { mkdir, cp, writeFile, rm, symlink } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { resolveHome } from "./home";
 import { validateGrantPattern } from "./collection-paths";
 import { maybeWarnInstall } from "./tcc-hint";
@@ -96,15 +96,15 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
   const destDir = join(home, "plugins", parsed.name);
 
   // Reinstall is intentionally non-atomic for v0 simplicity: rm → mkdir → cp.
-  if (existsSync(destDir)) {
-    await rm(destDir, { recursive: true, force: true });
-  }
+  // Unconditional rm — `force: true` tolerates not-exists, and also unlinks
+  // a stale dangling symlink (which an `existsSync` gate would miss).
+  await rm(destDir, { recursive: true, force: true });
   if (opts.symlink) {
-    // Dev mode: symlink dest → source so author edits flow through without
-    // reinstall. node_modules + deno.json from the source location are
-    // used as-is; the author owns whatever's in there. Only mkdir the
-    // parent — symlink would EEXIST against destDir itself.
-    await mkdir(join(destDir, ".."), { recursive: true });
+    // Dev mode: symlink destDir → sourcePath so author edits flow through
+    // without reinstall. node_modules + deno.json from the source location
+    // are used as-is; the author owns whatever's in there. mkdir only the
+    // parent — `symlink` requires its linkPath to not exist.
+    await mkdir(dirname(destDir), { recursive: true });
     await symlink(sourcePath, destDir);
   } else {
     await mkdir(destDir, { recursive: true });

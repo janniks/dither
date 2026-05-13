@@ -45,8 +45,9 @@ async function installPluginOrExit(opts: InstallOptions): Promise<InstalledPlugi
       const plan = await planInstall(parsed, base);
       const missing = plan.ok ? [] : plan.missing;
       const extra = await promptInteractive(parsed, base, missing);
-      merged = { source: opts.source, ...mergeInputs(base, extra) };
-      if (opts.symlink) merged.symlink = true;
+      // Spread opts first so non-grant fields (source, symlink) ride
+      // through; the prompt-merged grant fields overwrite opts's.
+      merged = { ...opts, ...mergeInputs(base, extra) };
     } catch (err) {
       // Ctrl-C from consola.prompt rejects; treat that (and any other
       // pre-install failure surfaced during planning) as a clean abort

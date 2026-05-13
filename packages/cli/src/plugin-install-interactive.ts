@@ -47,7 +47,7 @@ export interface MissingField {
 
 export class InstallCancelledError extends Error {
   constructor() {
-    super("install cancelled by user");
+    super("install cancelled.");
     this.name = "InstallCancelledError";
   }
 }
