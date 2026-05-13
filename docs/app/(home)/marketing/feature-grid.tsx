@@ -1,6 +1,6 @@
 import { Boxes, Clock, ShieldCheck, Network } from "lucide-react";
 
-const QMD_URL = "https://github.com/janniks/qmd";
+const QMD_URL = "https://github.com/tobi/qmd";
 const DENO_URL = "https://deno.com";
 const TOBI_URL = "https://x.com/tobi";
 

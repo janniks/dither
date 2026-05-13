@@ -104,7 +104,7 @@ export function PluginMarketplace() {
               <span
                 className={`ml-auto inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${statusStyles[p.status]}`}
               >
-                {p.status}
+                {p.status === "planned" ? "Coming soon" : p.status}
               </span>
             </div>
             <p className="text-fd-muted-foreground text-[13px] leading-[20px]">

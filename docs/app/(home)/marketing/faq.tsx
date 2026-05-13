@@ -1,4 +1,4 @@
-const QMD_URL = "https://github.com/janniks/qmd";
+const QMD_URL = "https://github.com/tobi/qmd";
 
 const items = [
   {
@@ -51,14 +51,14 @@ export function Faq() {
       </div>
       <div className="border bg-fd-card divide-y divide-fd-border rounded-[16px]">
         {items.map((item) => (
-          <details key={item.q} className="group p-5">
-            <summary className="cursor-pointer list-none text-[15px] font-semibold">
+          <details key={item.q} className="group">
+            <summary className="cursor-pointer list-none p-5 text-[15px] font-semibold">
               <span className="text-fd-muted-foreground mr-2 inline-block group-open:rotate-90 transition-transform">
                 ›
               </span>
               {item.q}
             </summary>
-            <div className="text-fd-muted-foreground mt-3 ml-5 text-[14px] leading-[22px]">
+            <div className="text-fd-muted-foreground px-5 pb-5 ml-5 text-[14px] leading-[22px]">
               {item.a}
             </div>
           </details>

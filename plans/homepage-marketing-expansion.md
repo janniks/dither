@@ -119,6 +119,11 @@ Manifesto (verbatim, will be edited later by the user) gives the emotional close
 
 ---
 
+## Follow-ups
+
+- Plugin marketplace cards (section 6): clicking a card opens a small dialog/preview that shows what the resulting markdown entry would look like (frontmatter + body sample). Treat as a docs P2.
+- Plugin marketplace cards: replace the letter-avatar with a real per-plugin icon (twitter / pocket / raindrop / etc.) while keeping the colored tile background as fallback.
+
 ## Phase log
 
 When starting implementation, rename this file to `./plans/homepage-marketing-expansion-RUNNING.md`. Work one phase at a time, ticking each phase's acceptance criteria as you satisfy them. After finishing a phase, stage and commit only that phase's changes, then continue to the next phase autonomously. Append a row to the log below after every phase. When all phases complete, rename back to `./plans/homepage-marketing-expansion.md`.
