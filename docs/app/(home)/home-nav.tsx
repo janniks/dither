@@ -67,7 +67,7 @@ export function HomeNav() {
                 triggerRef={logoRef}
                 onReady={() => setReady(true)}
               />
-              <span className="text-[21px] font-[650] leading-none tracking-[-0.04em]">
+              <span className="text-[21px] font-[650] leading-none tracking-[-0.04em] will-change-transform">
                 dither
               </span>
             </span>

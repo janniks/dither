@@ -41,7 +41,7 @@ export function DitheredCta({
         {children}
         <ArrowRight size={18} />
       </span>
-      <span className="pointer-events-none absolute inset-0 transition-opacity duration-300 ease-out will-change-transform group-hover:opacity-0">
+      <span className="pointer-events-none absolute inset-0 transition-opacity duration-300 ease-out will-change-transform group-hover:opacity-50">
         <DiagonalEdgeStrips opts={OPTS} />
       </span>
     </Link>

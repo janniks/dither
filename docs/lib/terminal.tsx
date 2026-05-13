@@ -265,15 +265,26 @@ export const Terminal = ({
     ));
   }, [children, sequence]);
 
+  // Inlined chrome (instead of <MacWindow>) so containerRef attaches to the
+  // real DOM node — useInView needs that to fire `sequenceStarted` for the
+  // typed-in animations. Same visual chrome as CodeFile.
   const content = (
-    <MacWindow
+    <div
       ref={containerRef}
-      className={cn("bg-fd-background h-full max-h-100 max-w-lg", className)}
+      className={cn(
+        "bg-fd-background border-fd-border text-fd-foreground z-0 h-full max-h-100 w-full max-w-lg overflow-hidden rounded-[8px] border",
+        className,
+      )}
     >
+      <div className="border-fd-border bg-fd-muted/40 text-fd-muted-foreground flex items-center gap-x-2 border-b px-4 py-3 font-mono text-[12px]">
+        <span className="h-2 w-2 rounded-full bg-[#E46A6A]"></span>
+        <span className="h-2 w-2 rounded-full bg-[#E2C04C]"></span>
+        <span className="h-2 w-2 rounded-full bg-[#5DCE78]"></span>
+      </div>
       <pre className="p-4">
         <code className="grid gap-y-1 overflow-auto">{wrappedChildren}</code>
       </pre>
-    </MacWindow>
+    </div>
   );
 
   if (!sequence) return content;
@@ -303,19 +314,18 @@ export function CodeFile({
 }
 
 // Shared macOS-window chrome — traffic lights + optional filename label.
+// Used by CodeFile; Terminal inlines the same markup so it can attach its
+// own ref for useInView.
 const MacWindow = ({
   filename,
   className,
   children,
-  ref,
 }: {
   filename?: string;
   className?: string;
   children: React.ReactNode;
-  ref?: React.Ref<HTMLDivElement>;
 }) => (
   <div
-    ref={ref}
     className={cn(
       "border-fd-border text-fd-foreground z-0 w-full overflow-hidden rounded-[8px] border",
       className,

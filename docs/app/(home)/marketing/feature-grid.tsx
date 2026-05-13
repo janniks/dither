@@ -79,7 +79,7 @@ export function FeatureGrid() {
         return (
           <div
             key={f.title}
-            className="border bg-fd-card hover:border-fd-primary/40 flex flex-col gap-3 rounded-[16px] p-5 transition-colors duration-150"
+            className="border bg-fd-card hover:border-fd-primary/40 flex flex-col gap-3 rounded-[16px] p-4 transition-colors duration-150 sm:p-5 md:p-4 lg:p-5"
           >
             <div className="bg-fd-muted text-fd-foreground flex h-10 w-10 items-center justify-center rounded-[12px]">
               <Icon size={18} strokeWidth={1.75} />

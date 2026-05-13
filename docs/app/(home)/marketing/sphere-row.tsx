@@ -7,7 +7,7 @@ export function SphereRow() {
     // the rounded-full container stays a circle, not a vertically-stretched
     // pill. Text first, sphere after — flex justify-around so both sit closer
     // to the centre instead of being pushed to the outer edges.
-    <section className="flex items-center justify-around gap-4 sm:gap-6 md:gap-12">
+    <section className="flex flex-col items-center justify-around gap-6 sm:flex-row sm:gap-6 md:gap-12">
       <div className="flex flex-col gap-2 sm:gap-3 md:gap-5">
         <h2 className="text-[22px] leading-[1.1] font-[650] tracking-[-0.03em] sm:text-3xl md:text-4xl md:leading-[1.05]">
           Your data has a center now.
@@ -18,7 +18,7 @@ export function SphereRow() {
           used.
         </p>
       </div>
-      <div className="bg-black size-24 overflow-hidden rounded-full sm:size-32 md:size-[200px] lg:size-[260px]">
+      <div className="bg-black size-32 shrink-0 overflow-hidden rounded-full sm:size-40 md:size-[200px]">
         <Dithering
           width="100%"
           height="100%"

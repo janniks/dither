@@ -73,9 +73,9 @@ const statusStyles: Record<Status, string> = {
 export function WaveRow() {
   return (
     <section id="marketplace" className="flex scroll-mt-24 flex-col gap-10">
-      <div className="grid grid-cols-1 items-center gap-8 md:grid-cols-[1.05fr_1fr]">
+      <div className="grid grid-cols-1 items-center gap-8 md:grid-cols-[1.05fr_1fr] lg:gap-10">
         <div className="bg-black relative overflow-hidden rounded-[24px]">
-          <div className="h-[280px] w-full md:h-[320px]">
+          <div className="h-[232px] w-full lg:h-[248px]">
             <Dithering
               width="100%"
               height="100%"
@@ -131,7 +131,7 @@ export function WaveRow() {
                 {p.name.replaceAll("-", " ")}
               </span>
               <span
-                className={`ml-auto inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${statusStyles[p.status]}`}
+                className={`ml-auto hidden items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase sm:inline-flex ${statusStyles[p.status]}`}
               >
                 {p.status}
               </span>
