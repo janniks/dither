@@ -2,8 +2,10 @@ import { defineCommand } from "citty";
 import { spawn } from "node:child_process";
 import { mkdirSync, openSync, existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { libraryRoot } from "../paths";
+import { resolveWatchPath } from "../watch-paths";
+import { appendToInbox, type WatchTarget } from "../inbox";
 import { installPlugin, MISSING_ENV, type InstallOptions, type InstalledPlugin } from "../plugin-install";
 import { runPlugin, PLUGIN_NOT_INSTALLED } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
@@ -96,8 +98,8 @@ function parseList(value: string | undefined): string[] {
     .filter((s) => s.length > 0);
 }
 
-async function walkMd(dir: string): Promise<Array<{ path: string; mtime: string }>> {
-  const out: Array<{ path: string; mtime: string }> = [];
+async function walkMd(dir: string): Promise<WatchTarget[]> {
+  const out: WatchTarget[] = [];
   let entries;
   try {
     entries = await readdir(dir);
@@ -116,18 +118,13 @@ async function walkMd(dir: string): Promise<Array<{ path: string; mtime: string 
   return out;
 }
 
-// Resolve a `watch.collections` entry the same way the daemon's Watcher does:
-// absolute paths pass through, `./rel` is library-relative, bare strings are
-// collection-or-subfolder under the library.
-function resolveWatchPath(root: string, entry: string): string {
-  if (isAbsolute(entry)) return entry;
-  if (entry.startsWith("./")) return join(root, entry.slice(2));
-  return join(root, entry);
-}
-
-async function collectBackfillTargets(
-  name: string,
-): Promise<Array<{ path: string; mtime: string }>> {
+/**
+ * Walk every watched collection for the named plugin, append each entry's
+ * `(path, mtime)` to the inbox, return the total. The actual draining
+ * happens through the normal fire pipeline — the caller invokes runPlugin
+ * with trigger="watch", which claims the inbox at fire start.
+ */
+async function seedBackfillInbox(name: string): Promise<number> {
   const grantsPath = join(resolveHome(), "grants", `${name}.json`);
   const blob = JSON.parse(readFileSync(grantsPath, "utf-8")) as {
     manifest?: { watch?: { collections?: string[] } };
@@ -140,9 +137,15 @@ async function collectBackfillTargets(
     process.exit(1);
   }
   const root = await libraryRoot();
-  const targets: Array<{ path: string; mtime: string }> = [];
-  for (const c of collections) targets.push(...(await walkMd(resolveWatchPath(root, c))));
-  return targets;
+  let count = 0;
+  for (const c of collections) {
+    const targets = await walkMd(resolveWatchPath(root, c));
+    for (const t of targets) {
+      await appendToInbox(name, t);
+      count += 1;
+    }
+  }
+  return count;
 }
 
 const grantArgs = {
@@ -286,7 +289,16 @@ const runSubcommand = defineCommand({
       return { detached: true, pid: child.pid, logPath };
     }
 
-    const backfillTargets = args.backfill ? await collectBackfillTargets(pluginName) : undefined;
+    if (args.backfill) {
+      const seeded = await seedBackfillInbox(pluginName);
+      if (seeded === 0) {
+        console.log(
+          `backfill: ${pluginName} watch.collections matched 0 .md files — nothing to do.`,
+        );
+        return { runId: null, promoted: [] };
+      }
+      console.log(`backfill: seeded inbox with ${seeded} entries`);
+    }
 
     const tty = process.stderr.isTTY;
     let result;
@@ -294,7 +306,7 @@ const runSubcommand = defineCommand({
       result = await runPlugin({
         name: pluginName,
         ...runOverrides,
-        ...(backfillTargets ? { targets: backfillTargets, trigger: "manual" as const } : {}),
+        ...(args.backfill ? { trigger: "watch" as const } : {}),
         verbose: args.verbose,
         onProgress: (msg) => {
           if (tty) {

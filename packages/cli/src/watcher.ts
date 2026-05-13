@@ -1,23 +1,9 @@
 import { FSWatcher, watch } from "chokidar";
 import type { Stats } from "node:fs";
 import { stat } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
 import picomatch from "picomatch";
 import { appendToInbox } from "./inbox";
-
-/**
- * Resolve a `watch.collections` entry to an absolute filesystem path.
- *
- *   "github"                 → <library>/github          (collection)
- *   "github/repositories"    → <library>/github/repositories (subfolder)
- *   "./foo"                  → <library>/foo             (library-relative)
- *   "/abs/path"              → /abs/path                 (absolute)
- */
-function resolveWatchPath(libraryRoot: string, entry: string): string {
-  if (isAbsolute(entry)) return entry;
-  if (entry.startsWith("./")) return join(libraryRoot, entry.slice(2));
-  return join(libraryRoot, entry);
-}
+import { resolveWatchPath } from "./watch-paths";
 
 /**
  * File watcher for plugins with a `watch` block. The daemon owns one Watcher

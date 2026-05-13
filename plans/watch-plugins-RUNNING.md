@@ -98,18 +98,23 @@ the daemon isn't up. No special "backfill mode" code path inside the
 plugin — same fire pipeline as a watch event.
 
 **Acceptance:**
-- [ ] Watch-path resolver lives in one module; watcher + backfill both
-      import it.
-- [ ] `d plugin run url-scraper-test --backfill` against a small fixture
+- [x] Watch-path resolver lives in one module; watcher + backfill both
+      import it. (`watch-paths.ts` + table-driven tests.)
+- [x] `d plugin run url-scraper-test --backfill` against a small fixture
       seeds inbox with one row per `.md` file under the watched
       collections.
-- [ ] Backfill against a collection containing no `.md` files exits
+- [x] Backfill against a collection containing no `.md` files exits
       cleanly with an explanatory message (not a crash).
-- [ ] Daemon-running case: backfill returns immediately; the drain
-      happens through the watcher's normal pipeline.
-- [ ] Daemon-not-running case: backfill triggers a one-shot
+- [~] Daemon-running case: backfill seeds inbox; the local run then
+      tries to acquire the plugin lock and drains. If the daemon is
+      mid-fire, the lock conflict surfaces a clear error and the
+      seeded items remain queued — daemon will pick them up on its
+      next fire. (Pure "seed and exit, let daemon drain anything" is
+      a phase-4 polish: the refire scheduler lets us signal the
+      daemon without a chokidar event.)
+- [x] Daemon-not-running case: backfill triggers a one-shot
       foreground run that drains the inbox.
-- [ ] `--backfill` errors out cleanly on a plugin without
+- [x] `--backfill` errors out cleanly on a plugin without
       `watch.collections`.
 
 ---
@@ -184,3 +189,4 @@ phases complete, rename back to `./plans/watch-plugins.md`.
 | commit | summary |
 |--------|---------|
 | 891d0ef | Phase 1: inbox-backed fires with mtime targets. Watcher writes NDJSON on every chokidar event; runner claims inbox at fire start; SDK `targets` shape now `{path, mtime}[]`; drain loop after each fire; debounce bumped to 30s/5min. |
+| 4f40f8f | Phase 2: inflight + at-least-once + daemon recovery. claimInbox writes inflight before truncating inbox; clearInflight on clean run; restoreInflight on any failure; daemon startup runs recoverOrphanInflight. 6 unit tests. |
