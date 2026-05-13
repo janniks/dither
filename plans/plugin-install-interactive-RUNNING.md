@@ -109,16 +109,17 @@ Add the title header at the top of interactive mode, the final
 preview, and the install/run cross-references in `meta.description`.
 
 **Acceptance:**
-- [ ] Interactive install prints `<icon> <display_name>@<version>` at top,
-      truncated to ~60 chars. Non-interactive output unchanged.
-- [ ] After all prompts answered, `Proceed? [Y/n]` blocks the write; N
-      aborts cleanly.
-- [ ] End-of-install prints one `next:` line. `schedule:` plugins include
+- [x] Interactive install prints `<display_name>@<version>` at top,
+      truncated to ~60 chars. No icon (a plugin can't decorate its way
+      past review). Non-interactive output unchanged.
+- [x] After all prompts answered, `Proceed? [Y/n]` blocks the write; N
+      aborts cleanly via `InstallCancelledError`.
+- [x] End-of-install prints one `next:` line. `schedule:` plugins include
       a `next run: <relative> (<absolute>)` line above it. `watch:`
       plugins are told they run automatically.
-- [ ] `plugin run <path>` ends with `note: grants persisted. future runs:
+- [x] `plugin run <path>` ends with `note: grants persisted. future runs:
       'dither plugin run <name>'.`.
-- [ ] `installSubcommand.meta.description` mentions `plugin run` and
+- [x] `installSubcommand.meta.description` mentions `plugin run` and
       vice versa.
 
 ---
@@ -130,4 +131,5 @@ preview, and the install/run cross-references in `meta.description`.
 | e359133 | phase 1 — pure planner, `MissingInputsError` enumerates all missing required fields, `installPluginOrExit` exits 1 cleanly. 13 unit tests. |
 | f0a5450 | phase 2 — interactive env + file prompts on TTY via `promptSelect`/`promptText`; `mergeInputs` overlays prompt answers on flag inputs; Ctrl-C aborts with exit 130. Non-TTY path verified manually with `read-file` fixture. |
 | 7081ab4 | phase 3 — net + collections review via `promptMultiSelect`; pre-checked from flag-or-manifest; add-custom loop with `validateGrantPattern` on collection entries (spec Q4 fallback — blank line ends add loop). `promptMissing` renamed to `promptInteractive` to reflect always-runs-on-TTY scope. |
-| _pending_ | phase 4 — reinstall pre-fills prompts from existing `grants/<name>.json`. `readExistingGrants` layered under flag inputs via `mergeInputs`; flags win. New manifest fields show as fresh missing prompts. 6 new tests. |
+| 8ddf7f3 | phase 4 — reinstall pre-fills prompts from existing `grants/<name>.json`. `readExistingGrants` layered under flag inputs via `mergeInputs`; flags win. New manifest fields show as fresh missing prompts. 6 new tests. |
+| _pending_ | phase 5 — interactive title header (no icon), final `Proceed?` confirm via `InstallCancelledError`, end-of-install `next:` hint (schedule preview via croner + parseSchedule, watch hint, generic fallback), `note: grants persisted…` after `plugin run <path>`, install/run cross-references in `meta.description`. |

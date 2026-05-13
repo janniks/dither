@@ -126,9 +126,10 @@ Full review of the manifest's asks (Q2 = c):
 - **collections** — same shape as net, plus `validateGrantPattern` run
   on any custom entry (re-prompt on invalid pattern).
 
-A title-only header (`<icon> <display_name || name>@<version>`,
-truncated to ~60 chars) prints once at the top of interactive mode.
-No tagline, no description block.
+A title-only header (`<display_name || name>@<version>`, truncated to
+~60 chars) prints once at the top of interactive mode. No icon, no
+tagline, no description block — a plugin can't use header decorations
+to mislead about what's about to be installed.
 
 ### Pre-fill from existing grants
 

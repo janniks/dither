@@ -87,6 +87,19 @@ export async function promptMultiSelect<T extends string = string>(
   );
 }
 
+/**
+ * Yes/no confirmation. Enter accepts `defaultValue`. Returns the user's
+ * choice as a boolean. Ctrl-C rejects (caller handles cancel).
+ */
+export async function promptConfirm(message: string, defaultValue = true): Promise<boolean> {
+  const raw = (await consola.prompt(message, {
+    type: "confirm",
+    initial: defaultValue,
+    cancel: "reject",
+  })) as unknown;
+  return Boolean(raw);
+}
+
 export async function promptText(opts: PromptTextOptions): Promise<string> {
   for (;;) {
     const formattedMessage = opts.hint

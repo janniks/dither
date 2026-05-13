@@ -2,14 +2,17 @@ import { defineCommand } from "citty";
 import { spawn } from "node:child_process";
 import { mkdirSync, openSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { Cron } from "croner";
 import { installPlugin, MissingInputsError, type InstallOptions, type InstalledPlugin } from "../plugin-install";
 import {
+  InstallCancelledError,
   mergeInputs,
   planInstall,
   promptInteractive,
   readExistingGrants,
   readPackage,
 } from "../plugin-install-interactive";
+import { parseSchedule } from "../schedule-parser";
 import { runPlugin, PLUGIN_NOT_INSTALLED } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
 import { removePlugin } from "../plugin-remove";
@@ -42,7 +45,7 @@ async function installPluginOrExit(opts: InstallOptions): Promise<InstalledPlugi
       // Ctrl-C from consola.prompt rejects; treat that (and any other
       // pre-install failure surfaced during planning) as a clean abort
       // with no plugin code copied, no grants written.
-      if (isCancel(err)) {
+      if (err instanceof InstallCancelledError || isCancel(err)) {
         process.stderr.write("\ninstall cancelled.\n");
         process.exit(130);
       }
@@ -64,6 +67,62 @@ async function installPluginOrExit(opts: InstallOptions): Promise<InstalledPlugi
 // cancelled.")`. Match the message rather than relying on a stable type.
 function isCancel(err: unknown): boolean {
   return err instanceof Error && /cancel/i.test(err.message);
+}
+
+/**
+ * End-of-install hint pointing at the obvious next action. Pulls the
+ * just-written grants file to inspect the manifest:
+ *   - `schedule:` plugin → relative + absolute next-fire preview + manual hint
+ *   - `watch:` plugin → "this runs automatically" + manual hint
+ *   - everything else → `next: dither plugin run <name>`
+ *
+ * When called from `plugin run <path>`, the focus shifts to "future runs"
+ * — the install just happened, the run is happening right now.
+ */
+function printInstallHint(name: string, fromRunPath: boolean): void {
+  const grantsPath = join(resolveHome(), "grants", `${name}.json`);
+  let manifest: { schedule?: string; watch?: { collections?: string[] } } = {};
+  try {
+    const blob = JSON.parse(readFileSync(grantsPath, "utf-8")) as { manifest?: typeof manifest };
+    manifest = blob.manifest ?? {};
+  } catch {
+    return;
+  }
+  if (fromRunPath) {
+    process.stdout.write(`\nnote: grants persisted. future runs: 'dither plugin run ${name}'.\n`);
+    return;
+  }
+  if (manifest.schedule) {
+    try {
+      const next = new Cron(parseSchedule(manifest.schedule)).nextRun();
+      if (next) {
+        process.stdout.write(`\nnext run: ${formatRelative(next.getTime() - Date.now())} (${next.toISOString()})\n`);
+      }
+    } catch {
+      // Invalid schedule — daemon will surface the real error at fire time.
+    }
+    process.stdout.write(`next: dither plugin run ${name} (manual one-shot fire)\n`);
+    return;
+  }
+  const watch = manifest.watch?.collections ?? [];
+  if (watch.length > 0) {
+    process.stdout.write(
+      `\nnote: runs automatically when files change in: ${watch.join(", ")}\n` +
+        `      'dither plugin run ${name}' fires it once.\n`,
+    );
+    return;
+  }
+  process.stdout.write(`\nnext: dither plugin run ${name}\n`);
+}
+
+function formatRelative(ms: number): string {
+  if (ms < 0) return "now";
+  const min = Math.round(ms / 60000);
+  if (min < 1) return "in <1m";
+  if (min < 60) return `in ${min}m`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `in ${hr}h`;
+  return `in ${Math.round(hr / 24)}d`;
 }
 
 async function ensureDaemonForPlugin(name: string): Promise<void> {
@@ -177,7 +236,8 @@ function readGrantArgs(args: GrantArgs) {
 const installSubcommand = defineCommand({
   meta: {
     name: "install",
-    description: "Install a plugin from a local path.",
+    description:
+      "Install a plugin from a local path. Persists grants but doesn't run the plugin — use 'dither plugin run' for that.",
   },
   args: {
     source: {
@@ -194,6 +254,7 @@ const installSubcommand = defineCommand({
     console.log(`installed ${result.name}@${result.version}`);
     console.log(`  → ${result.dest}`);
     await ensureDaemonForPlugin(result.name).catch(() => {});
+    printInstallHint(result.name, false);
     return result;
   },
 });
@@ -202,7 +263,7 @@ const runSubcommand = defineCommand({
   meta: {
     name: "run",
     description:
-      "Run a plugin once. Accepts an installed plugin name or a path to a plugin directory (auto-installs).",
+      "Fire a plugin once. Accepts an installed plugin name, or a path to a plugin directory (auto-installs via 'dither plugin install' first).",
   },
   args: {
     target: {
@@ -249,6 +310,7 @@ const runSubcommand = defineCommand({
       runOverrides = null;
       console.log(`installed ${installed.name}@${installed.version}`);
       await ensureDaemonForPlugin(installed.name).catch(() => {});
+      printInstallHint(installed.name, true);
     }
 
     if (args.detach) {

@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parsePackage, type Manifest, type ParsedPackage } from "./manifest";
-import { promptMultiSelect, promptSelect, promptText } from "./prompt";
+import { promptConfirm, promptMultiSelect, promptSelect, promptText } from "./prompt";
 import { validateGrantPattern } from "./collection-paths";
 import { resolveHome } from "./home";
 
@@ -43,6 +43,13 @@ export type PlanResult =
 export interface MissingField {
   kind: "env" | "file";
   name: string;
+}
+
+export class InstallCancelledError extends Error {
+  constructor() {
+    super("install cancelled by user");
+    this.name = "InstallCancelledError";
+  }
 }
 
 export class MissingInputsError extends Error {
@@ -218,6 +225,8 @@ export async function promptInteractive(
   current: InstallInputs,
   missing: MissingField[],
 ): Promise<InstallInputs> {
+  printHeader(parsed);
+
   const env: Record<string, string> = {};
   const envRefs: string[] = [];
   const files: Record<string, string> = {};
@@ -278,7 +287,23 @@ export async function promptInteractive(
     },
   });
 
+  const proceed = await promptConfirm("Proceed with install?");
+  if (!proceed) throw new InstallCancelledError();
+
   return { env, envRefs, files, net, collections };
+}
+
+/**
+ * Title-only header at the top of an interactive install. Plugin
+ * decorations (icon, tagline) are deliberately omitted — a plugin can't
+ * use a flashy header to mislead about what's about to be installed.
+ * Capped at ~60 chars so it fits on one line in a narrow terminal.
+ */
+export function printHeader(parsed: ParsedPackage): void {
+  const title = parsed.manifest.display_name ?? parsed.name;
+  const full = `${title}@${parsed.version}`;
+  const line = full.length > 60 ? `${full.slice(0, 57)}…` : full;
+  process.stdout.write(`\n${line}\n\n`);
 }
 
 /**
