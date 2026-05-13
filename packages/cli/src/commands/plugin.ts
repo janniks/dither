@@ -2,7 +2,7 @@ import { defineCommand } from "citty";
 import { spawn } from "node:child_process";
 import { mkdirSync, openSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { installPlugin } from "../plugin-install";
+import { installPlugin, MISSING_ENV, type InstallOptions, type InstalledPlugin } from "../plugin-install";
 import { runPlugin, PLUGIN_NOT_INSTALLED } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
 import { removePlugin } from "../plugin-remove";
@@ -12,6 +12,21 @@ import { reloadDaemon, startDaemon, readDaemonPid } from "../daemon-control";
 import { installAutostart } from "../persistence";
 import { readFileSync } from "node:fs";
 import { FDA_SETTINGS_URI, FDA_REQUIRED } from "../tcc-hint";
+
+// Install a plugin and convert known user-facing failures (e.g. missing env)
+// into a clean stderr line + exit(1) instead of citty's default stack trace.
+async function installPluginOrExit(opts: InstallOptions): Promise<InstalledPlugin> {
+  try {
+    return await installPlugin(opts);
+  } catch (err) {
+    const e = err as Error & { code?: string };
+    if (e?.code === MISSING_ENV) {
+      process.stderr.write(`error: ${e.message}\n`);
+      process.exit(1);
+    }
+    throw err;
+  }
+}
 
 async function ensureDaemonForPlugin(name: string): Promise<void> {
   // Read the just-written grants file to see if the plugin has schedule or watch.
@@ -137,7 +152,7 @@ const installSubcommand = defineCommand({
   async run({ args }) {
     await assertInitialized();
     const grants = readGrantArgs(args);
-    const result = await installPlugin({ source: args.source, ...grants });
+    const result = await installPluginOrExit({ source: args.source, ...grants });
     console.log(`installed ${result.name}@${result.version}`);
     console.log(`  → ${result.dest}`);
     await ensureDaemonForPlugin(result.name).catch(() => {});
@@ -191,7 +206,7 @@ const runSubcommand = defineCommand({
     const candidatePath = resolve(args.target);
     const isPath = existsSync(candidatePath) && existsSync(join(candidatePath, "package.json"));
     if (isPath) {
-      const installed = await installPlugin({ source: candidatePath, ...grants });
+      const installed = await installPluginOrExit({ source: candidatePath, ...grants });
       pluginName = installed.name;
       runOverrides = null;
       console.log(`installed ${installed.name}@${installed.version}`);

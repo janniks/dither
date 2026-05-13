@@ -27,6 +27,8 @@ export interface InstalledPlugin {
   dest: string;
 }
 
+export const MISSING_ENV = "MISSING_ENV";
+
 function resolveEnv(
   declared: Manifest["env"],
   provided: Record<string, string> | undefined,
@@ -48,9 +50,11 @@ function resolveEnv(
       result[def.name] = def.default;
       continue;
     }
-    throw new Error(
-      `Required env '${def.name}' was not provided (no value, no --allow-env grant, no default).`,
-    );
+    const err = new Error(
+      `required env '${def.name}' was not provided. Pass it with --env ${def.name}=… or grant it with --allow-env ${def.name}.`,
+    ) as Error & { code: string };
+    err.code = MISSING_ENV;
+    throw err;
   }
   return result;
 }
