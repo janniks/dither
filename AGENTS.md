@@ -72,3 +72,37 @@ Prefer single-word names for variables and functions. Multi-word names only when
 
 - Avoid mocks as much as possible
 - Test actual implementation, do not duplicate logic into tests
+
+## CLI / TUI
+
+All interactive output goes through `packages/cli/src/prompt.ts`. Don't pull in
+new prompt or spinner deps — extend that module instead. Existing deps:
+`consola` (prompts), `picocolors` (color), `node:readline` (cursor moves).
+
+**Prompts (`promptText`).** One line. Bake any hint into the message in
+parens — e.g. `Where should your library live? (ENTER for ~/.dither/library)`.
+Don't stack a second hint line below; it clutters the rewrite zone.
+
+**Confirmation (`confirm(label, value)`).** Call immediately after the prompt
+resolves. It rewrites consola's echoed prompt line to `✓ Label: value`, so the
+answer reads as "locked in" and the question disappears from scrollback.
+
+**Progress (`stepStart` / `stepDone` / `stepFail`).** Bracket every step that
+can take more than a beat — index walks, network fetches, model downloads.
+Pattern:
+
+```ts
+stepStart("downloading model weights (first run, may take a minute)...");
+const result = await prefetchWeights();
+if (result.ok) stepDone("downloaded model weights");
+else stepFail(`weight prefetch failed: ${result.reason}`);
+```
+
+The user must never wonder whether the CLI is hung. Both `→` and `✓` lines
+stay in scrollback — they're the post-hoc log of what the command did, so
+there's no separate end-of-run summary block. End with one blank line and a
+single `next: <command>` nudge if there's an obvious follow-up.
+
+Tests capturing output: spy both `console.log` and `process.stdout.write`
+(see `init.test.ts` → `captureLogs`). The prompt helpers write directly to
+stdout to keep cursor control intact.

@@ -9,19 +9,27 @@ import {
   realpathSync,
   mkdirSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCommand } from "citty";
+import { defaultLibraryPath } from "./init";
 
 async function captureLogs(fn: () => Promise<void>): Promise<string> {
   const logs: string[] = [];
-  const spy = vi.spyOn(console, "log").mockImplementation((...args) => {
+  const logSpy = vi.spyOn(console, "log").mockImplementation((...args) => {
     logs.push(args.map((a) => (typeof a === "string" ? a : String(a))).join(" "));
   });
+  // prompt.ts helpers (confirm, stepStart, stepDone, stepFail) write directly
+  // to stdout, bypass console.log — capture them too.
+  const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: unknown) => {
+    if (typeof chunk === "string") logs.push(chunk.replace(/\n$/, ""));
+    return true;
+  }) as never);
   try {
     await fn();
   } finally {
-    spy.mockRestore();
+    logSpy.mockRestore();
+    writeSpy.mockRestore();
   }
   return logs.join("\n");
 }
@@ -179,7 +187,7 @@ describe("dither init (Phase 1)", () => {
     });
 
     expect(existsSync(newLib)).toBe(true);
-    expect(out).toContain("created library at");
+    expect(out).toContain("(created)");
     const { loadConfig } = await import("../config");
     const cfg = await loadConfig();
     expect(cfg?.library.path).toBe(realpathSync(newLib));
@@ -288,6 +296,35 @@ describe("dither init (Phase 1)", () => {
     });
     expect(out).toContain("--no-download");
     expect(existsSync(join(home, "config.json"))).toBe(true);
+  });
+
+  describe("defaultLibraryPath", () => {
+    let prevXdg: string | undefined;
+    beforeEach(() => {
+      prevXdg = process.env.XDG_DATA_HOME;
+    });
+    afterEach(() => {
+      if (prevXdg === undefined) delete process.env.XDG_DATA_HOME;
+      else process.env.XDG_DATA_HOME = prevXdg;
+    });
+
+    it("falls back to ~/.dither/library when XDG_DATA_HOME is unset", () => {
+      delete process.env.XDG_DATA_HOME;
+      expect(defaultLibraryPath()).toBe(join(homedir(), ".dither", "library"));
+    });
+
+    it("uses $XDG_DATA_HOME/dither when set", () => {
+      process.env.XDG_DATA_HOME = "/tmp/xdg-data";
+      expect(defaultLibraryPath()).toBe("/tmp/xdg-data/dither");
+    });
+
+    it("ignores DITHER_DIR — library default does not follow the config dir", () => {
+      // Custom config dir is already in scope via the outer beforeEach
+      // (process.env.DITHER_DIR = home). The library default must still
+      // land at the user's home, not inside the config dir.
+      delete process.env.XDG_DATA_HOME;
+      expect(defaultLibraryPath()).toBe(join(homedir(), ".dither", "library"));
+    });
   });
 
   it("end-of-init summary prints the next-step nudge", async () => {

@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 import { resolveHome } from "../home";
 import { loadConfig, saveConfig, type DitherConfig } from "../config";
 import { openStore } from "../store";
-import { promptText } from "../prompt";
+import { confirm, promptText, stepDone, stepFail, stepStart } from "../prompt";
 import { tildePath } from "../display";
 
 /**
@@ -45,6 +45,18 @@ async function resolveLibraryPath(input: string): Promise<{ path: string; create
 }
 
 /**
+ * Default library path at `dither init`. Independent of where the config dir
+ * lives — even if config sits at `$XDG_CONFIG_HOME/dither` or a custom
+ * `$DITHER_DIR`, the library defaults to `~/.dither/library` unless the user
+ * has opted into `$XDG_DATA_HOME`, in which case `$XDG_DATA_HOME/dither`.
+ * Only consulted at init; the chosen value is frozen into `config.json`.
+ */
+export function defaultLibraryPath(): string {
+  if (process.env.XDG_DATA_HOME) return join(process.env.XDG_DATA_HOME, "dither");
+  return join(homedir(), ".dither", "library");
+}
+
+/**
  * Best-effort model weight prefetch. qmd's embedding/rerank models are
  * downloaded lazily on first use — calling `embed()` here triggers that
  * load now so the first `dither search` doesn't hang on a surprise
@@ -71,7 +83,7 @@ export const initCommand = defineCommand({
     library: {
       type: "string",
       description:
-        "Library directory (where your .md entries live). Defaults to <DITHER_DIR>/library. Pass an explicit path to keep your library outside the dither working directory — e.g. --library ~/Documents/dither — so it's visible alongside your other documents and easy to sync/back up independently.",
+        "Library directory (where your .md entries live). Defaults to ~/.dither/library, or $XDG_DATA_HOME/dither when set. Pass an explicit path to keep your library outside the dither working directory — e.g. --library ~/Documents/dither — so it's visible alongside your other documents and easy to sync/back up independently.",
     },
     download: {
       type: "boolean",
@@ -95,7 +107,7 @@ export const initCommand = defineCommand({
 
     // No config yet. Resolve library: explicit flag > interactive prompt
     // (TTY only) > error.
-    const defaultLibrary = join(home, "library");
+    const defaultLibrary = defaultLibraryPath();
     let requested: string;
     if (args.library) {
       requested = args.library;
@@ -105,8 +117,7 @@ export const initCommand = defineCommand({
       console.log("");
       try {
         requested = await promptText({
-          message: "Where should your library live?",
-          hint: `ENTER to use default ${tildePath(defaultLibrary)}`,
+          message: `Where should your library live? (ENTER for ${tildePath(defaultLibrary)})`,
           placeholder: "e.g. ~/Documents/dither",
           default: defaultLibrary,
           validate: async (v) => {
@@ -133,6 +144,7 @@ export const initCommand = defineCommand({
     }
 
     const { path: libraryPath, created } = await resolveLibraryPath(requested);
+    confirm("Library", `${tildePath(libraryPath)}${created ? " (created)" : ""}`);
 
     const cfg: DitherConfig = {
       schema: { version: 2 },
@@ -140,36 +152,25 @@ export const initCommand = defineCommand({
       collections: { external: [] },
     };
     await saveConfig(cfg);
+    stepDone(`wrote ${tildePath(join(home, "config.json"))}`);
 
     // Initialize the qmd index over the new library's subdirs. Empty
     // library → openStore returns null and no SQLite is created until a
     // plugin promotes content; that's fine, schema is created lazily then.
+    stepStart("indexing library...");
     const store = await openStore();
     if (store) await store.update();
+    stepDone(store ? "indexed library" : "library empty — index deferred");
 
-    let weightsOk = false;
-    let weightsReason: string | undefined;
     if (args.download) {
+      stepStart("downloading model weights (first run, may take a minute)...");
       const result = await prefetchWeights();
-      weightsOk = result.ok;
-      weightsReason = result.reason;
+      if (result.ok) stepDone("downloaded model weights");
+      else stepFail(`weight prefetch failed: ${result.reason} (search will fall back to lex-only)`);
+    } else {
+      stepDone("weights skipped (--no-download)");
     }
 
-    // End-of-init summary: three short lines + a one-line next-step nudge.
-    console.log("");
-    console.log(`✓ wrote ${tildePath(join(home, "config.json"))}`);
-    console.log(`✓ ${created ? "created" : "using"} library at ${tildePath(libraryPath)}`);
-    if (args.download) {
-      if (weightsOk) {
-        console.log("✓ pre-downloaded model weights");
-      } else {
-        console.log(
-          `⚠ weight prefetch failed: ${weightsReason} (search will fall back to lex-only)`,
-        );
-      }
-    } else {
-      console.log("• weights skipped (--no-download)");
-    }
     console.log("");
     console.log("next: dither plugin install <path>");
     return cfg;
