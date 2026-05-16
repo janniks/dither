@@ -9,6 +9,7 @@ import { loadConfig, saveConfig, type DitherConfig } from "../config";
 import { openStore } from "../store";
 import { confirm, promptText, stepDone, stepFail, stepStart } from "../prompt";
 import { tildePath } from "../display";
+import { applyQmdImport, discoverQmdCollections } from "../qmd-import";
 
 /**
  * Resolve a `--library <path>` value into a canonical, writable directory
@@ -146,11 +147,35 @@ export const initCommand = defineCommand({
     const { path: libraryPath, created } = await resolveLibraryPath(requested);
     confirm("Library", `${tildePath(libraryPath)}${created ? " (created)" : ""}`);
 
-    const cfg: DitherConfig = {
+    let cfg: DitherConfig = {
       schema: { version: 2 },
       library: { path: libraryPath },
       collections: { external: [] },
     };
+
+    // Auto-adopt collections from an existing qmd config so qmd users get
+    // a working `dither search` without per-collection setup. Silent no-op
+    // when no qmd config is found. See specs/init-adopt-qmd.md.
+    const discovery = await discoverQmdCollections(libraryPath);
+    if (discovery.source) {
+      const { cfg: adoptedCfg, diff } = applyQmdImport(cfg, discovery);
+      cfg = adoptedCfg;
+      stepDone(`found qmd config at ${tildePath(discovery.source.path)}`);
+      if (diff.adopted.length > 0) {
+        const names = diff.adopted.map((a) => a.name).join(", ");
+        console.log(`  adopted ${diff.adopted.length} collection${diff.adopted.length === 1 ? "" : "s"}: ${names}`);
+      }
+      if (diff.skippedInLibrary.length > 0) {
+        console.log(`  skipped ${diff.skippedInLibrary.length} (inside library): ${diff.skippedInLibrary.join(", ")}`);
+      }
+      for (const s of diff.skippedInvalid) {
+        console.log(`  skipped ${s.name}: ${s.reason}`);
+      }
+      for (const w of discovery.warnings) {
+        console.log(`  warning: ${w}`);
+      }
+    }
+
     await saveConfig(cfg);
     stepDone(`wrote ${tildePath(join(home, "config.json"))}`);
 
