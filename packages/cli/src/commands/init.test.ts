@@ -37,16 +37,29 @@ async function captureLogs(fn: () => Promise<void>): Promise<string> {
 describe("dither init (Phase 1)", () => {
   let home: string;
   let prevHome: string | undefined;
+  let prevQmd: string | undefined;
+  let prevXdgConfig: string | undefined;
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "dither-init-test-"));
     prevHome = process.env.DITHER_DIR;
     process.env.DITHER_DIR = home;
+    // Isolate from a developer's real qmd setup at ~/.config/qmd — otherwise
+    // adoption fires unexpectedly during these tests. Point at a guaranteed-
+    // empty location.
+    prevQmd = process.env.QMD_CONFIG_DIR;
+    prevXdgConfig = process.env.XDG_CONFIG_HOME;
+    process.env.QMD_CONFIG_DIR = join(home, "no-qmd-here");
+    delete process.env.XDG_CONFIG_HOME;
   });
 
   afterEach(() => {
     if (prevHome === undefined) delete process.env.DITHER_DIR;
     else process.env.DITHER_DIR = prevHome;
+    if (prevQmd === undefined) delete process.env.QMD_CONFIG_DIR;
+    else process.env.QMD_CONFIG_DIR = prevQmd;
+    if (prevXdgConfig === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = prevXdgConfig;
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -334,5 +347,47 @@ describe("dither init (Phase 1)", () => {
       await runCommand(main, { rawArgs: ["init", "--library", lib, "--no-download"] });
     });
     expect(out).toContain("next: dither plugin install");
+  });
+
+  describe("qmd adoption", () => {
+    it("adopts external collections defined in qmd's global config", async () => {
+      const qmdDir = join(home, "qmd-global");
+      mkdirSync(qmdDir, { recursive: true });
+      const extA = realpathSync(mkdtempSync(join(tmpdir(), "dither-init-qmd-a-")));
+      const extB = realpathSync(mkdtempSync(join(tmpdir(), "dither-init-qmd-b-")));
+      writeFileSync(
+        join(qmdDir, "index.yml"),
+        `collections:\n  work:\n    path: ${extA}\n  personal:\n    path: ${extB}\n`,
+        "utf-8",
+      );
+      process.env.QMD_CONFIG_DIR = qmdDir;
+
+      const lib = join(home, "library");
+      const { main } = await import("../main");
+      const out = await captureLogs(async () => {
+        await runCommand(main, { rawArgs: ["init", "--library", lib, "--no-download"] });
+      });
+
+      try {
+        expect(out).toContain("found qmd config");
+        expect(out).toMatch(/adopted 2 collections: work, personal/);
+        const { loadConfig } = await import("../config");
+        const cfg = await loadConfig();
+        expect(cfg?.collections.external.map((e) => e.name).sort()).toEqual(["personal", "work"]);
+      } finally {
+        rmSync(extA, { recursive: true, force: true });
+        rmSync(extB, { recursive: true, force: true });
+      }
+    });
+
+    it("is silent when no qmd config is present", async () => {
+      const lib = join(home, "library");
+      const { main } = await import("../main");
+      const out = await captureLogs(async () => {
+        await runCommand(main, { rawArgs: ["init", "--library", lib, "--no-download"] });
+      });
+      expect(out).not.toContain("qmd config");
+      expect(out).not.toContain("adopted");
+    });
   });
 });

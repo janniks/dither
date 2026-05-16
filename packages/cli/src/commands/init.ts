@@ -162,7 +162,9 @@ export const initCommand = defineCommand({
       cfg = adoptedCfg;
       stepDone(`found qmd config at ${tildePath(discovery.source.path)}`);
       if (diff.adopted.length > 0) {
-        const names = diff.adopted.map((a) => a.name).join(", ");
+        const names = diff.adopted
+          .map((a) => (a.renamedFrom ? `${a.name} (renamed from ${a.renamedFrom})` : a.name))
+          .join(", ");
         console.log(`  adopted ${diff.adopted.length} collection${diff.adopted.length === 1 ? "" : "s"}: ${names}`);
       }
       if (diff.skippedInLibrary.length > 0) {

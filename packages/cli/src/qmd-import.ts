@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { DitherConfig } from "./config";
 import { addExternal, RegistryError } from "./collection-registry";
@@ -92,26 +92,77 @@ async function readQmdYaml(path: string, warnings: string[]): Promise<unknown | 
 }
 
 /**
- * Locate the user's qmd config (global only for Phase 1) and pull collection
- * refs out of it. Returns `source: null` and an empty collection list if no
- * config exists — init's discovery step is a silent no-op in that case.
+ * Walk upward from `start` looking for a `.qmd/index.yaml` or `.qmd/index.yml`.
+ * Mirrors qmd's `findLocalConfigPath` (src/collections.ts) so a project-local
+ * qmd setup pointed at the same library dir is picked up too.
  */
-export async function discoverQmdCollections(_libraryPath: string): Promise<QmdDiscoveryResult> {
+function findLocalQmdConfig(start: string): string | null {
+  let dir = resolve(start);
+  while (true) {
+    for (const name of ["index.yaml", "index.yml"]) {
+      const candidate = join(dir, ".qmd", name);
+      if (existsSync(candidate)) return candidate;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/**
+ * Locate the user's qmd config and pull collection refs out of it. Sources
+ * are merged: a local `.qmd/index.yaml` walked up from `libraryPath` wins
+ * on name conflicts (closer-to-library is more specific). Returns
+ * `source: null` only when neither source exists — init's discovery step
+ * is a silent no-op in that case.
+ */
+export async function discoverQmdCollections(libraryPath: string): Promise<QmdDiscoveryResult> {
   const warnings: string[] = [];
   const globalPath = firstExisting(globalQmdConfigCandidates());
-  if (!globalPath) return { source: null, collections: [], warnings };
+  const localPath = findLocalQmdConfig(libraryPath);
 
-  const doc = await readQmdYaml(globalPath, warnings);
-  const collections = doc === null ? [] : extractCollections(doc, warnings, globalPath);
-  return {
-    source: { path: globalPath, kind: "global" },
-    collections,
-    warnings,
-  };
+  if (!globalPath && !localPath) return { source: null, collections: [], warnings };
+
+  // Read both, merging by name with local-wins precedence. Order in the
+  // returned list: global first, then local (so a same-name local entry
+  // replaces the global one in the map but keeps a stable iteration order
+  // suitable for the summary).
+  const byName = new Map<string, QmdCollectionRef>();
+  if (globalPath) {
+    const doc = await readQmdYaml(globalPath, warnings);
+    if (doc !== null) {
+      for (const c of extractCollections(doc, warnings, globalPath)) {
+        byName.set(c.name, c);
+      }
+    }
+  }
+  if (localPath) {
+    const doc = await readQmdYaml(localPath, warnings);
+    if (doc !== null) {
+      for (const c of extractCollections(doc, warnings, localPath)) {
+        byName.set(c.name, c);
+      }
+    }
+  }
+
+  // Prefer the more specific source for the headline path — local trumps
+  // global when both are present.
+  const source: QmdDiscoverySource = localPath
+    ? { path: localPath, kind: "local" }
+    : { path: globalPath!, kind: "global" };
+
+  return { source, collections: [...byName.values()], warnings };
+}
+
+export interface AdoptedEntry {
+  name: string;
+  path: string;
+  /** Original name from the qmd YAML, set only when sanitised or suffixed. */
+  renamedFrom?: string;
 }
 
 export interface AdoptionDiff {
-  adopted: Array<{ name: string; path: string }>;
+  adopted: AdoptedEntry[];
   skippedInLibrary: string[];
   skippedInvalid: Array<{ name: string; reason: string }>;
 }
@@ -122,11 +173,12 @@ export interface AdoptionDiff {
  * Reuses `addExternal`'s validation so overlap/collision rules stay
  * defined in one place.
  *
- * Skip rules (Phase 1):
+ * Skip / rename rules:
  *   - `/` in name → sanitised to `-`
  *   - canonical path inside library.path → reported as "in library", skipped
+ *   - NAME_COLLISION (with a library subdir or a prior adopted external) →
+ *     retry with `-1`, `-2`, … up to 50 attempts, then give up as invalid
  *   - any other RegistryError → reported in skippedInvalid with the message
- *     (Phase 2 will rename on NAME_COLLISION instead of skipping)
  */
 export function applyQmdImport(
   cfg: DitherConfig,
@@ -135,23 +187,54 @@ export function applyQmdImport(
   const diff: AdoptionDiff = { adopted: [], skippedInLibrary: [], skippedInvalid: [] };
   let next = cfg;
   for (const c of result.collections) {
-    const name = sanitiseName(c.name);
-    try {
-      const res = addExternal(next, c.path, name);
-      next = res.cfg;
-      diff.adopted.push({ name: res.entry.name, path: res.entry.path });
-    } catch (err) {
-      if (err instanceof RegistryError && err.code === "OVERLAPS_LIBRARY") {
-        diff.skippedInLibrary.push(c.name);
-        continue;
-      }
-      diff.skippedInvalid.push({
-        name: c.name,
-        reason: err instanceof Error ? err.message : String(err),
-      });
+    const base = sanitiseName(c.name);
+    const outcome = tryAdoptWithRename(next, c, base);
+    if (outcome.kind === "ok") {
+      next = outcome.cfg;
+      const renamedFrom = outcome.entry.name !== c.name ? c.name : undefined;
+      diff.adopted.push({ name: outcome.entry.name, path: outcome.entry.path, renamedFrom });
+      continue;
     }
+    if (outcome.kind === "in-library") {
+      diff.skippedInLibrary.push(c.name);
+      continue;
+    }
+    diff.skippedInvalid.push({ name: c.name, reason: outcome.reason });
   }
   return { cfg: next, diff };
+}
+
+type AdoptOutcome =
+  | { kind: "ok"; cfg: DitherConfig; entry: { name: string; path: string } }
+  | { kind: "in-library" }
+  | { kind: "invalid"; reason: string };
+
+const MAX_RENAME_ATTEMPTS = 50;
+
+function tryAdoptWithRename(
+  cfg: DitherConfig,
+  c: QmdCollectionRef,
+  base: string,
+): AdoptOutcome {
+  let lastErr: RegistryError | undefined;
+  for (let i = 0; i < MAX_RENAME_ATTEMPTS; i++) {
+    const name = i === 0 ? base : `${base}-${i}`;
+    try {
+      const res = addExternal(cfg, c.path, name);
+      return { kind: "ok", cfg: res.cfg, entry: res.entry };
+    } catch (err) {
+      if (!(err instanceof RegistryError)) {
+        return { kind: "invalid", reason: err instanceof Error ? err.message : String(err) };
+      }
+      if (err.code === "OVERLAPS_LIBRARY") return { kind: "in-library" };
+      if (err.code !== "NAME_COLLISION") {
+        return { kind: "invalid", reason: err.message };
+      }
+      lastErr = err;
+      // try next suffix
+    }
+  }
+  return { kind: "invalid", reason: lastErr?.message ?? "name collision exhausted retries" };
 }
 
 function sanitiseName(name: string): string {
