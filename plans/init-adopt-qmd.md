@@ -56,4 +56,4 @@ When starting implementation, rename this file to `./plans/init-adopt-qmd-RUNNIN
 | commit | summary |
 |--|--|
 | 7114a46 | Phase 1: `yaml` dep added; `qmd-import.ts` with `discoverQmdCollections` (global only) + `applyQmdImport`; init wires discovery between library resolve and config write; smoke-tested with fixture qmd config (3 adopted, 1 skipped in-library). |
-| _pending_ | Phase 2: local `.qmd/index.yaml` walk-up with local-wins precedence; rename-on-collision (`-1`, `-2`, …) with `renamedFrom` surfaced inline in summary; malformed YAML + missing path warnings; init.test.ts isolated from dev-machine qmd via `QMD_CONFIG_DIR`/`XDG_CONFIG_HOME`. Tests: 13 unit + 2 init integration. Full suite 276 pass / 2 skip / 0 fail. |
+| 39c3d50 | Phase 2: local `.qmd/index.yaml` walk-up with local-wins precedence; rename-on-collision (`-1`, `-2`, …) with `renamedFrom` surfaced inline in summary; malformed YAML + missing path warnings; init.test.ts isolated from dev-machine qmd via `QMD_CONFIG_DIR`/`XDG_CONFIG_HOME`. Tests: 13 unit + 2 init integration. Full suite 276 pass / 2 skip / 0 fail. |
