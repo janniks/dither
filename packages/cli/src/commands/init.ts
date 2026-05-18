@@ -11,6 +11,7 @@ import { confirm, promptText, stepDone, stepFail, stepStart } from "../prompt";
 import { tildePath } from "../display";
 import { applyQmdImport, discoverQmdCollections } from "../qmd-import";
 import { ProgressLine, embedLoop, formatDuration } from "../progress";
+import { QmdDownloadCapture } from "../qmd-download-render";
 
 /**
  * Resolve a `--library <path>` value into a canonical, writable directory
@@ -83,20 +84,37 @@ async function prefetchWeights(): Promise<{ ok: boolean; reason?: string }> {
     const store = await openStore();
     if (!store) return { ok: true }; // empty library — nothing to do
 
-    stepStart("preparing model weights (first run, may take a minute)...");
+    stepStart("downloading model weights (first run, may take a few minutes)...");
+    const capture = new QmdDownloadCapture();
+    capture.start();
     let progress: ProgressLine | null = null;
-    let weightsAcked = false;
+    let downloadFinished = false;
+
+    const finishDownload = (): void => {
+      if (downloadFinished) return;
+      downloadFinished = true;
+      const dlSummary = capture.finish();
+      if (!dlSummary && !process.stdout.isTTY) {
+        // Non-TTY path: capture never installed; emit a tidy line so logs
+        // have a discernible "download done" event.
+        stepDone("model weights ready");
+      }
+      // dlSummary handled: QmdDownloadCapture printed its own ✓ line.
+      // Cached-model case: no buffer captured → no output; that's fine.
+    };
 
     const summary = await embedLoop(store, (cumEmbedded, totalEstimate) => {
+      finishDownload();
       if (!progress) {
-        if (!weightsAcked) {
-          stepDone("model weights ready");
-          weightsAcked = true;
-        }
         progress = new ProgressLine("embedding library");
       }
       progress.update(cumEmbedded, totalEstimate);
     });
+
+    // Edge: embed had nothing to do (empty index). The capture window
+    // must still be closed; the model may have been downloaded
+    // beforehand if a previous run left it stale.
+    finishDownload();
 
     const trunc =
       summary.truncated > 0 ? ` (${summary.truncated} truncated to fit 2048-token context)` : "";
@@ -104,10 +122,6 @@ async function prefetchWeights(): Promise<{ ok: boolean; reason?: string }> {
       (progress as ProgressLine).done(
         `embedded ${summary.chunks} chunks in ${formatDuration(summary.durationMs)}${trunc}`,
       );
-    } else {
-      // No chunks to embed (nothing in the index needed vectors). The
-      // weights step may also have been a no-op if the model was cached.
-      if (!weightsAcked) stepDone("model weights ready");
     }
     return { ok: true };
   } catch (err) {
