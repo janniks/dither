@@ -4,6 +4,7 @@ import {
   rmSync,
   existsSync,
   writeFileSync,
+  readFileSync,
   chmodSync,
   symlinkSync,
   realpathSync,
@@ -340,13 +341,47 @@ describe("dither init (Phase 1)", () => {
     });
   });
 
-  it("end-of-init summary prints the next-step nudge", async () => {
+  it("end-of-init epilogue points at the welcome doc by default", async () => {
     const lib = join(home, "library");
     const { main } = await import("../main");
     const out = await captureLogs(async () => {
       await runCommand(main, { rawArgs: ["init", "--library", lib, "--no-download"] });
     });
+    expect(out).toContain("wrote welcome doc to");
+    expect(out).toContain("dither search 'welcome to dither'");
+    expect(out).toContain("dither get <id from above>");
+    expect(existsSync(join(realpathSync(lib), "welcome", "welcome.md"))).toBe(true);
+  });
+
+  it("--no-welcome skips the welcome doc and falls back to the plugin-install nudge", async () => {
+    const lib = join(home, "library");
+    const { main } = await import("../main");
+    const out = await captureLogs(async () => {
+      await runCommand(main, {
+        rawArgs: ["init", "--library", lib, "--no-download", "--no-welcome"],
+      });
+    });
     expect(out).toContain("next: dither plugin install");
+    expect(out).not.toContain("wrote welcome doc to");
+    expect(existsSync(join(realpathSync(lib), "welcome", "welcome.md"))).toBe(false);
+  });
+
+  it("preserves a pre-existing welcome doc on re-init (idempotent)", async () => {
+    const lib = join(home, "library");
+    // Create the library and a pre-existing welcome doc before init runs.
+    mkdirSync(join(lib, "welcome"), { recursive: true });
+    const customPath = join(lib, "welcome", "welcome.md");
+    writeFileSync(customPath, "I edited this welcome doc.", "utf-8");
+    const { main } = await import("../main");
+    const out = await captureLogs(async () => {
+      await runCommand(main, { rawArgs: ["init", "--library", lib, "--no-download"] });
+    });
+    // Init shouldn't claim it wrote the doc — it already existed.
+    expect(out).not.toContain("wrote welcome doc to");
+    // Epilogue still references the welcome doc since it's present.
+    expect(out).toContain("dither search 'welcome to dither'");
+    // And the user's edits survive.
+    expect(readFileSync(customPath, "utf-8")).toBe("I edited this welcome doc.");
   });
 
   describe("qmd adoption", () => {

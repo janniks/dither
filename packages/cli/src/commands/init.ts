@@ -12,6 +12,7 @@ import { tildePath } from "../display";
 import { applyQmdImport, discoverQmdCollections } from "../qmd-import";
 import { ProgressLine, embedLoop, formatDuration } from "../progress";
 import { QmdDownloadCapture } from "../qmd-download-render";
+import { welcomeDocExists, writeWelcomeIfMissing } from "../welcome-doc";
 
 /**
  * Resolve a `--library <path>` value into a canonical, writable directory
@@ -145,6 +146,12 @@ export const initCommand = defineCommand({
       description: "Pre-download qmd model weights at init (--no-download to skip).",
       default: true,
     },
+    welcome: {
+      type: "boolean",
+      description:
+        "Write a welcome doc into <library>/welcome/welcome.md so the next-action epilogue can demonstrate `dither search` / `dither get`. Default on; pass `--no-welcome` to skip.",
+      default: true,
+    },
   },
   async run({ args }) {
     const home = resolveHome();
@@ -235,6 +242,20 @@ export const initCommand = defineCommand({
     await saveConfig(cfg);
     stepDone(`wrote ${tildePath(join(home, "config.json"))}`);
 
+    // Write the welcome doc *before* indexing so it's part of what the
+    // index sees on the first pass. The doc demonstrates the
+    // search → get pattern that the init epilogue then recommends —
+    // search hits this file at the very top because it's the only doc
+    // matching "welcome to dither" verbatim. `--no-welcome` skips
+    // entirely; the epilogue falls back to the plugin-install line.
+    if (args.welcome) {
+      const welcome = await writeWelcomeIfMissing(libraryPath);
+      if (welcome.written) {
+        stepDone(`wrote welcome doc to ${tildePath(welcome.path)}`);
+      }
+      // existing-file path: silent — user may have edited it.
+    }
+
     // Initialize the qmd index over the new library's subdirs. Empty
     // library → openStore returns null and no SQLite is created until a
     // plugin promotes content; that's fine, schema is created lazily then.
@@ -266,7 +287,13 @@ export const initCommand = defineCommand({
     }
 
     console.log("");
-    console.log("next: dither plugin install <path>");
+    if (welcomeDocExists(libraryPath)) {
+      console.log("next:");
+      console.log("  dither search 'welcome to dither'");
+      console.log("  dither get <id from above>");
+    } else {
+      console.log("next: dither plugin install <path>");
+    }
     return cfg;
   },
 });
