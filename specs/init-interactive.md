@@ -1,9 +1,15 @@
 ---
 status: complete
 priority: P1
+followed-up-by: init-polish-and-background.md
 ---
 
 # `dither init` — interactive flow + location concept rename
+
+> **Follow-up**: `specs/init-polish-and-background.md` changes the init
+> epilogue, extends `dither status`, and adjusts `prompt.ts:confirm()` —
+> none of the decisions below are reopened. See its "Relationship to
+> init-interactive.md" section for the explicit deltas.
 
 ## Problem Statement
 
