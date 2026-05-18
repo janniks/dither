@@ -12,6 +12,7 @@ import { LoopDetector, type HaltRecord } from "./loop-detector";
 import { inboxHasItems, recoverOrphanInflight } from "./inbox";
 import { Refirer } from "./refirer";
 import { readRefire } from "./refire";
+import { appendEvent, truncateEventsLog } from "./events-log";
 
 /**
  * Long-lived daemon process. In phase 3 the inner loop is a quiet heartbeat
@@ -248,6 +249,19 @@ export async function runDaemon(): Promise<void> {
   }
 
   await writePidFile();
+  // Truncate the events log on startup so subscribers don't replay
+  // events from a previous (possibly-crashed) daemon process. Then emit
+  // a fresh `daemon-started` so anyone watching sees the lifecycle.
+  await truncateEventsLog().catch((err) => {
+    console.error(
+      `[daemon] truncate events log failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  });
+  await appendEvent({ kind: "daemon-started", pid: process.pid }).catch((err) => {
+    console.error(
+      `[daemon] write daemon-started event failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  });
   // Restore any inflight rows from a crashed prior run before reconciling —
   // ensures the first fire of each watch plugin sees items that were in
   // flight when the daemon went down.
@@ -293,6 +307,7 @@ export async function runDaemon(): Promise<void> {
       if (running.length === 0) break;
       await new Promise((r) => setTimeout(r, 250));
     }
+    await appendEvent({ kind: "daemon-stopped", pid: process.pid }).catch(() => undefined);
     await removePidFile();
     resolveExit();
   }

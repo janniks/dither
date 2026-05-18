@@ -58,6 +58,18 @@ export function statusSnapshotPath(): string {
   return join(resolveHome(), "status.json");
 }
 
+/**
+ * Append-only JSONL stream of daemon-emitted events: `daemon-started`,
+ * `daemon-stopped`, `job-started`, `job-progress`, `job-done`, etc.
+ *
+ * Watchers follow this via fstat-poll + delta-read (no `fs.watch`, no
+ * platform quirks). The daemon truncates on startup and rotates to
+ * `{path}.old` past ~1 MB. See `events-log.ts`.
+ */
+export function eventsLogPath(): string {
+  return join(resolveHome(), "events.jsonl");
+}
+
 export function locksDirPath(): string {
   return join(resolveHome(), "locks");
 }
