@@ -10,6 +10,7 @@ import { openStore } from "../store";
 import { confirm, promptText, stepDone, stepFail, stepStart } from "../prompt";
 import { tildePath } from "../display";
 import { applyQmdImport, discoverQmdCollections } from "../qmd-import";
+import { ProgressLine, embedLoop, formatDuration } from "../progress";
 
 /**
  * Resolve a `--library <path>` value into a canonical, writable directory
@@ -58,17 +59,56 @@ export function defaultLibraryPath(): string {
 }
 
 /**
- * Best-effort model weight prefetch. qmd's embedding/rerank models are
- * downloaded lazily on first use — calling `embed()` here triggers that
- * load now so the first `dither search` doesn't hang on a surprise
- * download. Failure is non-fatal: search degrades to lex-only until the
- * models land on a later attempt.
+ * Best-effort model weight prefetch + initial embedding pass. qmd's
+ * embedding/rerank models are downloaded lazily on first use — calling
+ * `embed()` here triggers both the model download *and* the per-chunk
+ * embedding so the first `dither search` doesn't hang on a surprise pause.
+ *
+ * Two visible sub-phases share this one call:
+ *   1. Model weights download — qmd prints its own download bar to stdout.
+ *      We bracket it with our own `→`/`✓` lines for context.
+ *   2. Chunk embedding — once `onProgress` starts firing, the download is
+ *      done; we tear down the weights step and start a ProgressLine.
+ *
+ * Embedding runs via `embedLoop`, which re-invokes `store.embed()` until a
+ * call reports zero chunks done — this dodges qmd's hardcoded 10-min
+ * `LLMSession` ceiling that would otherwise silently skip the tail of a
+ * large library.
+ *
+ * Failure is non-fatal: search degrades to lex-only until the models land
+ * on a later attempt.
  */
 async function prefetchWeights(): Promise<{ ok: boolean; reason?: string }> {
   try {
     const store = await openStore();
     if (!store) return { ok: true }; // empty library — nothing to do
-    await store.embed();
+
+    stepStart("preparing model weights (first run, may take a minute)...");
+    let progress: ProgressLine | null = null;
+    let weightsAcked = false;
+
+    const summary = await embedLoop(store, (cumEmbedded, totalEstimate) => {
+      if (!progress) {
+        if (!weightsAcked) {
+          stepDone("model weights ready");
+          weightsAcked = true;
+        }
+        progress = new ProgressLine("embedding library");
+      }
+      progress.update(cumEmbedded, totalEstimate);
+    });
+
+    const trunc =
+      summary.truncated > 0 ? ` (${summary.truncated} truncated to fit 2048-token context)` : "";
+    if (progress !== null) {
+      (progress as ProgressLine).done(
+        `embedded ${summary.chunks} chunks in ${formatDuration(summary.durationMs)}${trunc}`,
+      );
+    } else {
+      // No chunks to embed (nothing in the index needed vectors). The
+      // weights step may also have been a no-op if the model was cached.
+      if (!weightsAcked) stepDone("model weights ready");
+    }
     return { ok: true };
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : String(err) };
@@ -145,7 +185,7 @@ export const initCommand = defineCommand({
     }
 
     const { path: libraryPath, created } = await resolveLibraryPath(requested);
-    confirm("Library", `${tildePath(libraryPath)}${created ? " (created)" : ""}`);
+    confirm("library", `${tildePath(libraryPath)}${created ? " (created)" : ""}`);
 
     let cfg: DitherConfig = {
       schema: { version: 2 },
@@ -184,16 +224,29 @@ export const initCommand = defineCommand({
     // Initialize the qmd index over the new library's subdirs. Empty
     // library → openStore returns null and no SQLite is created until a
     // plugin promotes content; that's fine, schema is created lazily then.
-    stepStart("indexing library...");
     const store = await openStore();
-    if (store) await store.update();
-    stepDone(store ? "indexed library" : "library empty — index deferred");
+    if (!store) {
+      stepDone("library empty — index deferred");
+    } else {
+      const progress = new ProgressLine("indexing library");
+      const startedAt = Date.now();
+      const result = await store.update({
+        onProgress: ({ current, total }) => progress.update(current, total),
+      });
+      const filesTouched = result.indexed + result.updated;
+      const summary =
+        filesTouched > 0
+          ? `indexed ${filesTouched} file${filesTouched === 1 ? "" : "s"} in ${formatDuration(Date.now() - startedAt)}`
+          : `library scanned — no files to index`;
+      progress.done(summary);
+    }
 
     if (args.download) {
-      stepStart("downloading model weights (first run, may take a minute)...");
       const result = await prefetchWeights();
-      if (result.ok) stepDone("downloaded model weights");
-      else stepFail(`weight prefetch failed: ${result.reason} (search will fall back to lex-only)`);
+      if (!result.ok) {
+        stepFail(`weight prefetch failed: ${result.reason} (search will fall back to lex-only)`);
+      }
+      // Success path prints its own `✓ embedded …` / `✓ model weights ready`.
     } else {
       stepDone("weights skipped (--no-download)");
     }

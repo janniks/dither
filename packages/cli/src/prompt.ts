@@ -130,12 +130,21 @@ export async function promptText(opts: PromptTextOptions): Promise<string> {
 
 /**
  * After `promptText` resolves, overwrite consola's echoed line with a
- * compact `✓ Label: value` confirmation. On non-TTY (tests, pipes) the
- * cursor moves are no-ops and we just append the line.
+ * compact `✓ label: value` confirmation. consola's submit handler renders
+ * a final frame (the prompt + the typed answer) and `close()` then writes
+ * a trailing `\n`, so the cursor ends two lines below the prompt line —
+ * `moveCursor(-2)` lands us back on it and `clearScreenDown` wipes both.
+ * Without this we'd leave a stray `✔ Where should…` echo above our `✓`.
+ *
+ * Convention: pass `label` lowercase (`"library"`, not `"Library"`) — the
+ * rest of init's inline output is sentence-case, and Title-Cased inline
+ * labels stand out. Reserve capitals for sentence beginnings.
+ *
+ * On non-TTY (tests, pipes) the cursor moves are no-ops and we just append.
  */
 export function confirm(label: string, value: string): void {
   if (process.stdout.isTTY) {
-    moveCursor(process.stdout, 0, -1);
+    moveCursor(process.stdout, 0, -2);
     clearScreenDown(process.stdout);
   }
   process.stdout.write(`${pc.green("✓")} ${label}: ${value}\n`);
