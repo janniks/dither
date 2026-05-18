@@ -62,18 +62,25 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
     collection: opts.collection,
     rerank: opts.rerank ?? false,
   });
-  return results.map((r) => ({
-    path: r.displayPath,
-    collection: r.context ?? "",
-    docid: r.docid,
-    title: r.title,
-    score: r.score,
-  }));
+  return results.map((r) => {
+    const hit: SearchHit = {
+      path: r.displayPath,
+      collection: r.context ?? "",
+      docid: r.docid,
+      title: r.title,
+      score: r.score,
+    };
+    // Hybrid results already carry body + bestChunkPos — no extra DB hit.
+    if (opts.preview && r.body) {
+      const snippet = safeSnippet(r.body, opts.query, r.bestChunkPos, r.bestChunk?.length);
+      if (snippet) hit.snippet = snippet;
+    }
+    return hit;
+  });
 }
 
-// Lex hits don't carry the body — fetch it and run extractSnippet. Errors
-// (missing file, empty body, qmd throwing) silently drop the snippet rather
-// than failing the whole hit.
+// Lex hits don't carry the body — fetch it then snippet. Errors silently
+// drop the snippet rather than failing the whole hit.
 async function extractLexSnippet(
   store: NonNullable<Awaited<ReturnType<typeof openStore>>>,
   docid: string,
@@ -83,7 +90,20 @@ async function extractLexSnippet(
   try {
     const body = await store.getDocumentBody(docid);
     if (!body) return undefined;
-    const s = extractSnippet(body, query, undefined, chunkPos);
+    return safeSnippet(body, query, chunkPos, undefined);
+  } catch {
+    return undefined;
+  }
+}
+
+function safeSnippet(
+  body: string,
+  query: string,
+  chunkPos: number | undefined,
+  chunkLen: number | undefined,
+): { text: string; line: number } | undefined {
+  try {
+    const s = extractSnippet(body, query, undefined, chunkPos, chunkLen);
     if (!s.snippet) return undefined;
     return { text: s.snippet, line: s.line };
   } catch {

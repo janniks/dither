@@ -115,6 +115,29 @@ describe("search", () => {
     expect(results).toEqual([]);
   });
 
+  // Hybrid mode loads embedding/expansion models on first call (slow, can
+  // require network). Gate behind an opt-in env var to keep the suite fast.
+  const hybridIt = process.env.DITHER_TEST_HYBRID ? it : it.skip;
+
+  hybridIt("attaches a snippet in hybrid mode without re-fetching the body", async () => {
+    const collectionDir = join(home, "entries", "notes");
+    mkdirSync(collectionDir, { recursive: true });
+    writeFileSync(
+      join(collectionDir, "auth.md"),
+      "---\ntitle: Authentication flow\n---\n\nThis describes the OAuth2 authentication flow we use for login.",
+    );
+
+    const { updateIndex } = await import("./update-index");
+    await updateIndex();
+
+    const { search } = await import("./search");
+    const results = await search({ query: "authentication", preview: true });
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]?.snippet).toBeDefined();
+    expect(results[0]?.snippet?.text.toLowerCase()).toContain("authentication");
+  });
+
   it("attaches a snippet when preview is requested (lex mode)", async () => {
     const collectionDir = join(home, "entries", "notes");
     mkdirSync(collectionDir, { recursive: true });
