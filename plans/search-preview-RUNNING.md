@@ -29,13 +29,13 @@
 End-to-end: `dither search "auth" --mode lex --preview` returns hits, and each hit prints an extra indented line containing a snippet drawn from the matched region of the body. Piped output keeps one row per hit and appends the snippet as a tab-separated column. No highlighting, no width truncation, no color logic yet — just the plumbing and the layout shape.
 
 **Acceptance:**
-- [ ] `SearchOptions` in `packages/cli/src/search.ts` declares `preview?: boolean`.
-- [ ] `SearchHit` declares `snippet?: { text: string; line: number }`.
-- [ ] When `preview: true` and `mode: "lex"`, `search()` calls `store.getDocumentBody(docid)` per hit, runs `extractSnippet(body, query, …, chunkPos)`, attaches `{ text, line }`. Per-hit error → snippet omitted, hit still returned.
-- [ ] `searchCommand` in `packages/cli/src/commands/search.ts` registers `preview` (boolean, alias `p`) and forwards it to `search()`.
-- [ ] TTY render: when a hit has a snippet, a second line prints under the header, indented to align under the `title` column. Plain text (no bold/dim yet).
-- [ ] Pipe render: when a snippet exists, it's appended as the 6th tab-separated field. One row per hit.
-- [ ] Test (in `packages/cli/src/search.test.ts` pattern): with `preview: true, mode: "lex"`, returned hits include a snippet whose text contains a query term; with `preview: false` (or omitted), `snippet` is undefined on every hit.
+- [x] `SearchOptions` in `packages/cli/src/search.ts` declares `preview?: boolean`.
+- [x] `SearchHit` declares `snippet?: { text: string; line: number }`.
+- [x] When `preview: true` and `mode: "lex"`, `search()` calls `store.getDocumentBody(docid)` per hit, runs `extractSnippet(body, query, …, chunkPos)`, attaches `{ text, line }`. Per-hit error → snippet omitted, hit still returned.
+- [x] `searchCommand` in `packages/cli/src/commands/search.ts` registers `preview` (boolean, alias `p`) and forwards it to `search()`.
+- [x] TTY render: when a hit has a snippet, a second line prints under the header, indented to align under the `title` column. Plain text (no bold/dim yet).
+- [x] Pipe render: when a snippet exists, it's appended as the 6th tab-separated field. One row per hit.
+- [x] Test (in `packages/cli/src/search.test.ts` pattern): with `preview: true, mode: "lex"`, returned hits include a snippet whose text contains a query term; with `preview: false` (or omitted), `snippet` is undefined on every hit.
 
 ---
 
@@ -89,4 +89,4 @@ When starting implementation, rename this file to `./plans/search-preview-RUNNIN
 
 | commit | summary |
 |--------|---------|
-|        |         |
+| _pending_ | Phase 1 — tracer: `--preview` flag, lex-mode snippet via `getDocumentBody`+`extractSnippet`, two-line TTY render aligned under title column, 6th tab-sep column in pipes. Focused `search.test.ts` 6/6 pass. |

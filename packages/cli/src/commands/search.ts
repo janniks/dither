@@ -24,12 +24,12 @@ function printHits(hits: SearchHit[]): void {
   const tty = process.stdout.isTTY;
 
   // Piped output: stable tab-separated format. Lead with docid since it's the
-  // copy-paste get-key; path follows for human context.
+  // copy-paste get-key; path follows for human context. When a snippet is
+  // attached (--preview), append it as a 6th column. One row per hit.
   if (!tty) {
     for (const hit of hits) {
-      console.log(
-        `${hit.docid}\t${hit.score.toFixed(3)}\t${hit.collection}\t${hit.path}\t${oneLine(hit.title)}`,
-      );
+      const base = `${hit.docid}\t${hit.score.toFixed(3)}\t${hit.collection}\t${hit.path}\t${oneLine(hit.title)}`;
+      console.log(hit.snippet ? `${base}\t${oneLine(hit.snippet.text)}` : base);
     }
     return;
   }
@@ -41,12 +41,19 @@ function printHits(hits: SearchHit[]): void {
   const collW = Math.max(...hits.map((h) => h.collection.length));
   const titleW = Math.max(0, width - scoreW - gap.length * 3 - docidW - collW);
 
+  // Preview rows align under the title column so the snippet reads as a
+  // continuation of the hit, not a fresh row anchored at score.
+  const previewIndent = " ".repeat(scoreW + gap.length * 3 + docidW + collW);
+
   for (const hit of hits) {
     const score = pc.dim(hit.score.toFixed(3).padStart(scoreW));
     const docid = pc.cyan(hit.docid.padEnd(docidW));
     const collection = pc.dim(hit.collection.padEnd(collW));
     const title = truncate(oneLine(hit.title), titleW);
     console.log(`${score}${gap}${docid}${gap}${collection}${gap}${title}`);
+    if (hit.snippet) {
+      console.log(`${previewIndent}${oneLine(hit.snippet.text)}`);
+    }
   }
 }
 
@@ -79,6 +86,11 @@ export const searchCommand = defineCommand({
       type: "string",
       description: "Search mode: hybrid (default) or lex",
     },
+    preview: {
+      type: "boolean",
+      alias: "p",
+      description: "Show a one-line snippet of the matched region under each hit",
+    },
   },
   async run({ args }) {
     await assertInitialized();
@@ -91,6 +103,7 @@ export const searchCommand = defineCommand({
       limit,
       rerank: args.rerank,
       mode,
+      preview: args.preview,
     });
 
     printHits(hits);

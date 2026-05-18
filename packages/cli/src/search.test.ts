@@ -114,4 +114,30 @@ describe("search", () => {
 
     expect(results).toEqual([]);
   });
+
+  it("attaches a snippet when preview is requested (lex mode)", async () => {
+    const collectionDir = join(home, "entries", "notes");
+    mkdirSync(collectionDir, { recursive: true });
+    writeFileSync(
+      join(collectionDir, "auth.md"),
+      "---\ntitle: Authentication flow\n---\n\nThis describes the OAuth2 authentication flow we use for login.",
+    );
+
+    const { updateIndex } = await import("./update-index");
+    await updateIndex();
+
+    const { search } = await import("./search");
+    const previewed = await search({ query: "authentication", mode: "lex", preview: true });
+    const plain = await search({ query: "authentication", mode: "lex" });
+
+    expect(previewed.length).toBeGreaterThan(0);
+    expect(previewed[0]?.snippet).toBeDefined();
+    expect(previewed[0]?.snippet?.text.toLowerCase()).toContain("authentication");
+    expect(typeof previewed[0]?.snippet?.line).toBe("number");
+
+    expect(plain.length).toBeGreaterThan(0);
+    for (const hit of plain) {
+      expect(hit.snippet).toBeUndefined();
+    }
+  });
 });
