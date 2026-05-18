@@ -15,10 +15,69 @@ function truncate(s: string, max: number): string {
   return `${s.slice(0, max - 1)}…`;
 }
 
+// Whitespace-tokenize the raw query into the terms that get bolded inside
+// the snippet. Lowercased and length-filtered to avoid pathological regexes
+// (`q ` would otherwise match every position).
+function queryTerms(query: string): string[] {
+  return Array.from(
+    new Set(
+      query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((t) => t.length > 0),
+    ),
+  );
+}
+
+const REGEX_META = /[.*+?^${}()|[\]\\]/g;
+function escapeRegex(s: string): string {
+  return s.replace(REGEX_META, "\\$&");
+}
+
+// Walk the snippet, wrapping matched query terms with `bold` and the
+// surrounding text with `dim`. Pure: bold/dim are injected so the function
+// is testable without ANSI/picocolors. Word boundaries (`\b`) prevent
+// highlighting fragments inside larger words ("rank" doesn't match
+// "Rankings").
+export function markTerms(
+  text: string,
+  terms: string[],
+  bold: (s: string) => string,
+  dim: (s: string) => string,
+): string {
+  if (terms.length === 0) return text;
+  const pattern = new RegExp(`\\b(${terms.map(escapeRegex).join("|")})\\b`, "gi");
+  let out = "";
+  let i = 0;
+  for (const m of text.matchAll(pattern)) {
+    const start = m.index ?? 0;
+    if (start > i) out += dim(text.slice(i, start));
+    out += bold(m[0]);
+    i = start + m[0].length;
+  }
+  if (i === 0) return text; // no matches — leave raw, caller decides on dim
+  if (i < text.length) out += dim(text.slice(i));
+  return out;
+}
+
+// Render the snippet for terminal output: collapse whitespace, clip to
+// width, then highlight query terms. Defaults to picocolors-driven
+// formatters but accepts plain identity functions for tests / NO_COLOR.
+export function renderSnippet(
+  text: string,
+  terms: string[],
+  maxWidth: number,
+  useColor: boolean = pc.isColorSupported,
+): string {
+  const clipped = truncate(oneLine(text), maxWidth);
+  if (!useColor) return clipped;
+  return markTerms(clipped, terms, pc.bold, pc.dim);
+}
+
 // Render the bare hash. `d get` accepts both `abc123` and `#abc123` (qmd's
 // findDocument calls normalizeDocid), but the bare form is shell-safe — zsh
 // treats a leading `#` as a comment and silently drops the argument.
-function printHits(hits: SearchHit[]): void {
+function printHits(hits: SearchHit[], query: string): void {
   if (hits.length === 0) return;
 
   const tty = process.stdout.isTTY;
@@ -44,6 +103,8 @@ function printHits(hits: SearchHit[]): void {
   // Preview rows align under the title column so the snippet reads as a
   // continuation of the hit, not a fresh row anchored at score.
   const previewIndent = " ".repeat(scoreW + gap.length * 3 + docidW + collW);
+  const previewW = Math.max(0, width - previewIndent.length);
+  const terms = queryTerms(query);
 
   for (const hit of hits) {
     const score = pc.dim(hit.score.toFixed(3).padStart(scoreW));
@@ -52,7 +113,7 @@ function printHits(hits: SearchHit[]): void {
     const title = truncate(oneLine(hit.title), titleW);
     console.log(`${score}${gap}${docid}${gap}${collection}${gap}${title}`);
     if (hit.snippet) {
-      console.log(`${previewIndent}${oneLine(hit.snippet.text)}`);
+      console.log(`${previewIndent}${renderSnippet(hit.snippet.text, terms, previewW)}`);
     }
   }
 }
@@ -106,7 +167,7 @@ export const searchCommand = defineCommand({
       preview: args.preview,
     });
 
-    printHits(hits);
+    printHits(hits, args.query);
 
     return hits;
   },

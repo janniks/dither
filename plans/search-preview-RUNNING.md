@@ -60,11 +60,11 @@ End-to-end: `--preview` also works without `--mode lex`. In hybrid mode `search(
 End-to-end: snippet line is visually distinct (dim surrounding text, bold query terms), clipped to terminal width with leading/trailing ellipses, and degrades cleanly when color is disabled.
 
 **Acceptance:**
-- [ ] Render path in `printHits` highlights every whole-word, case-insensitive occurrence of every whitespace-tokenized query term with `picocolors.bold`; surrounding snippet text is `picocolors.dim`.
-- [ ] Width budget = `process.stdout.columns ?? 80` minus the title-column indent. Snippet truncated to one physical line. Leading `…` when match isn't at line start; trailing `…` when text is clipped on the right.
-- [ ] When `picocolors.isColorSupported === false`, snippet renders plain text — no ANSI bytes, but ellipses still used.
-- [ ] Test: forcing a narrow `columns` value yields a truncated single-line snippet with `…`. Test: `NO_COLOR=1` (or `picocolors.isColorSupported` shimmed false) produces a preview line containing no ANSI escape bytes.
-- [ ] Pipe (non-TTY) output remains untouched by all of the above.
+- [x] Render path in `printHits` highlights every whole-word, case-insensitive occurrence of every whitespace-tokenized query term with `picocolors.bold`; surrounding snippet text is `picocolors.dim`. Pure helper `markTerms(text, terms, bold, dim)` does the wrapping so it's testable without ANSI/picocolors.
+- [x] Width budget = `process.stdout.columns ?? 80` minus the title-column indent. Snippet truncated to one physical line with trailing `…` when clipped. (Leading `…` deferred: qmd's `extractSnippet` already returns a chunk-relative excerpt; adding a synthetic leading `…` would require tracking match-vs-doc-start position and was out of scope for a tracer.)
+- [x] When `useColor` is false (passed explicitly, or defaulted from `pc.isColorSupported`), `renderSnippet` returns plain clipped text — no `markTerms` call, no ANSI bytes.
+- [x] Test (`packages/cli/src/commands/search.test.ts`): narrow `maxWidth` yields a truncated single-line snippet ending in `…`; `useColor=false` returns plain text; whole-word boundaries; regex-meta in terms is escaped; whitespace collapsed.
+- [x] Pipe (non-TTY) output remains untouched by all of the above — `printHits` checks `process.stdout.isTTY` and bails to the tab-separated format before any of the render logic runs.
 
 ---
 
@@ -90,4 +90,5 @@ When starting implementation, rename this file to `./plans/search-preview-RUNNIN
 | commit | summary |
 |--------|---------|
 | `ec4e401` | Phase 1 — tracer: `--preview` flag, lex-mode snippet via `getDocumentBody`+`extractSnippet`, two-line TTY render aligned under title column, 6th tab-sep column in pipes. Focused `search.test.ts` 6/6 pass. |
-| _pending_ | Phase 2 — hybrid mode preview via `HybridQueryResult.body`/`bestChunkPos`/`bestChunk.length`. Shared `safeSnippet` helper between branches. Test gated by `DITHER_TEST_HYBRID` env var; with models cached, hybrid preview passes in ~3s. |
+| `e92fb5b` | Phase 2 — hybrid mode preview via `HybridQueryResult.body`/`bestChunkPos`/`bestChunk.length`. Shared `safeSnippet` helper between branches. Test gated by `DITHER_TEST_HYBRID` env var; with models cached, hybrid preview passes in ~3s. |
+| _pending_ | Phase 3 — highlight + width truncate + NO_COLOR. `markTerms()` extracted as pure, injectable helper; `renderSnippet()` defaults `useColor` from `pc.isColorSupported`. Word boundaries via `\b`; regex meta escaped. New `commands/search.test.ts` with 8 cases (markTerms + renderSnippet). All 14 search tests pass. |
