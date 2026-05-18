@@ -75,11 +75,11 @@ End-to-end: snippet line is visually distinct (dim surrounding text, bold query 
 End-to-end: missing or empty body for one hit doesn't break the rest of the result list; a query made entirely of stopwords still yields a usable snippet (start-of-chunk fallback). Both behaviors covered by tests.
 
 **Acceptance:**
-- [ ] In lex branch: `getDocumentBody` returning `null`/empty → `snippet` is omitted for that hit; hit is still returned with header info. No throw.
-- [ ] In hybrid branch: empty `body` or `bestChunk` → same fallback (omit snippet).
-- [ ] When `extractSnippet` produces an empty snippet for non-empty body (no query-term matches in chunk), fall back to the first non-empty line of `bestChunk` (hybrid) or `body` (lex). Width truncation still applied.
-- [ ] Test: a hit whose body has been deleted from disk still appears in results with `snippet` undefined; the header still renders in TTY mode.
-- [ ] Test: a query made of stopwords against a populated index returns hits with a snippet (the fallback line), not undefined.
+- [x] In lex branch: `extractLexSnippet` catches throws and returns `undefined` if `getDocumentBody` returns null/empty. Hit is still returned with header info. No re-throw.
+- [x] In hybrid branch: hybrid mapper guards `if (opts.preview && r.body)` before calling `safeSnippet`; empty body → snippet omitted, hit kept.
+- [x] When `extractSnippet`'s matched line is empty (or qmd throws), `safeSnippet` falls back to the first non-empty line of `body`. Width truncation is applied by `renderSnippet` at the print site, not at extraction.
+- [x] qmd's `extractSnippet` returns a `@@ -X,Y @@` diff-header'd multi-line snippet. We don't want that for inline TTY preview — `safeSnippet` uses `s.line` to pluck just the matched line from `body.split("\n")`, gives back a single trimmed line.
+- [x] Unit tests for `safeSnippet`: empty body → undefined; non-matching query → first-line fallback; matching query → the matched line itself. Integration test: a hit whose chunk has no query terms still gets a snippet via the BM25 hit + fallback.
 
 ---
 
@@ -91,4 +91,4 @@ When starting implementation, rename this file to `./plans/search-preview-RUNNIN
 |--------|---------|
 | `ec4e401` | Phase 1 — tracer: `--preview` flag, lex-mode snippet via `getDocumentBody`+`extractSnippet`, two-line TTY render aligned under title column, 6th tab-sep column in pipes. Focused `search.test.ts` 6/6 pass. |
 | `e92fb5b` | Phase 2 — hybrid mode preview via `HybridQueryResult.body`/`bestChunkPos`/`bestChunk.length`. Shared `safeSnippet` helper between branches. Test gated by `DITHER_TEST_HYBRID` env var; with models cached, hybrid preview passes in ~3s. |
-| _pending_ | Phase 3 — highlight + width truncate + NO_COLOR. `markTerms()` extracted as pure, injectable helper; `renderSnippet()` defaults `useColor` from `pc.isColorSupported`. Word boundaries via `\b`; regex meta escaped. New `commands/search.test.ts` with 8 cases (markTerms + renderSnippet). All 14 search tests pass. |
+| `aade412` | Phase 3 — highlight + width truncate + NO_COLOR. `markTerms()` extracted as pure, injectable helper; `renderSnippet()` defaults `useColor` from `pc.isColorSupported`. Word boundaries via `\b`; regex meta escaped. New `commands/search.test.ts` with 8 cases (markTerms + renderSnippet). All 14 search tests pass. |

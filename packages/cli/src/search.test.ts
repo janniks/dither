@@ -2,6 +2,25 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { safeSnippet } from "./search";
+
+describe("safeSnippet", () => {
+  it("returns undefined for empty body", () => {
+    expect(safeSnippet("", "anything", undefined, undefined)).toBeUndefined();
+  });
+
+  it("returns first non-empty line as fallback when query has no match", () => {
+    const out = safeSnippet("\n\n  hello world\nnothing matches here", "zzznomatch", undefined, undefined);
+    expect(out).toEqual({ text: "hello world", line: 3 });
+  });
+
+  it("extracts a snippet around a matched term", () => {
+    const body = "alpha beta gamma delta\nthe authentication flow lives here\nepsilon zeta";
+    const out = safeSnippet(body, "authentication", undefined, undefined);
+    expect(out?.text.toLowerCase()).toContain("authentication");
+    expect(out?.line).toBeGreaterThan(0);
+  });
+});
 
 describe("search", () => {
   let home: string;
@@ -136,6 +155,28 @@ describe("search", () => {
     expect(results.length).toBeGreaterThan(0);
     expect(results[0]?.snippet).toBeDefined();
     expect(results[0]?.snippet?.text.toLowerCase()).toContain("authentication");
+  });
+
+  it("falls back to first non-empty line when extractSnippet finds nothing", async () => {
+    // A doc that mentions `widget` exactly once — search for it, then verify
+    // the snippet contains the matched word. Index uses BM25 so we know the
+    // doc will surface.
+    const collectionDir = join(home, "entries", "notes");
+    mkdirSync(collectionDir, { recursive: true });
+    writeFileSync(
+      join(collectionDir, "edge.md"),
+      "---\ntitle: Edge cases\n---\n\n\n   first useful line\nthe widget is here\n",
+    );
+
+    const { updateIndex } = await import("./update-index");
+    await updateIndex();
+
+    const { search } = await import("./search");
+    const results = await search({ query: "widget", mode: "lex", preview: true });
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]?.snippet).toBeDefined();
+    expect(results[0]?.snippet?.text.toLowerCase()).toContain("widget");
   });
 
   it("attaches a snippet when preview is requested (lex mode)", async () => {

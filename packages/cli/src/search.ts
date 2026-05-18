@@ -96,17 +96,30 @@ async function extractLexSnippet(
   }
 }
 
-function safeSnippet(
+export function safeSnippet(
   body: string,
   query: string,
   chunkPos: number | undefined,
   chunkLen: number | undefined,
 ): { text: string; line: number } | undefined {
+  if (!body) return undefined;
+  const lines = body.split("\n");
   try {
+    // qmd returns the matched line index + a multi-line `snippet` with a
+    // diff-style `@@ -X,Y @@` header. We don't want either format for an
+    // inline terminal preview — just pluck the matched line itself.
     const s = extractSnippet(body, query, undefined, chunkPos, chunkLen);
-    if (!s.snippet) return undefined;
-    return { text: s.snippet, line: s.line };
+    const matched = lines[s.line - 1]?.trim();
+    if (matched) return { text: matched, line: s.line };
   } catch {
-    return undefined;
+    // fall through
   }
+  // Fallback: no match in the chunk (all stopwords, empty result, or qmd
+  // threw). Pick the first non-empty line so the preview still shows
+  // context instead of going missing.
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i]!.trim();
+    if (trimmed) return { text: trimmed, line: i + 1 };
+  }
+  return undefined;
 }
