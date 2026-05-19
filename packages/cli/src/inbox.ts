@@ -12,8 +12,8 @@ import { inboxPath, inflightPath, inflightDir } from "./home";
  * (latest mtime wins). Append is O(1); claim is O(n) and runs once per
  * fire — bounded by debounce window, not chokidar event rate.
  *
- * Phase 1: no inflight, no atomic claim — just read-then-truncate. Phase 2
- * will introduce the inflight sidecar + atomic move.
+ * Claim atomically moves the inbox to inflight before reading, so appends
+ * during a claim land in a fresh inbox and survive for the next fire.
  */
 
 export interface WatchTarget {
@@ -27,10 +27,10 @@ export async function appendToInbox(plugin: string, target: WatchTarget): Promis
   await appendFile(file, `${JSON.stringify(target)}\n`);
 }
 
-async function readInbox(plugin: string): Promise<WatchTarget[]> {
+async function readRows(file: string): Promise<WatchTarget[]> {
   let raw: string;
   try {
-    raw = await readFile(inboxPath(plugin), "utf-8");
+    raw = await readFile(file, "utf-8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
@@ -49,6 +49,10 @@ async function readInbox(plugin: string): Promise<WatchTarget[]> {
   return out;
 }
 
+async function readInbox(plugin: string): Promise<WatchTarget[]> {
+  return readRows(inboxPath(plugin));
+}
+
 /**
  * Dedup by path, keeping the latest mtime (lexicographic compare on ISO-8601
  * is correct ordering for absolute UTC timestamps).
@@ -63,33 +67,36 @@ function dedup(rows: WatchTarget[]): WatchTarget[] {
 }
 
 /**
- * Read the inbox, dedup, write the result to inflight, then truncate the
- * inbox. Inflight is the at-least-once safety net: if the plugin crashes
- * or the daemon dies, inflight survives on disk; on next startup or run-
- * result, inflight gets restored to the inbox so nothing is lost.
- *
- * Race note: between read and truncate, new chokidar events could append
- * to the inbox. We accept a tiny window where a row appended after our
- * read but before our rename gets clobbered. Closing that fully would
- * require fs-level locking; for personal-scale workloads it's not worth
- * the complexity — the next chokidar event will surface the same path
- * again.
+ * Atomically move the inbox to inflight, read it, then dedup inflight. New
+ * appends recreate the inbox path and are picked up by the next claim.
+ * Inflight is the at-least-once safety net: if the plugin crashes or the
+ * daemon dies, inflight survives on disk; on next startup or run-result,
+ * inflight gets restored to the inbox so nothing is lost.
  */
 export async function claimInbox(plugin: string): Promise<WatchTarget[]> {
-  const rows = await readInbox(plugin);
-  if (rows.length === 0) return [];
-  const deduped = dedup(rows);
-
-  // Write inflight first, then truncate inbox. Crash between → orphan
-  // inflight; daemon startup recovery handles it.
-  const inflight = inflightPath(plugin);
-  await mkdir(dirname(inflight), { recursive: true });
-  await writeFile(inflight, deduped.map((r) => `${JSON.stringify(r)}\n`).join(""));
-
   const file = inboxPath(plugin);
-  const tmp = `${file}.tmp`;
-  await writeFile(tmp, "");
-  await rename(tmp, file);
+  const inflight = inflightPath(plugin);
+  await mkdir(dirname(file), { recursive: true });
+  await mkdir(dirname(inflight), { recursive: true });
+
+  try {
+    await rename(file, inflight);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+
+  const rows = await readRows(inflight);
+  if (rows.length === 0) {
+    await unlink(inflight).catch((err) => {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    });
+    return [];
+  }
+  const deduped = dedup(rows);
+  const tmp = `${inflight}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(tmp, deduped.map((r) => `${JSON.stringify(r)}\n`).join(""));
+  await rename(tmp, inflight);
 
   return deduped;
 }

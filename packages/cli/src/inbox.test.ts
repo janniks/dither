@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -40,11 +40,47 @@ describe("inbox", () => {
     const a = claimed.find((t) => t.path === "/a.md")!;
     expect(a.mtime).toBe("2026-05-13T00:00:05.000Z");
 
-    expect(readFileSync(join(home, "inboxes", "p1.ndjson"), "utf-8")).toBe("");
+    const inbox = join(home, "inboxes", "p1.ndjson");
+    expect(existsSync(inbox) ? readFileSync(inbox, "utf-8") : "").toBe("");
 
     const inflight = readFileSync(join(home, "inflight", "p1.ndjson"), "utf-8");
     const rows = inflight.split("\n").filter(Boolean).map((l) => JSON.parse(l));
     expect(rows).toHaveLength(2);
+  });
+
+  it("keeps rows appended during claim finalization for the next claim", async () => {
+    vi.resetModules();
+    const during = { path: "/during.md", mtime: "2026-05-13T00:00:01.000Z" };
+    vi.doMock("node:fs/promises", async () => {
+      const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+      return {
+        ...actual,
+        rename: vi.fn(async (from: string, to: string) => {
+          const inbox = join(home, "inboxes", "p1.ndjson");
+          const inflight = join(home, "inflight", "p1.ndjson");
+          if (from === inbox && to === inflight) {
+            await actual.rename(from, to);
+            await actual.appendFile(inbox, `${JSON.stringify(during)}\n`);
+            return;
+          }
+          if (to === inbox) {
+            await actual.appendFile(inbox, `${JSON.stringify(during)}\n`);
+          }
+          await actual.rename(from, to);
+        }),
+      };
+    });
+
+    try {
+      const { appendToInbox, claimInbox } = await import("./inbox");
+      await appendToInbox("p1", { path: "/first.md", mtime: "2026-05-13T00:00:00.000Z" });
+
+      expect((await claimInbox("p1")).map((r) => r.path)).toEqual(["/first.md"]);
+      expect((await claimInbox("p1")).map((r) => r.path)).toEqual(["/during.md"]);
+    } finally {
+      vi.doUnmock("node:fs/promises");
+      vi.resetModules();
+    }
   });
 
   it("clearInflight removes the inflight file on clean exit", async () => {
