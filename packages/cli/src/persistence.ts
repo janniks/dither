@@ -39,7 +39,26 @@ export function autostartPaths(home = homedir()): AutostartPaths {
   return { platform, unitPath: null };
 }
 
-function macPlist(execPath: string, entry: string, ditherHome: string, logPath: string): string {
+function xmlText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function systemdQuote(value: string): string {
+  return `"${value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t")
+    .replace(/%/g, "%%")}"`;
+}
+
+export function macPlist(execPath: string, entry: string, ditherHome: string, logPath: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -47,8 +66,8 @@ function macPlist(execPath: string, entry: string, ditherHome: string, logPath: 
   <key>Label</key><string>dev.dither.daemon</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${execPath}</string>
-    <string>${entry}</string>
+    <string>${xmlText(execPath)}</string>
+    <string>${xmlText(entry)}</string>
     <string>daemon</string>
     <string>run</string>
   </array>
@@ -56,24 +75,24 @@ function macPlist(execPath: string, entry: string, ditherHome: string, logPath: 
   <key>KeepAlive</key><true/>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>DITHER_DIR</key><string>${ditherHome}</string>
+    <key>DITHER_DIR</key><string>${xmlText(ditherHome)}</string>
   </dict>
-  <key>StandardOutPath</key><string>${logPath}</string>
-  <key>StandardErrorPath</key><string>${logPath}</string>
+  <key>StandardOutPath</key><string>${xmlText(logPath)}</string>
+  <key>StandardErrorPath</key><string>${xmlText(logPath)}</string>
 </dict>
 </plist>
 `;
 }
 
-function systemdUnit(execPath: string, entry: string, ditherHome: string): string {
+export function systemdUnit(execPath: string, entry: string, ditherHome: string): string {
   return `[Unit]
 Description=Dither personal index daemon
 After=default.target
 
 [Service]
 Type=simple
-ExecStart=${execPath} ${entry} daemon run
-Environment=DITHER_DIR=${ditherHome}
+ExecStart=${[execPath, entry, "daemon", "run"].map(systemdQuote).join(" ")}
+Environment=${systemdQuote(`DITHER_DIR=${ditherHome}`)}
 Restart=on-failure
 RestartSec=5
 

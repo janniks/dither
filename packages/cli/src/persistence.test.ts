@@ -22,6 +22,37 @@ describe("persistence", () => {
     rmSync(ditherHome, { recursive: true, force: true });
   });
 
+  it("escapes launchd plist text values", async () => {
+    const { macPlist } = await import("./persistence");
+    const content = macPlist(
+      "/tmp/node & <bin>",
+      "/tmp/dither \"cli\"",
+      "/tmp/Dither & <Home>",
+      "/tmp/Dither & <Home>/logs/daemon.log",
+    );
+
+    expect(content).toContain("<string>/tmp/node &amp; &lt;bin&gt;</string>");
+    expect(content).toContain("<string>/tmp/dither &quot;cli&quot;</string>");
+    expect(content).toContain("<key>DITHER_DIR</key><string>/tmp/Dither &amp; &lt;Home&gt;</string>");
+    expect(content).toContain(
+      "<key>StandardOutPath</key><string>/tmp/Dither &amp; &lt;Home&gt;/logs/daemon.log</string>",
+    );
+  });
+
+  it("quotes systemd unit path values", async () => {
+    const { systemdUnit } = await import("./persistence");
+    const content = systemdUnit(
+      "/tmp/Node App/node \"bin\"",
+      "/tmp/cli path/dither%cli.mjs",
+      "/tmp/Dither Home/dir%one",
+    );
+
+    expect(content).toContain(
+      String.raw`ExecStart="/tmp/Node App/node \"bin\"" "/tmp/cli path/dither%%cli.mjs" "daemon" "run"`,
+    );
+    expect(content).toContain(String.raw`Environment="DITHER_DIR=/tmp/Dither Home/dir%%one"`);
+  });
+
   it("writes a unit file the first time and reports unchanged on the second", async () => {
     const { installAutostart, autostartPaths } = await import("./persistence");
     const { unitPath, platform } = autostartPaths(homeDir);
