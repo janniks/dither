@@ -17,7 +17,7 @@
  * status line with `message` while the plugin runs.
  */
 
-import { readFile as fsReadFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile as fsReadFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -177,8 +177,11 @@ export async function readState<T>(initial: T): Promise<T> {
 
 export async function writeState<T>(state: T): Promise<void> {
   const path = env("DITHER_STATE_FILE");
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(state, null, 2), "utf-8");
+  const dir = dirname(path);
+  const tmp = join(dir, `.${process.pid}.${randomUUID()}.tmp`);
+  await mkdir(dir, { recursive: true });
+  await writeFile(tmp, JSON.stringify(state, null, 2), "utf-8");
+  await rename(tmp, path);
 }
 
 export interface ProgressOptions {
