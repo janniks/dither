@@ -1,5 +1,9 @@
 import { defineCommand } from "citty";
-import { listRuns, readEvents, tailRun } from "../journal";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { resolveHome } from "../home";
+import { followRun, listRuns, readRun, type RunResultRecord } from "../run-log";
 
 function formatDuration(ms: number | undefined): string {
   if (ms === undefined || !Number.isFinite(ms)) return "—";
@@ -39,6 +43,20 @@ const listSubcommand = defineCommand({
   },
 });
 
+function resultPath(runId: string): string {
+  return join(resolveHome(), "history", runId, "result.json");
+}
+
+async function readResult(runId: string): Promise<RunResultRecord | null> {
+  try {
+    const raw = await readFile(resultPath(runId), "utf-8");
+    return JSON.parse(raw) as RunResultRecord;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+}
+
 const tailSubcommand = defineCommand({
   meta: {
     name: "tail",
@@ -53,35 +71,43 @@ const tailSubcommand = defineCommand({
   },
   async run({ args }) {
     const runId = args.runId;
-    const past = await readEvents(runId);
+    const past = await readRun(runId);
     for (const e of past) {
       console.log(JSON.stringify(e));
     }
 
-    return new Promise<void>((resolve, reject) => {
-      let handle: { stop: () => Promise<void> } | null = null;
-      const onSig = () => {
-        void handle?.stop().then(() => resolve());
-      };
-      process.on("SIGINT", onSig);
-      process.on("SIGTERM", onSig);
+    // If the run is already finished, surface the result and exit.
+    const existing = await readResult(runId);
+    if (existing) {
+      console.log(JSON.stringify({ type: "_result", ...existing }));
+      return;
+    }
 
-      tailRun(
-        runId,
-        (event) => console.log(JSON.stringify(event)),
-        (result) => {
-          console.log(JSON.stringify({ type: "_result", ...result }));
-          process.off("SIGINT", onSig);
-          process.off("SIGTERM", onSig);
-          resolve();
-        },
-      ).then(
-        (h) => {
-          handle = h;
-        },
-        (err) => reject(err),
-      );
-    });
+    const ac = new AbortController();
+    const onSig = (): void => ac.abort();
+    process.on("SIGINT", onSig);
+    process.on("SIGTERM", onSig);
+
+    // Poll for result.json in parallel with the event stream. When it
+    // appears, print and abort.
+    const resultPoll = setInterval(() => {
+      if (existsSync(resultPath(runId))) {
+        void readResult(runId).then((r) => {
+          if (r) console.log(JSON.stringify({ type: "_result", ...r }));
+          ac.abort();
+        });
+      }
+    }, 100);
+
+    try {
+      for await (const event of followRun(runId, ac.signal)) {
+        console.log(JSON.stringify(event));
+      }
+    } finally {
+      clearInterval(resultPoll);
+      process.off("SIGINT", onSig);
+      process.off("SIGTERM", onSig);
+    }
   },
 });
 

@@ -763,7 +763,7 @@ await writeEntry({
   it("runPlugin produces a run-history journal with manifest, events, and result", async () => {
     const { installPlugin } = await import("./plugin-install");
     const { runPlugin } = await import("./plugin-run");
-    const { listRuns, readEvents } = await import("./journal");
+    const { listRuns, readRun } = await import("./run-log");
 
     await installPlugin({ source: FIXTURE_PATH });
     const result = await runPlugin({ name: "import-folder" });
@@ -775,8 +775,8 @@ await writeEntry({
     expect(ours!.plugin).toBe("import-folder");
     expect(ours!.promotedCount).toBeGreaterThan(0);
 
-    const events = await readEvents(result.runId);
-    const promoted = events.filter((e) => e.type === "promoted");
+    const events = await readRun(result.runId);
+    const promoted = events.filter((e) => e.kind === "promoted");
     expect(promoted.length).toBeGreaterThan(0);
   }, 60000);
 

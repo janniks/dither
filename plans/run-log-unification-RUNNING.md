@@ -49,12 +49,12 @@ End-to-end: `daemon.ts` and `daemon-jobs.ts` write through `append({kind: "globa
 End-to-end: `plugin-run.ts` opens a run via the new module (`openRun(plugin, trigger)`), appends events through `append({kind: "run", runId}, ...)`. `commands/runs.ts` reads via `follow({kind: "run", runId}, ...)`. Old `journal.ts` no longer imported.
 
 **Acceptance:**
-- [ ] `plugin-run.ts` uses `run-log` for events (`progress`, `stderr`, `promoted`, `error`, `reschedule`, `reindex-deferred`).
-- [ ] `manifest.json` and `result.json` continue to be written as today.
-- [ ] `commands/runs.ts` tail uses `run-log.follow`.
-- [ ] `journal.ts` has no remaining importers.
-- [ ] Per-run files are written as `events.jsonl` (not `.ndjson`).
-- [ ] `npm test` and `npm run typecheck` pass.
+- [x] `plugin-run.ts` uses `run-log.openRun` and emits events via `journal.append({kind, ...})`.
+- [x] `manifest.json` and `result.json` continue to be written as today (handled by `openRun`/`close`).
+- [x] `commands/runs.ts` tail uses `followRun` plus an in-band poll for `result.json`.
+- [x] `journal.ts` has no remaining importers.
+- [x] Per-run files are written as `events.jsonl` (via `runEventsPath`).
+- [x] `npm test` and `npm run typecheck` pass — 380 tests green.
 
 ---
 

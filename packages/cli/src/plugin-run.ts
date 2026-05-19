@@ -18,7 +18,7 @@ import {
   acquireTheme,
   releaseTheme,
 } from "./locks";
-import { startRun, type RunJournal } from "./journal";
+import { openRun, type RunHandle } from "./run-log";
 import { isMacOS, findProtectedPathInError, formatFdaError, FDA_REQUIRED } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
 import { claimInbox, clearInflight, restoreInflight, type WatchTarget } from "./inbox";
@@ -229,7 +229,8 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
   }
 
   const trigger = opts.trigger ?? "manual";
-  const { journal, runId } = await startRun(opts.name, trigger);
+  const journal = await openRun(opts.name, trigger);
+  const runId = journal.runId;
 
   try {
     const { promoted, reschedule } = await runPluginLocked(
@@ -282,7 +283,7 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
     }
 
     const message = err instanceof Error ? err.message : String(err);
-    await journal.append("error", { message }).catch(() => {});
+    await journal.append({ kind: "error", message }).catch(() => {});
     await journal
       .close({
         status: "fail",
@@ -301,7 +302,7 @@ async function runPluginLocked(
   opts: RunOptions,
   home: string,
   pluginDir: string,
-  journal: RunJournal,
+  journal: RunHandle,
   runId: string,
   trigger: string,
 ): Promise<{ promoted: string[]; reschedule: { afterMs: number; reason?: string } | null }> {
@@ -451,7 +452,8 @@ async function runPluginLocked(
         const msg = parseControl(line);
         if (msg) {
           if (msg.kind === "progress") {
-            void journal.append("progress", {
+            void journal.append({
+              kind: "progress",
               message: msg.message,
               done: msg.done,
               total: msg.total,
@@ -462,14 +464,15 @@ async function runPluginLocked(
           } else {
             // Last reschedule wins if a plugin sends multiple. Journal each.
             lastReschedule = { afterMs: msg.afterMs, reason: msg.reason };
-            void journal.append("reschedule", {
+            void journal.append({
+              kind: "reschedule",
               afterMs: msg.afterMs,
               ...(msg.reason ? { reason: msg.reason } : {}),
             });
           }
           return;
         }
-        void journal.append("stderr", { line });
+        void journal.append({ kind: "stderr", line });
         if (opts.verbose) process.stderr.write(`${line}\n`);
         if (isMacOS() && sawProtectedEpermPath === null && /PermissionDenied|EPERM/i.test(line)) {
           const path = findProtectedPathInError(line);
@@ -512,7 +515,7 @@ async function runPluginLocked(
     const candidates = await planPromotion(runDir, opts.name, cfg, grantCollections);
     const promoted = await copyPromoted(candidates);
     for (const path of promoted) {
-      await journal.append("promoted", { path });
+      await journal.append({ kind: "promoted", path });
     }
 
     if (promoted.length > 0) {
@@ -532,7 +535,8 @@ async function runPluginLocked(
       const indexLock = await acquireTheme("index");
       if (indexLock === null) {
         await writeFile(needsReindexPath(), "", "utf-8").catch(() => undefined);
-        await journal.append("reindex-deferred", {
+        await journal.append({
+          kind: "reindex-deferred",
           reason: "qmd-index.lock busy",
           touchedCollections,
         });
