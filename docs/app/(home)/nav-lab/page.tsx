@@ -74,7 +74,7 @@ function VariantCard({
           {desc}
         </p>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 12 }}>
         {(["light", "dark"] as const).map((tone) => (
           <Stage key={tone} tone={tone}>
             {children(tone)}
