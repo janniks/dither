@@ -115,7 +115,15 @@ function validate(parsed: unknown, path: string): DitherConfig {
   if (!library || typeof library !== "object" || typeof library.path !== "string") {
     throw new Error(`config at ${path} is missing library.path`);
   }
-  const collections = obj.collections as Record<string, unknown> | undefined;
+  const collectionsRaw = obj.collections;
+  if (
+    schema.version === CONFIG_SCHEMA_VERSION &&
+    collectionsRaw !== undefined &&
+    (collectionsRaw === null || typeof collectionsRaw !== "object" || Array.isArray(collectionsRaw))
+  ) {
+    throw new Error(`config at ${path} has malformed collections (must be an object)`);
+  }
+  const collections = collectionsRaw as Record<string, unknown> | undefined;
   const externalRaw = collections?.external;
   const external: ExternalCollection[] = [];
   if (externalRaw !== undefined) {

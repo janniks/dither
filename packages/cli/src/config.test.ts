@@ -124,6 +124,23 @@ describe("config module", () => {
     await expect(loadConfig()).rejects.toThrow(/malformed collections\.external/);
   });
 
+  it("loadConfig rejects non-object collections instead of silently emptying", async () => {
+    mkdirSync(home, { recursive: true });
+    for (const bad of [null, "string", 42, [{ name: "x", path: "/x" }]]) {
+      writeFileSync(
+        join(home, "config.json"),
+        JSON.stringify({
+          schema: { version: 2 },
+          library: { path: "/x" },
+          collections: bad,
+        }),
+        "utf-8",
+      );
+      const { loadConfig } = await import("./config");
+      await expect(loadConfig()).rejects.toThrow(/malformed collections/);
+    }
+  });
+
   it("assertInitialized throws NotInitializedError when no config exists", async () => {
     const { assertInitialized, NotInitializedError } = await import("./config");
     await expect(assertInitialized()).rejects.toBeInstanceOf(NotInitializedError);
