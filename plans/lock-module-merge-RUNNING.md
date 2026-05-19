@@ -20,12 +20,12 @@
 End-to-end: `locks.ts` exports `LockTheme`, `LOCK_THEMES`, `acquireTheme`, `releaseTheme`, `status`, `statusAll`, `lockPath`. Behaviour matches today's `qmd-locks.ts`. Generic `acquire`/`release` stay intact. New tests cover the theme surface.
 
 **Acceptance:**
-- [ ] `LockTheme = "download" | "index" | "embed"` exported from `locks.ts`.
-- [ ] `acquireTheme("index")` writes `~/.dither/locks/qmd-index.lock`.
-- [ ] `status("index")` returns `{startedAt, pid} | null`; stale (dead-PID) entries return null.
-- [ ] `statusAll()` returns `Record<LockTheme, LockEntry | null>`.
-- [ ] `isPidAlive` exists exactly once in the package.
-- [ ] New theme-surface tests pass.
+- [x] `LockTheme = "download" | "index" | "embed"` exported from `locks.ts`.
+- [x] `acquireTheme("index")` writes `~/.dither/locks/qmd-index.lock`.
+- [x] `status("index")` returns `{startedAt, pid} | null`; stale (dead-PID) entries return null.
+- [x] `statusAll()` returns `Record<LockTheme, LockEntry | null>`.
+- [ ] `isPidAlive` exists exactly once in the package. (Lands at Phase 2 — qmd-locks.ts still imports its own.)
+- [x] New theme-surface tests pass.
 
 ---
 

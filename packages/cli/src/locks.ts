@@ -1,19 +1,38 @@
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { open, readFile, unlink, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveHome } from "./home";
 
 /**
- * Per-plugin lock files at `~/.dither/locks/<name>.lock`. Atomic via O_EXCL;
- * the lock file holds the PID of whoever's running. The single arbiter for
- * "is plugin X already running" between scheduled, watch, and manual fires.
+ * Lock files at `~/.dither/locks/<name>.lock`. Atomic via O_EXCL; the file
+ * holds the PID of whoever's running. The single arbiter for "is X already
+ * running" across processes — plugin runs, daemon-start, qmd-mutating work.
  *
  * Stale-lock recovery: if the lock holder's PID is no longer alive (process
  * crashed without releasing), the next acquirer takes over.
+ *
+ * Two API surfaces share one implementation:
+ *   - `acquire(name)` / `release(handle)` — arbitrary named locks (plugin runs,
+ *     daemon-start).
+ *   - `acquireTheme(theme)` / `releaseTheme(handle)` / `status(theme)` — typed
+ *     qmd-work locks. Themes name the kind of qmd-mutating work (download,
+ *     index, embed) so callers can render uniform busy messages and so the
+ *     daemon serialises against CLI commands at the SQLite layer. Lock-file
+ *     names are prefixed with `qmd-` on disk.
  */
+
+export type LockTheme = "download" | "index" | "embed";
+
+export const LOCK_THEMES: readonly LockTheme[] = ["download", "index", "embed"] as const;
 
 export interface LockHandle {
   readonly name: string;
   readonly path: string;
+  readonly pid: number;
+}
+
+export interface LockEntry {
+  readonly startedAt: Date;
   readonly pid: number;
 }
 
@@ -23,6 +42,15 @@ function locksDir(): string {
 
 function lockPath(name: string): string {
   return join(locksDir(), `${name}.lock`);
+}
+
+function themeName(theme: LockTheme): string {
+  return `qmd-${theme}`;
+}
+
+/** Path of a theme's lock file — for tests and read-side renderers. */
+export function themeLockPath(theme: LockTheme): string {
+  return lockPath(themeName(theme));
 }
 
 function isPidAlive(pid: number): boolean {
@@ -105,4 +133,48 @@ export async function release(handle: LockHandle): Promise<void> {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
     throw err;
   }
+}
+
+/**
+ * Try to acquire the lock for a qmd theme. Returns a handle on success,
+ * `null` if the theme is already locked by a live process. Stale locks
+ * are reclaimed transparently. Non-blocking — callers either get the
+ * lock or get back `null` immediately. Query `status(theme)` separately
+ * if you want the holder's pid + startedAt for a busy-message renderer.
+ */
+export async function acquireTheme(theme: LockTheme): Promise<LockHandle | null> {
+  return acquire(themeName(theme));
+}
+
+export async function releaseTheme(handle: LockHandle): Promise<void> {
+  await release(handle);
+}
+
+/**
+ * Read-only inspection of a theme lock. Returns `null` if no lock file
+ * exists, or if the holder's PID is dead (stale entries are not
+ * distinguished from absent — the next acquirer reclaims them). On a
+ * live lock, returns `{startedAt, pid}` where startedAt is the file's
+ * mtime (a proxy for acquire time, since the body holds only the PID).
+ */
+export function status(theme: LockTheme): LockEntry | null {
+  const path = themeLockPath(theme);
+  if (!existsSync(path)) return null;
+  try {
+    const st = statSync(path);
+    const raw = readFileSync(path, "utf-8");
+    const pid = Number.parseInt(raw.trim(), 10);
+    if (!Number.isFinite(pid) || pid <= 0) return null;
+    if (!isPidAlive(pid)) return null;
+    return { startedAt: st.mtime, pid };
+  } catch {
+    return null;
+  }
+}
+
+/** Snapshot of every theme's lock state. Stale/missing entries are `null`. */
+export function statusAll(): Record<LockTheme, LockEntry | null> {
+  const out = {} as Record<LockTheme, LockEntry | null>;
+  for (const theme of LOCK_THEMES) out[theme] = status(theme);
+  return out;
 }

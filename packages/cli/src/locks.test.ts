@@ -98,4 +98,76 @@ describe("locks", () => {
     // No throw.
     await release(handle!);
   });
+
+  describe("theme surface", () => {
+    it("LOCK_THEMES enumerates the three themes in stable order", async () => {
+      const { LOCK_THEMES } = await import("./locks");
+      expect(LOCK_THEMES).toEqual(["download", "index", "embed"]);
+    });
+
+    it("themeLockPath maps each theme to qmd-<theme>.lock under <home>/locks/", async () => {
+      const { themeLockPath } = await import("./locks");
+      expect(themeLockPath("download")).toBe(join(home, "locks", "qmd-download.lock"));
+      expect(themeLockPath("index")).toBe(join(home, "locks", "qmd-index.lock"));
+      expect(themeLockPath("embed")).toBe(join(home, "locks", "qmd-embed.lock"));
+    });
+
+    it("acquireTheme returns a handle on success and null on contention", async () => {
+      const { acquireTheme } = await import("./locks");
+      const first = await acquireTheme("index");
+      expect(first).not.toBeNull();
+      expect(existsSync(join(home, "locks", "qmd-index.lock"))).toBe(true);
+
+      const second = await acquireTheme("index");
+      expect(second).toBeNull();
+    });
+
+    it("releaseTheme removes the lock file", async () => {
+      const { acquireTheme, releaseTheme } = await import("./locks");
+      const handle = await acquireTheme("embed");
+      expect(handle).not.toBeNull();
+      await releaseTheme(handle!);
+      expect(existsSync(join(home, "locks", "qmd-embed.lock"))).toBe(false);
+    });
+
+    it("status returns null when no lock exists", async () => {
+      const { status } = await import("./locks");
+      expect(status("download")).toBeNull();
+    });
+
+    it("status returns startedAt + pid for a live lock", async () => {
+      const { acquireTheme, status } = await import("./locks");
+      const before = Date.now();
+      const handle = await acquireTheme("index");
+      expect(handle).not.toBeNull();
+
+      const entry = status("index");
+      expect(entry).not.toBeNull();
+      expect(entry!.pid).toBe(process.pid);
+      // mtime granularity is ~1s on some filesystems; allow some slack.
+      expect(entry!.startedAt.getTime()).toBeGreaterThanOrEqual(before - 2_000);
+    });
+
+    it("status returns null for a stale (dead-PID) lock", async () => {
+      const { spawnSync } = await import("node:child_process");
+      const { mkdirSync } = await import("node:fs");
+      const dead = spawnSync("true").pid!;
+      mkdirSync(join(home, "locks"), { recursive: true });
+      writeFileSync(join(home, "locks", "qmd-embed.lock"), String(dead));
+      const { status } = await import("./locks");
+      expect(status("embed")).toBeNull();
+    });
+
+    it("statusAll returns an entry-or-null for every theme", async () => {
+      const { acquireTheme, statusAll } = await import("./locks");
+      const handle = await acquireTheme("index");
+      expect(handle).not.toBeNull();
+
+      const snapshot = statusAll();
+      expect(Object.keys(snapshot).sort()).toEqual(["download", "embed", "index"]);
+      expect(snapshot.index).not.toBeNull();
+      expect(snapshot.download).toBeNull();
+      expect(snapshot.embed).toBeNull();
+    });
+  });
 });
