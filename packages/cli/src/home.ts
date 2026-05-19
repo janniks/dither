@@ -59,18 +59,6 @@ export function statusSnapshotPath(): string {
 }
 
 /**
- * Append-only JSONL stream of daemon-emitted events: `daemon-started`,
- * `daemon-stopped`, `job-started`, `job-progress`, `job-done`, etc.
- *
- * Watchers follow this via fstat-poll + delta-read (no `fs.watch`, no
- * platform quirks). The daemon truncates on startup and rotates to
- * `{path}.old` past ~1 MB. See `events-log.ts`.
- */
-export function eventsLogPath(): string {
-  return join(resolveHome(), "events.jsonl");
-}
-
-/**
  * Global scope of the Run-log — daemon lifecycle, Job progress, Reconciler
  * ticks. One file, 1 MB rotation threshold. See `run-log.ts`.
  */

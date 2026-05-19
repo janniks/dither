@@ -65,14 +65,18 @@ End-to-end: `plugin-run.ts` opens a run via the new module (`openRun(plugin, tri
 End-to-end: `journal.ts` and `events-log.ts` deleted along with their test files; behaviour assertions live in `run-log.test.ts`.
 
 **Acceptance:**
-- [ ] `journal.ts`, `journal.test.ts`, `events-log.ts`, `events-log.test.ts` deleted.
-- [ ] No stale imports anywhere.
-- [ ] Full test suite green.
+- [x] `journal.ts`, `journal.test.ts`, `events-log.ts`, `events-log.test.ts` deleted.
+- [x] `eventsLogPath` removed from `home.ts`.
+- [x] No stale imports anywhere.
+- [x] Full test suite green — 365 tests pass (was 380 before deletion; -15 net from removing two legacy test files).
 
 ---
 
 ## Phase log
 
-|  |  |
+| commit | summary |
 |--|--|
-|  |  |
+| e7144bb | Phase 1 — `run-log.ts` built with appendGlobal/appendRun/followGlobal/followRun + openRun lifecycle; 8 tests |
+| bb5fcd1 | Phase 2 — daemon.ts, daemon-jobs.ts, init.ts migrated to global scope; events-log.ts still in place |
+| 4283064 | Phase 3 — plugin-run.ts uses openRun; runs.ts tail rebuilt on followRun + result-poll; journal.ts has no callers |
+| <next> | Phase 4 — journal.ts, events-log.ts + their test files deleted; eventsLogPath removed from home.ts |

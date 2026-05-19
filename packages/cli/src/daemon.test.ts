@@ -82,7 +82,7 @@ describe("daemon lifecycle (in-process)", () => {
     await installPlugin({ source: pluginDir });
 
     const { runDaemon } = await import("./daemon");
-    const { listRuns } = await import("./journal");
+    const { listRuns } = await import("./run-log");
 
     const exited = runDaemon();
     await new Promise((r) => setTimeout(r, 3500));
