@@ -1,7 +1,8 @@
-import { mkdir, cp, writeFile, rm, symlink } from "node:fs/promises";
+import { mkdir, cp, writeFile, rm, symlink, rename, lstat } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { resolveHome } from "./home";
 import { validateGrantPattern } from "./collection-paths";
 import { maybeWarnInstall } from "./tcc-hint";
@@ -78,6 +79,50 @@ export interface InstalledPlugin {
 
 export { MissingInputsError } from "./plugin-install-interactive";
 
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw err;
+  }
+}
+
+async function replacePlugin(
+  destDir: string,
+  stageDir: string,
+  grantsPath: string,
+  grants: unknown,
+): Promise<void> {
+  const backupDir = join(
+    dirname(destDir),
+    `.${basename(destDir)}.${process.pid}.${randomUUID()}.old`,
+  );
+  const hadOld = await pathExists(destDir);
+  let staged = false;
+
+  try {
+    if (hadOld) await rename(destDir, backupDir);
+    await rename(stageDir, destDir);
+    staged = true;
+    try {
+      await writePrivateJson(grantsPath, grants);
+    } catch (err) {
+      await rm(destDir, { recursive: true, force: true }).catch(() => undefined);
+      if (hadOld) await rename(backupDir, destDir).catch(() => undefined);
+      throw err;
+    }
+    if (hadOld) await rm(backupDir, { recursive: true, force: true }).catch(() => undefined);
+  } catch (err) {
+    if (!staged && hadOld && !(await pathExists(destDir))) {
+      await rename(backupDir, destDir).catch(() => undefined);
+    }
+    await rm(stageDir, { recursive: true, force: true }).catch(() => undefined);
+    throw err;
+  }
+}
+
 export async function installPlugin(opts: InstallOptions): Promise<InstalledPlugin> {
   // Trigger the managed-deno bootstrap on first install so the user pays the
   // download cost here rather than mid-run. Idempotent; cheap on later calls.
@@ -95,43 +140,11 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
 
   const home = resolveHome();
   const destDir = join(home, "plugins", parsed.name);
-
-  // Reinstall is intentionally non-atomic for v0 simplicity: rm → mkdir → cp.
-  // Unconditional rm — `force: true` tolerates not-exists, and also unlinks
-  // a stale dangling symlink (which an `existsSync` gate would miss).
-  await rm(destDir, { recursive: true, force: true });
-  if (opts.symlink) {
-    // Dev mode: symlink destDir → sourcePath so author edits flow through
-    // without reinstall. node_modules + deno.json from the source location
-    // are used as-is; the author owns whatever's in there. mkdir only the
-    // parent — `symlink` requires its linkPath to not exist.
-    await mkdir(dirname(destDir), { recursive: true });
-    await symlink(sourcePath, destDir);
-  } else {
-    await mkdir(destDir, { recursive: true });
-    // Skip node_modules + any deno.* files during copy. Deno's `.deno/`
-    // symlink trees often use absolute paths back to the source dir, and
-    // the author's deno.json may pin `@dither/plugin` to a dev path that
-    // doesn't exist on the installer's machine. We regenerate both from
-    // scratch below.
-    await cp(sourcePath, destDir, {
-      recursive: true,
-      filter: (src) => !shouldSkipDuringCopy(src),
-    });
-
-    const sdkUrl = import.meta.resolve("@dither/plugin");
-    await writeDenoConfig(destDir, sdkUrl);
-
-    // Pre-fetch dependencies so the first plugin run isn't a network
-    // round trip and the install fails loudly if a dep is unreachable.
-    // Runs deno *outside* the sandbox — it needs network + write to
-    // destDir.
-    await prefetchDeps(destDir);
-  }
-
+  const parentDir = dirname(destDir);
+  const stageDir = join(parentDir, `.${parsed.name}.${process.pid}.${randomUUID()}.tmp`);
   const grantsDir = join(home, "grants");
   const grantsPath = join(grantsDir, `${parsed.name}.json`);
-  await writePrivateJson(grantsPath, {
+  const grants = {
     name: parsed.name,
     version: parsed.version,
     installedAt: new Date().toISOString(),
@@ -141,7 +154,41 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
     files,
     net,
     collections,
-  });
+  };
+
+  try {
+    await mkdir(parentDir, { recursive: true });
+    if (opts.symlink) {
+      // Dev mode: symlink destDir → sourcePath so author edits flow through
+      // without reinstall. node_modules + deno.json from the source location
+      // are used as-is; the author owns whatever's in there.
+      await symlink(sourcePath, stageDir);
+    } else {
+      await mkdir(stageDir, { recursive: true });
+      // Skip node_modules + any deno.* files during copy. Deno's `.deno/`
+      // symlink trees often use absolute paths back to the source dir, and
+      // the author's deno.json may pin `@dither/plugin` to a dev path that
+      // doesn't exist on the installer's machine. We regenerate both from
+      // scratch below.
+      await cp(sourcePath, stageDir, {
+        recursive: true,
+        filter: (src) => !shouldSkipDuringCopy(src),
+      });
+
+      const sdkUrl = import.meta.resolve("@dither/plugin");
+      await writeDenoConfig(stageDir, sdkUrl);
+
+      // Pre-fetch dependencies so the first plugin run isn't a network
+      // round trip and the install fails loudly if a dep is unreachable.
+      // Runs deno *outside* the sandbox — it needs network + write access.
+      await prefetchDeps(stageDir);
+    }
+
+    await replacePlugin(destDir, stageDir, grantsPath, grants);
+  } catch (err) {
+    await rm(stageDir, { recursive: true, force: true }).catch(() => undefined);
+    throw err;
+  }
 
   maybeWarnInstall(files);
 
