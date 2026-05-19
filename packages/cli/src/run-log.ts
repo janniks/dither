@@ -37,7 +37,9 @@ export type EventKind =
   // global-scope (daemon lifecycle + jobs)
   | "daemon-started"
   | "daemon-stopped"
+  | "reconcile-started"
   | "reconcile-done"
+  | "reconcile-failed"
   | "job-started"
   | "job-progress"
   | "job-done"

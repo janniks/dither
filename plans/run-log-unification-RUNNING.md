@@ -34,11 +34,11 @@ End-to-end: new module under a name like `run-log.ts` exposes `append`, `read`, 
 End-to-end: `daemon.ts` and `daemon-jobs.ts` write through `append({kind: "global"}, ...)`. `commands/init.ts` reads via `follow({kind: "global"}, ...)`. Old `events-log.ts` no longer imported from these.
 
 **Acceptance:**
-- [ ] `daemon.ts` startup/shutdown events flow through `run-log`.
-- [ ] `daemon-jobs.ts` job events flow through `run-log`.
-- [ ] `commands/init.ts` watch flow reads via `run-log.follow`.
-- [ ] `events-log.ts` has no remaining importers (verify with grep).
-- [ ] `npm test` and `npm run typecheck` pass.
+- [x] `daemon.ts` startup/shutdown events flow through `run-log` (`appendGlobal`/`truncateGlobal`).
+- [x] `daemon-jobs.ts` job events flow through `run-log` (`appendGlobal`/`readGlobal`).
+- [x] `commands/init.ts` watch flow reads via `followGlobal`.
+- [x] `events-log.ts` has no remaining production importers (only `events-log.test.ts` remains; deleted in Phase 4 along with the module itself).
+- [x] `npm test` and `npm run typecheck` pass — 380 tests green.
 
 ---
 

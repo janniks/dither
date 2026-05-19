@@ -7,7 +7,7 @@ import {
   needsReindexPath,
   qmdReconcile,
 } from "./daemon-jobs";
-import { readEvents } from "./events-log";
+import { readGlobal } from "./run-log";
 
 describe("daemon-jobs", () => {
   let home: string;
@@ -42,7 +42,7 @@ describe("daemon-jobs", () => {
       // and return cleanly. Either way, the cycle bookends are emitted.
       const summary = await qmdReconcile();
       expect(summary.jobsRun).toBe(0);
-      const events = await readEvents();
+      const events = await readGlobal();
       // First event is reconcile-started; last is reconcile-done or
       // reconcile-failed (depending on how openStore handles it).
       expect(events[0]?.kind).toBe("reconcile-started");
@@ -53,7 +53,7 @@ describe("daemon-jobs", () => {
     it("each reconcile cycle has a unique cycleId", async () => {
       await qmdReconcile();
       await qmdReconcile();
-      const events = await readEvents();
+      const events = await readGlobal();
       const starts = events.filter((e) => e.kind === "reconcile-started");
       expect(starts).toHaveLength(2);
       expect(starts[0]?.cycleId).not.toBe(starts[1]?.cycleId);
@@ -69,7 +69,7 @@ describe("daemon-jobs", () => {
       const summary = await qmdReconcile();
       expect(summary.jobsRun).toBe(0);
       expect(existsSync(embedDisabledPath())).toBe(true);
-      const events = await readEvents();
+      const events = await readGlobal();
       expect(events[0]?.kind).toBe("reconcile-started");
     });
 

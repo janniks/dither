@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { pidFilePath, statusSnapshotPath, locksDirPath, resolveHome } from "./home";
 import { libraryRoot as resolveLibraryRoot } from "./config";
-import { listRuns, type RunSummary } from "./journal";
+import { appendGlobal, listRuns, truncateGlobal, type RunSummary } from "./run-log";
 import { listPlugins } from "./plugin-list";
 import { Scheduler, type ScheduleEntry } from "./scheduler";
 import { Watcher, type WatchEntry } from "./watcher";
@@ -13,7 +13,6 @@ import { LoopDetector, type HaltRecord } from "./loop-detector";
 import { inboxHasItems, recoverOrphanInflight } from "./inbox";
 import { Refirer } from "./refirer";
 import { readRefire } from "./refire";
-import { appendEvent, truncateEventsLog } from "./events-log";
 import { qmdReconcile } from "./daemon-jobs";
 
 /**
@@ -265,12 +264,12 @@ export async function runDaemon(): Promise<void> {
   // Truncate the events log on startup so subscribers don't replay
   // events from a previous (possibly-crashed) daemon process. Then emit
   // a fresh `daemon-started` so anyone watching sees the lifecycle.
-  await truncateEventsLog().catch((err) => {
+  await truncateGlobal().catch((err) => {
     console.error(
       `[daemon] truncate events log failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   });
-  await appendEvent({ kind: "daemon-started", pid: process.pid }).catch((err) => {
+  await appendGlobal({ kind: "daemon-started", pid: process.pid }).catch((err) => {
     console.error(
       `[daemon] write daemon-started event failed: ${err instanceof Error ? err.message : String(err)}`,
     );
@@ -340,7 +339,7 @@ export async function runDaemon(): Promise<void> {
       if (running.length === 0) break;
       await new Promise((r) => setTimeout(r, 250));
     }
-    await appendEvent({ kind: "daemon-stopped", pid: process.pid }).catch(() => undefined);
+    await appendGlobal({ kind: "daemon-stopped", pid: process.pid }).catch(() => undefined);
     await removePidFile(state);
     resolveExit();
   }

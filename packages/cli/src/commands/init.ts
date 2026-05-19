@@ -12,7 +12,7 @@ import { ProgressLine, formatDuration } from "../progress";
 import { QmdDownloadCapture } from "../qmd-download-render";
 import { welcomeDocExists, writeWelcomeIfMissing } from "../welcome-doc";
 import { readDaemonPid, startDaemon } from "../daemon-control";
-import { followEvents, type BaseEvent } from "../events-log";
+import { followGlobal, type LogEvent } from "../run-log";
 import { embedDisabledPath } from "../daemon-jobs";
 
 /**
@@ -99,7 +99,7 @@ async function watchDaemonReconcile(): Promise<{
   }
 
   const ac = new AbortController();
-  const iter = followEvents(ac.signal);
+  const iter = followGlobal(ac.signal);
 
   // Single Ctrl-C (SIGINT) or terminal close (SIGHUP) disconnects the
   // watcher cleanly — the daemon never sees the signal (it's detached
@@ -189,7 +189,7 @@ async function watchDaemonReconcile(): Promise<{
 }
 
 function handleJobEvent(
-  event: BaseEvent,
+  event: LogEvent,
   progressByJob: Map<string, ProgressLine>,
   downloadCaptures: Map<string, { capture: QmdDownloadCapture; startedAt: number }>,
 ): void {

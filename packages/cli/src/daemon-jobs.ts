@@ -3,10 +3,9 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { resolveHome } from "./home";
 import { openStore } from "./store";
-import { appendEvent } from "./events-log";
+import { appendGlobal, readGlobal, type LogEvent } from "./run-log";
 import { acquireTheme, releaseTheme, statusAll, type LockHandle, type LockTheme } from "./locks";
 import { embedLoop } from "./progress";
-import { readEvents, type BaseEvent } from "./events-log";
 
 /**
  * Daemon-side qmd state reconciler + job runners.
@@ -83,11 +82,11 @@ export interface JobsSnapshot {
  * 200 lines.
  */
 export async function readJobsSnapshot(): Promise<JobsSnapshot> {
-  const events = await readEvents(200);
+  const events = await readGlobal(200);
   return reduceJobsSnapshot(events);
 }
 
-function reduceJobsSnapshot(events: BaseEvent[]): JobsSnapshot {
+function reduceJobsSnapshot(events: LogEvent[]): JobsSnapshot {
   const inflight = new Map<string, CurrentJob>();
   const recent: RecentJob[] = [];
   for (const e of events) {
@@ -175,14 +174,14 @@ export interface ReconcileSummary {
 export async function qmdReconcile(): Promise<ReconcileSummary> {
   const startedAt = Date.now();
   const cycleId = randomUUID();
-  await appendEvent({ kind: "reconcile-started", cycleId });
+  await appendGlobal({ kind: "reconcile-started", cycleId });
 
   let jobsRun = 0;
   let store: Awaited<ReturnType<typeof openStore>> = null;
   try {
     store = await openStore();
     if (!store) {
-      await appendEvent({ kind: "reconcile-done", cycleId, jobsRun, reason: "no-library" });
+      await appendGlobal({ kind: "reconcile-done", cycleId, jobsRun, reason: "no-library" });
       return { jobsRun, durationMs: Date.now() - startedAt };
     }
 
@@ -216,7 +215,7 @@ export async function qmdReconcile(): Promise<ReconcileSummary> {
       }
     }
   } catch (err) {
-    await appendEvent({
+    await appendGlobal({
       kind: "reconcile-failed",
       cycleId,
       error: err instanceof Error ? err.message : String(err),
@@ -225,7 +224,7 @@ export async function qmdReconcile(): Promise<ReconcileSummary> {
     if (store) await store.close().catch(() => undefined);
   }
 
-  await appendEvent({ kind: "reconcile-done", cycleId, jobsRun });
+  await appendGlobal({ kind: "reconcile-done", cycleId, jobsRun });
   return { jobsRun, durationMs: Date.now() - startedAt };
 }
 
@@ -241,7 +240,7 @@ async function runIndexJob(
 ): Promise<boolean> {
   const handle = await acquireTheme("index");
   if (handle === null) {
-    await appendEvent({
+    await appendGlobal({
       kind: "job-skipped",
       type: "indexing",
       reason: "lock-busy",
@@ -249,13 +248,13 @@ async function runIndexJob(
     return false;
   }
   return runJobWithLock(handle, "index", async (jobId, emitProgress) => {
-    await appendEvent({ kind: "job-started", jobId, type: "indexing", reason });
+    await appendGlobal({ kind: "job-started", jobId, type: "indexing", reason });
     const result = await store.update({
       onProgress: ({ current, total }) => {
         emitProgress({ current, total });
       },
     });
-    await appendEvent({
+    await appendGlobal({
       kind: "job-done",
       jobId,
       type: "indexing",
@@ -280,7 +279,7 @@ async function runEmbedJob(
 ): Promise<boolean> {
   const handle = await acquireTheme("embed");
   if (handle === null) {
-    await appendEvent({ kind: "job-skipped", type: "embedding", reason: "lock-busy" });
+    await appendGlobal({ kind: "job-skipped", type: "embedding", reason: "lock-busy" });
     return false;
   }
   return runJobWithLock(handle, "embed", async (jobId, emitProgress) => {
@@ -290,13 +289,13 @@ async function runEmbedJob(
     // and we close the download event immediately. Otherwise the
     // download is genuinely in progress.
     downloadJobId = randomUUID();
-    await appendEvent({ kind: "job-started", jobId: downloadJobId, type: "model-download" });
+    await appendGlobal({ kind: "job-started", jobId: downloadJobId, type: "model-download" });
     const downloadStartedAt = Date.now();
     let downloadClosed = false;
     const closeDownload = async (): Promise<void> => {
       if (downloadClosed || !downloadJobId) return;
       downloadClosed = true;
-      await appendEvent({
+      await appendGlobal({
         kind: "job-done",
         jobId: downloadJobId,
         type: "model-download",
@@ -304,7 +303,7 @@ async function runEmbedJob(
       });
     };
 
-    await appendEvent({ kind: "job-started", jobId, type: "embedding" });
+    await appendGlobal({ kind: "job-started", jobId, type: "embedding" });
     const summary = await embedLoop(store, (cumEmbedded, totalEstimate) => {
       void closeDownload();
       emitProgress({ current: cumEmbedded, total: totalEstimate });
@@ -312,7 +311,7 @@ async function runEmbedJob(
     // Edge: nothing to embed → onProgress never fired → close download anyway.
     await closeDownload();
 
-    await appendEvent({
+    await appendGlobal({
       kind: "job-done",
       jobId,
       type: "embedding",
@@ -347,7 +346,7 @@ async function runJobWithLock(
       return;
     }
     lastEmitAt = now;
-    void appendEvent({
+    void appendGlobal({
       kind: "job-progress",
       jobId,
       type: jobType,
@@ -359,7 +358,7 @@ async function runJobWithLock(
     await fn(jobId, emitProgress);
     return true;
   } catch (err) {
-    await appendEvent({
+    await appendGlobal({
       kind: "job-failed",
       jobId,
       type: jobType,
