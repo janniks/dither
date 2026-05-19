@@ -1,4 +1,5 @@
 import { mkdir, writeFile, readFile, readdir, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { pidFilePath, statusSnapshotPath, locksDirPath, resolveHome } from "./home";
 import { libraryRoot as resolveLibraryRoot } from "./paths";
@@ -28,6 +29,7 @@ const SHUTDOWN_GRACE_MS = 30_000;
 
 export interface StatusSnapshot {
   pid: number;
+  token: string;
   startedAt: string;
   lastTick: string;
   version: string;
@@ -46,6 +48,7 @@ export interface RunningPlugin {
 }
 
 interface DaemonState {
+  token: string;
   startedAt: string;
   shuttingDown: boolean;
   reloadRequested: boolean;
@@ -130,16 +133,23 @@ async function fireWithSuppress(
   }
 }
 
-async function writePidFile(): Promise<void> {
+async function writePidFile(state: DaemonState): Promise<void> {
   await mkdir(resolveHome(), { recursive: true });
-  await writeFile(pidFilePath(), String(process.pid));
+  await writeFile(
+    pidFilePath(),
+    `${JSON.stringify({ pid: process.pid, token: state.token, startedAt: state.startedAt })}\n`,
+  );
 }
 
-async function removePidFile(): Promise<void> {
+async function removePidFile(state: DaemonState): Promise<void> {
   try {
+    const raw = await readFile(pidFilePath(), "utf-8");
+    const pid = JSON.parse(raw) as { pid?: unknown; token?: unknown };
+    if (pid.pid !== process.pid || pid.token !== state.token) return;
     await unlink(pidFilePath());
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT" && !(err instanceof SyntaxError)) throw err;
   }
 }
 
@@ -186,6 +196,7 @@ async function writeStatusSnapshot(
   const recentRuns = await listRuns(5).catch(() => []);
   const snapshot: StatusSnapshot = {
     pid: process.pid,
+    token: state.token,
     startedAt: state.startedAt,
     lastTick: new Date().toISOString(),
     version: "0.0.1",
@@ -210,6 +221,7 @@ async function writeStatusSnapshot(
  */
 export async function runDaemon(): Promise<void> {
   const state: DaemonState = {
+    token: randomUUID(),
     startedAt: new Date().toISOString(),
     shuttingDown: false,
     reloadRequested: false,
@@ -249,7 +261,7 @@ export async function runDaemon(): Promise<void> {
     state.watchCount = watcher.stats().count;
   }
 
-  await writePidFile();
+  await writePidFile(state);
   // Truncate the events log on startup so subscribers don't replay
   // events from a previous (possibly-crashed) daemon process. Then emit
   // a fresh `daemon-started` so anyone watching sees the lifecycle.
@@ -329,7 +341,7 @@ export async function runDaemon(): Promise<void> {
       await new Promise((r) => setTimeout(r, 250));
     }
     await appendEvent({ kind: "daemon-stopped", pid: process.pid }).catch(() => undefined);
-    await removePidFile();
+    await removePidFile(state);
     resolveExit();
   }
 

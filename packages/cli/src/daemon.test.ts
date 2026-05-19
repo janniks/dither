@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +16,7 @@ describe("daemon lifecycle (in-process)", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     if (prevHome === undefined) delete process.env.DITHER_DIR;
     else process.env.DITHER_DIR = prevHome;
     rmSync(home, { recursive: true, force: true });
@@ -108,6 +109,9 @@ describe("daemon control (no daemon)", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
+    vi.doUnmock("node:child_process");
+    vi.resetModules();
     if (prevHome === undefined) delete process.env.DITHER_DIR;
     else process.env.DITHER_DIR = prevHome;
     rmSync(home, { recursive: true, force: true });
@@ -118,5 +122,59 @@ describe("daemon control (no daemon)", () => {
     const result = await stopDaemon(1000);
     expect(result.pid).toBeNull();
     expect(result.stopped).toBe(false);
+  });
+
+  it("does not signal an unrelated live pid from a stale pid file", async () => {
+    writeFileSync(join(home, "dither.pid"), String(process.pid));
+    const kill = vi.spyOn(process, "kill");
+
+    const { readDaemonPid, stopDaemon } = await import("./daemon-control");
+
+    await expect(readDaemonPid()).resolves.toBeNull();
+    await expect(stopDaemon(1000)).resolves.toEqual({ stopped: false, pid: null });
+    expect(kill).not.toHaveBeenCalled();
+  });
+
+  it("serializes concurrent daemon starts", async () => {
+    vi.resetModules();
+    const pid = 12345;
+    const startedAt = new Date().toISOString();
+    const token = "test-token";
+    const kill = vi.spyOn(process, "kill").mockImplementation(((target, signal) => {
+      if (signal === 0) return true;
+      throw new Error(`unexpected signal ${String(signal)} to ${String(target)}`);
+    }) as typeof process.kill);
+    const spawn = vi.fn(() => {
+      setTimeout(() => {
+        writeFileSync(join(home, "dither.pid"), JSON.stringify({ pid, token, startedAt }));
+        writeFileSync(
+          join(home, "status.json"),
+          JSON.stringify({
+            pid,
+            token,
+            startedAt,
+            lastTick: new Date().toISOString(),
+            version: "0.0.1",
+            schedules: 0,
+            watches: 0,
+            running: [],
+            recentRuns: [],
+            recentHalts: [],
+            scheduleEntries: [],
+            watchEntries: [],
+          }),
+        );
+      }, 50);
+      return { pid, unref: () => undefined };
+    });
+    vi.doMock("node:child_process", () => ({ spawn }));
+
+    const { startDaemon } = await import("./daemon-control");
+    const results = await Promise.all([startDaemon(), startDaemon()]);
+
+    expect(results.map((r) => r.pid)).toEqual([pid, pid]);
+    expect(results.map((r) => r.alreadyRunning).toSorted()).toEqual([false, true]);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(kill).toHaveBeenCalled();
   });
 });
