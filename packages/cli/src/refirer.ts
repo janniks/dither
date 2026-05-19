@@ -57,9 +57,18 @@ export class Refirer {
   }
 
   private scheduleAt(plugin: string, fireAtMs: number): void {
-    const delay = Math.max(0, fireAtMs - Date.now());
+    if (!Number.isFinite(fireAtMs)) {
+      console.error(`refirer: skipping '${plugin}' — invalid fireAt`);
+      return;
+    }
+    const remaining = Math.max(0, fireAtMs - Date.now());
+    const delay = Math.min(remaining, MAX_TIMER_MS);
     const t = setTimeout(() => {
       this.timers.delete(plugin);
+      if (delay < remaining) {
+        this.scheduleAt(plugin, fireAtMs);
+        return;
+      }
       void this.onFire(plugin);
     }, delay);
     // Don't keep the event loop alive solely on refire timers.
@@ -67,5 +76,10 @@ export class Refirer {
     this.timers.set(plugin, t);
   }
 }
+
+// Node represents setTimeout delays as a 32-bit signed int (ms). Anything
+// larger overflows and fires immediately. Chunk longer waits into hops of
+// this size and reschedule until fireAt is reached.
+const MAX_TIMER_MS = 0x7fffffff;
 
 export type { RefireRow };
