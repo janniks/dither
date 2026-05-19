@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import {
   mkdtempSync,
   rmSync,
@@ -714,6 +716,49 @@ await writeEntry({
     // Lock file released after the winner finishes.
     expect(existsSync(join(home, "locks", "import-folder.lock"))).toBe(false);
   }, 60000);
+
+  it("captures a final unterminated stderr reschedule before run completion", async () => {
+    vi.resetModules();
+    const child = new EventEmitter() as EventEmitter & { stderr: PassThrough };
+    child.stderr = new PassThrough();
+    const spawn = vi.fn(() => child);
+    vi.doMock("node:child_process", () => ({ spawn }));
+    vi.doMock("./deno-bootstrap", () => ({ ensureDeno: async () => "/fake/deno" }));
+
+    const name = "late-rescheduler";
+    const pluginDir = join(home, "plugins", name);
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(
+      join(pluginDir, "package.json"),
+      JSON.stringify({ name, version: "0.0.1", dither: {} }),
+    );
+    writeFileSync(join(pluginDir, "plugin.ts"), "// mocked\n");
+    mkdirSync(join(home, "grants"), { recursive: true });
+    writeFileSync(join(home, "grants", `${name}.json`), JSON.stringify({ name }));
+
+    try {
+      const { runPlugin } = await import("./plugin-run");
+      const { readRefire } = await import("./refire");
+      const run = runPlugin({ name });
+
+      process.nextTick(() => {
+        child.emit("exit", 0);
+        setTimeout(() => {
+          child.stderr.once("end", () => child.emit("close", 0));
+          child.stderr.end(JSON.stringify({ _dither: "reschedule", afterMs: 1000 }));
+        }, 25);
+      });
+
+      await run;
+      const row = await readRefire(name);
+      expect(row).not.toBeNull();
+      expect(row?.retryCount).toBe(0);
+    } finally {
+      vi.doUnmock("node:child_process");
+      vi.doUnmock("./deno-bootstrap");
+      vi.resetModules();
+    }
+  });
 
   it("runPlugin produces a run-history journal with manifest, events, and result", async () => {
     const { installPlugin } = await import("./plugin-install");

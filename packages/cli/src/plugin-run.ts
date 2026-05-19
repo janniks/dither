@@ -486,7 +486,7 @@ async function runPluginLocked(
         if (buf) handleLine(buf);
       });
       child.on("error", rej);
-      child.on("exit", (code) => {
+      child.on("close", (code) => {
         if (code === 0) {
           res();
           return;
