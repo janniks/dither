@@ -26,6 +26,6 @@ End-to-end: move the function + test, update 3 import sites, delete the old file
 
 ## Phase log
 
-|  |  |
+| commit | summary |
 |--|--|
-|  |  |
+| ee26b56 | Phase 1 complete — tildePath moved to prompt.ts, display.ts deleted, 3 imports updated, 371 tests pass |
