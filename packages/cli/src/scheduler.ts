@@ -49,6 +49,8 @@ export class Scheduler {
         const job = new Cron(pattern, () => {
           void this.onFire(entry.name);
         });
+        const prior = this.jobs.get(entry.name);
+        if (prior) prior.stop();
         this.jobs.set(entry.name, job);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

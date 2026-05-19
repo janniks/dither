@@ -56,4 +56,23 @@ describe("Scheduler", () => {
     sched.stop();
     expect(sched.stats().count).toBe(0);
   });
+
+  it("duplicate names within one set() do not leak the earlier Cron", async () => {
+    const fires: string[] = [];
+    const sched = new Scheduler((name) => {
+      fires.push(name);
+    });
+    sched.set([
+      { name: "dup", schedule: "every 1s" },
+      { name: "dup", schedule: "every 5m" },
+    ]);
+    expect(sched.stats().count).toBe(1);
+    expect(sched.stats().entries[0]?.pattern).not.toBe(
+      // earlier "every 1s" must have been stopped, latest "every 5m" kept
+      "* * * * * *",
+    );
+    await new Promise((r) => setTimeout(r, 1500));
+    sched.stop();
+    expect(fires).toEqual([]);
+  }, 10_000);
 });
