@@ -47,4 +47,4 @@ End-to-end: validation moves to identity owner; grant helpers get their own modu
 | commit | summary |
 |--|--|
 | 2e65dba | Phase 1 — paths.ts folded into config.ts; 3 callers updated; deletes 1 module |
-| <next> | Phase 2 — collection-paths.ts split into collection-registry.ts (validation) + grants.ts (grant patterns/coverage); 3 callers updated; 372 tests pass |
+| c683142 | Phase 2 — collection-paths.ts split into collection-registry.ts (validation) + grants.ts (grant patterns/coverage); 3 callers updated; 372 tests pass |
