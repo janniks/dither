@@ -353,6 +353,22 @@ describe("dither init (Phase 1)", () => {
     expect(existsSync(join(realpathSync(lib), "welcome", "welcome.md"))).toBe(true);
   });
 
+  it("--no-wait is accepted and doesn't break the flow", async () => {
+    // In test mode the entire daemon-watch branch is skipped, so the
+    // flag's only observable effect there is that it's accepted as an
+    // option. The behavior in production (dispatch + exit) is exercised
+    // manually; this test guards against regressing the flag schema.
+    const lib = join(home, "library");
+    const { main } = await import("../main");
+    const out = await captureLogs(async () => {
+      await runCommand(main, {
+        rawArgs: ["init", "--library", lib, "--no-download", "--no-wait"],
+      });
+    });
+    expect(existsSync(join(home, "config.json"))).toBe(true);
+    expect(out).toContain("--no-download");
+  });
+
   it("--no-welcome skips the welcome doc and falls back to the plugin-install nudge", async () => {
     const lib = join(home, "library");
     const { main } = await import("../main");

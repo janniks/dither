@@ -77,7 +77,11 @@ export function defaultLibraryPath(): string {
  * is no longer alive, we exit with an error. The watch is non-blocking
  * for the user (Ctrl-C lands in phase 7).
  */
-async function watchDaemonReconcile(): Promise<{ ok: boolean; reason?: string }> {
+async function watchDaemonReconcile(): Promise<{
+  ok: boolean;
+  reason?: string;
+  detached?: boolean;
+}> {
   const pid = await readDaemonPid();
   if (!pid) {
     return { ok: false, reason: "daemon not running" };
@@ -85,6 +89,20 @@ async function watchDaemonReconcile(): Promise<{ ok: boolean; reason?: string }>
 
   const ac = new AbortController();
   const iter = followEvents(ac.signal);
+
+  // Single Ctrl-C (SIGINT) or terminal close (SIGHUP) disconnects the
+  // watcher cleanly — the daemon never sees the signal (it's detached
+  // with its own session). Init prints a detach block + epilogue and
+  // exits 0. The actual cancel-the-running-job path is a separate
+  // explicit command (`dither index cancel`).
+  let detached = false;
+  const onDetach = (): void => {
+    if (detached) return;
+    detached = true;
+    ac.abort();
+  };
+  process.on("SIGINT", onDetach);
+  process.on("SIGHUP", onDetach);
 
   // Trigger the reconcile after we're positioned at the log end. There's
   // a small race window where the SIGHUP-induced reconcile-started could
@@ -150,6 +168,11 @@ async function watchDaemonReconcile(): Promise<{ ok: boolean; reason?: string }>
     clearInterval(watchdogTimer);
     ac.abort();
     cleanup();
+    process.off("SIGINT", onDetach);
+    process.off("SIGHUP", onDetach);
+  }
+  if (detached) {
+    return { ok: true, detached: true };
   }
   return result;
 }
@@ -257,6 +280,12 @@ export const initCommand = defineCommand({
       type: "boolean",
       description:
         "Write a welcome doc into <library>/welcome/welcome.md so the next-action epilogue can demonstrate `dither search` / `dither get`. Default on; pass `--no-welcome` to skip.",
+      default: true,
+    },
+    wait: {
+      type: "boolean",
+      description:
+        "Block until the daemon finishes indexing + embedding (default). Pass `--no-wait` to dispatch the work and return immediately; check progress later with `dither status`.",
       default: true,
     },
   },
@@ -388,9 +417,28 @@ export const initCommand = defineCommand({
           : `daemon started (pid ${daemonStart.pid})`,
       );
 
-      const watchResult = await watchDaemonReconcile();
-      if (!watchResult.ok) {
-        stepFail(`${watchResult.reason} (search will fall back to lex-only until next run)`);
+      if (!args.wait) {
+        // --no-wait: signal the daemon to reconcile, then exit without
+        // following the events log. CI / scripted use case.
+        try {
+          process.kill(daemonStart.pid, "SIGHUP");
+        } catch (err) {
+          stepFail(
+            `signal daemon failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+        stepDone("dispatched — daemon will finish in background");
+        console.log("  dither status         # check progress");
+      } else {
+        const watchResult = await watchDaemonReconcile();
+        if (watchResult.detached) {
+          console.log("");
+          stepDone("detached — daemon continues in the background");
+          console.log("  dither status         # check progress");
+          console.log("  dither index cancel   # stop the running job");
+        } else if (!watchResult.ok) {
+          stepFail(`${watchResult.reason} (search will fall back to lex-only until next run)`);
+        }
       }
     }
 
