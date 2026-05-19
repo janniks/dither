@@ -45,6 +45,7 @@ End-to-end: every importer of `qmd-locks` switches to `locks`. `qmd-locks.ts` an
 
 ## Phase log
 
-|  |  |
+| commit | summary |
 |--|--|
-|  |  |
+| 549cf50 | Phase 1 — theme API added to locks.ts (LockTheme, acquireTheme, releaseTheme, status, statusAll, themeLockPath) + 8 new tests |
+| debdcd7 | Phase 2 — qmd-locks.ts deleted; 6 caller files migrated; isPidAlive now exists once; 372 tests pass |
