@@ -133,4 +133,23 @@ describe("events-log", () => {
     await consume;
     expect(collected).toEqual(["post-trunc"]);
   });
+
+  it("followEvents reopens when rotation replaces the log path", async () => {
+    writeFileSync(eventsLogPath(), "x".repeat(ROTATION_THRESHOLD_BYTES), "utf-8");
+    const ac = new AbortController();
+    const collected: string[] = [];
+    const iter = followEvents(ac.signal);
+    const consume = (async () => {
+      for await (const e of iter) {
+        collected.push(e.kind);
+        ac.abort();
+      }
+    })();
+    const timeout = setTimeout(() => ac.abort(), 3_000);
+    await new Promise((r) => setTimeout(r, 150));
+    await appendEvent({ kind: "post-rotation" });
+    await consume;
+    clearTimeout(timeout);
+    expect(collected).toEqual(["post-rotation"]);
+  });
 });

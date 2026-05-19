@@ -1,5 +1,5 @@
-import { existsSync, statSync } from "node:fs";
-import { mkdir, open, rename, truncate, unlink } from "node:fs/promises";
+import { existsSync, statSync, type Stats } from "node:fs";
+import { mkdir, open, rename, stat, truncate, unlink } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { dirname } from "node:path";
 import { eventsLogPath } from "./home";
@@ -172,7 +172,7 @@ export async function* followEvents(
         await reopen();
         continue;
       }
-      let st: { size: number };
+      let st: Pick<Stats, "dev" | "ino" | "size">;
       try {
         st = await current.stat();
       } catch {
@@ -198,6 +198,11 @@ export async function* followEvents(
           const parsed = parseLine(line);
           if (parsed) yield parsed;
         }
+      }
+      const fresh = await stat(path).catch(() => null);
+      if (!fresh || fresh.dev !== st.dev || fresh.ino !== st.ino) {
+        await reopen(true);
+        continue;
       }
       await sleep(FOLLOW_POLL_MS, signal);
     }
