@@ -281,6 +281,10 @@ function readGrantArgs(args: GrantArgs) {
   };
 }
 
+function appendStringArg(argv: string[], flag: string, value: string | undefined): void {
+  if (value !== undefined) argv.push(flag, value);
+}
+
 const installSubcommand = defineCommand({
   meta: {
     name: "install",
@@ -393,7 +397,18 @@ const runSubcommand = defineCommand({
       mkdirSync(logsDir, { recursive: true });
       const logPath = join(logsDir, `${pluginName}-${Date.now()}.log`);
       const fd = openSync(logPath, "a");
-      const child = spawn(process.execPath, [process.argv[1]!, "plugin", "run", pluginName], {
+      const childArgs = [process.argv[1]!, "plugin", "run", pluginName];
+      if (args.backfill) childArgs.push("--backfill");
+      if (args.verbose) childArgs.push("--verbose");
+      if (args["no-auto-open"]) childArgs.push("--no-auto-open");
+      if (runOverrides) {
+        appendStringArg(childArgs, "--env", args.env);
+        appendStringArg(childArgs, "--allow-env", args["allow-env"]);
+        appendStringArg(childArgs, "--file", args.file);
+        appendStringArg(childArgs, "--allow-net", args["allow-net"]);
+        appendStringArg(childArgs, "--allow-collection", args["allow-collection"]);
+      }
+      const child = spawn(process.execPath, childArgs, {
         detached: true,
         stdio: ["ignore", fd, fd],
       });
