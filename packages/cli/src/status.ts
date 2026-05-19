@@ -112,14 +112,18 @@ export async function getStatus(): Promise<DitherStatus> {
   const plugins = (await listPlugins()).length;
   const cfg = await loadConfig();
   const library = cfg ? cfg.library.path : null;
-  const libraryHealth = await probeLibraryHealth(library);
+  let libraryHealth = await probeLibraryHealth(library);
 
   let collections: number | null = null;
   let entries: number | null = null;
   if (libraryHealth === "ok" && library) {
-    const counts = await countMarkdownEntries(library);
-    collections = counts.collections;
-    entries = counts.entries;
+    try {
+      const counts = await countMarkdownEntries(library);
+      collections = counts.collections;
+      entries = counts.entries;
+    } catch {
+      libraryHealth = "unreadable";
+    }
   }
 
   const daemon = await getDaemonStatus();

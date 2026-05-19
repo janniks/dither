@@ -143,6 +143,28 @@ describe("dither status (output shape)", () => {
     }
   });
 
+  it("flags unreadable nested collections with ⚠ glyph and — counts", async () => {
+    const lib = join(home, "library");
+    const collection = join(lib, "locked");
+    mkdirSync(collection, { recursive: true });
+    chmodSync(collection, 0o000);
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({ schema: { version: 1 }, library: { path: lib } }),
+    );
+    try {
+      const { main } = await import("../main");
+      const out = await captureLogs(async () => {
+        await runCommand(main, { rawArgs: ["status"] });
+      });
+      expect(out).toContain("⚠ unreadable");
+      expect(out).toContain("collections: —");
+      expect(out).toContain("entries:     —");
+    } finally {
+      chmodSync(collection, 0o700);
+    }
+  });
+
   it("shows '(not configured — run `dither init`)' before init", async () => {
     const { main } = await import("../main");
     const out = await captureLogs(async () => {
