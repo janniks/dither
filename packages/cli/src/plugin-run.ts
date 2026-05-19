@@ -519,6 +519,10 @@ async function runPluginLocked(
       const indexLock = await tryAcquireQmdLock("index");
       if (indexLock.busy) {
         await writeFile(needsReindexPath(), "", "utf-8").catch(() => undefined);
+        await journal.append("reindex-deferred", {
+          reason: "qmd-index.lock busy",
+          touchedCollections,
+        });
       } else {
         try {
           await updateIndex(touchedCollections);

@@ -1,6 +1,8 @@
 import { defineCommand } from "citty";
 import pc from "picocolors";
+import { existsSync } from "node:fs";
 import { search, type SearchHit } from "../search";
+import { qmdLockPath } from "../qmd-locks";
 import { assertInitialized } from "../config";
 
 // Collapse whitespace and trim — titles can contain newlines or tweet bodies.
@@ -168,6 +170,19 @@ export const searchCommand = defineCommand({
     });
 
     printHits(hits, args.query);
+
+    // Footer: warn the user that an embedding pass is still in flight,
+    // so partial vector results aren't mistaken for "the doc isn't
+    // there." Cheap: one stat call. Doesn't fire when no embed lock is
+    // held (the common case).
+    if (existsSync(qmdLockPath("embed"))) {
+      console.log("");
+      console.log(
+        pc.dim(
+          "note: embedding still in progress. some results may be missing — re-run when done.",
+        ),
+      );
+    }
 
     return hits;
   },

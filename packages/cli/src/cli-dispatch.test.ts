@@ -70,6 +70,35 @@ describe("CLI dispatch", () => {
     });
 
     expect(output).toContain("notes/auth.md");
+    // No footer when qmd-embed.lock is absent.
+    expect(output).not.toContain("embedding still in progress");
+  });
+
+  it("dither search prints a footer note when an embed lock is held", async () => {
+    const collectionDir = join(home, "entries", "notes");
+    mkdirSync(collectionDir, { recursive: true });
+    writeFileSync(
+      join(collectionDir, "auth.md"),
+      "---\ntitle: Authentication\n---\n\nAuth flow notes.\n",
+    );
+    const { updateIndex } = await import("./update-index");
+    await updateIndex();
+
+    // Manually create a fake qmd-embed.lock to simulate the daemon
+    // being mid-embed during search.
+    const { qmdLockPath } = await import("./qmd-locks");
+    mkdirSync(join(home, "locks"), { recursive: true });
+    writeFileSync(qmdLockPath("embed"), String(process.pid), "utf-8");
+
+    const { main } = await import("./main");
+    const output = await captureLogs(async () => {
+      await runCommand(main, {
+        rawArgs: ["search", "Auth", "--mode", "lex"],
+      });
+    });
+
+    expect(output).toContain("notes/auth.md");
+    expect(output).toContain("embedding still in progress");
   });
 
   it("dither get <ref> prints the entry body to stdout", async () => {

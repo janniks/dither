@@ -15,7 +15,13 @@ import { resolveHome } from "./home";
  * The journal is the source of truth for `dither runs list` and `runs tail`.
  */
 
-export type EventType = "progress" | "stderr" | "promoted" | "error" | "reschedule";
+export type EventType =
+  | "progress"
+  | "stderr"
+  | "promoted"
+  | "error"
+  | "reschedule"
+  | "reindex-deferred";
 
 export interface JournalEvent {
   type: EventType;

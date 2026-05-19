@@ -4,7 +4,13 @@ import pc from "picocolors";
 import { assertInitialized } from "../config";
 import { readDaemonPid, startDaemon } from "../daemon-control";
 import { embedDisabledPath, needsReindexPath } from "../daemon-jobs";
-import { qmdLockPath, qmdLockStatus, type QmdLockTheme } from "../qmd-locks";
+import {
+  qmdLockPath,
+  qmdLockStatus,
+  releaseQmdLock,
+  tryAcquireQmdLock,
+  type QmdLockTheme,
+} from "../qmd-locks";
 import { updateIndex } from "../update-index";
 
 /**
@@ -34,11 +40,32 @@ const updateSubcommand = defineCommand({
       }
     }
 
-    // Foreground the index re-scan: this gives synchronous output
-    // ("index updated: ...") and ensures the user can immediately
-    // search against the fresh content. The daemon picks up
-    // embeddings later via the SIGHUP below.
-    const result = await updateIndex();
+    // Acquire qmd-index.lock so a concurrent daemon-side index job
+    // doesn't fight us at the SQLite layer. Non-blocking — if the
+    // daemon is already indexing, print the uniform busy message,
+    // touch needs-reindex (so the daemon's next reconcile covers any
+    // new files), and exit.
+    const lock = await tryAcquireQmdLock("index");
+    if (lock.busy) {
+      const elapsedSec = Math.max(
+        0,
+        Math.round((Date.now() - lock.startedAt.getTime()) / 1000),
+      );
+      console.error(
+        `${pc.yellow("⚠")} qmd is busy: indexing (started ${elapsedSec}s ago).`,
+      );
+      console.error(`  ${pc.dim("watch with `dither status`. needs-reindex queued for catch-up.")}`);
+      writeFileSync(needsReindexPath(), "", "utf-8");
+      process.exitCode = 1;
+      return;
+    }
+
+    let result;
+    try {
+      result = await updateIndex();
+    } finally {
+      await releaseQmdLock(lock);
+    }
     console.log(
       `index updated: ${result.collections} collection(s), ` +
         `${result.indexed} indexed, ${result.updated} updated`,

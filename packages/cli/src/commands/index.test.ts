@@ -141,6 +141,40 @@ describe("dither index commands", () => {
       expect(out).toContain("index updated:");
     });
 
+    it("prints busy message and writes needs-reindex when index lock is held", async () => {
+      writeFileSync(
+        join(home, "config.json"),
+        JSON.stringify({
+          schema: { version: 2 },
+          library: { path: home },
+          collections: { external: [] },
+        }),
+        "utf-8",
+      );
+      mkdirSync(join(home, "notes"), { recursive: true });
+      writeFileSync(join(home, "notes", "memo.md"), "# Memo\n\nHello.\n", "utf-8");
+
+      // Hand-place qmd-index.lock with our own PID so it's "live".
+      mkdirSync(join(home, "locks"), { recursive: true });
+      writeFileSync(qmdLockPath("index"), String(process.pid), "utf-8");
+
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const exitCode = process.exitCode;
+      try {
+        const { main } = await import("../main");
+        await captureLogs(async () => {
+          await runCommand(main, { rawArgs: ["index", "update"] });
+        });
+        const errors = errSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+        expect(errors).toMatch(/qmd is busy: indexing/);
+        expect(existsSync(needsReindexPath())).toBe(true);
+      } finally {
+        errSpy.mockRestore();
+        // Clean up the exit code we set so it doesn't leak across tests.
+        process.exitCode = exitCode;
+      }
+    });
+
     it("touches needs-reindex marker only when a daemon is running (test-mode no-op)", async () => {
       writeFileSync(
         join(home, "config.json"),
