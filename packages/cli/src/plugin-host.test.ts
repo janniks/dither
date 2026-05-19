@@ -71,6 +71,34 @@ describe("plugin host", () => {
     rmSync(badPluginDir, { recursive: true, force: true });
   });
 
+  it("rejects comma-containing permission paths before invoking Deno", async () => {
+    const pluginDir = join(home, "plugins", "comma-path");
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(
+      join(pluginDir, "package.json"),
+      JSON.stringify({ name: "comma-path", version: "0.0.1", dither: {} }),
+    );
+    writeFileSync(join(pluginDir, "plugin.ts"), "// noop\n");
+
+    const grantedDir = join(home, "private,shared");
+    mkdirSync(grantedDir);
+    writeFileSync(join(grantedDir, "file.md"), "secret\n");
+    mkdirSync(join(home, "grants"), { recursive: true });
+    writeFileSync(
+      join(home, "grants", "comma-path.json"),
+      JSON.stringify({
+        name: "comma-path",
+        version: "0.0.1",
+        files: { input: join(grantedDir, "file.md") },
+      }),
+    );
+
+    const { runPlugin } = await import("./plugin-run");
+    await expect(runPlugin({ name: "comma-path" })).rejects.toThrow(
+      /Deno read permission entry contains an unsupported comma/,
+    );
+  });
+
   it("refuses to promote entries written to an ungranted collection", async () => {
     const escaperDir = mkdtempSync(join(tmpdir(), "dither-escape-plugin-"));
     writeFileSync(

@@ -87,6 +87,16 @@ interface RescheduleMessage {
 
 type ControlMessage = (ProgressMessage & { kind: "progress" }) | RescheduleMessage;
 
+function denoPermissionList(kind: string, entries: string[]): string {
+  const entry = entries.find((e) => e.includes(","));
+  if (entry) {
+    throw new Error(
+      `cannot run plugin: Deno ${kind} permission entry contains an unsupported comma: ${entry}`,
+    );
+  }
+  return entries.join(",");
+}
+
 function parseControl(line: string): ControlMessage | null {
   if (!line || line[0] !== "{") return null;
   try {
@@ -374,7 +384,7 @@ async function runPluginLocked(
         )
       : [];
 
-    const allowRead = [
+    const allowRead = denoPermissionList("read", [
       pluginDir,
       runDir,
       sdkPath,
@@ -385,8 +395,8 @@ async function runPluginLocked(
       // them for explicit-target callers (e.g. ad-hoc `runPlugin` use
       // outside the watch pipeline) but only when no watch roots exist.
       ...(watchRoots.length > 0 ? [] : targets.map((t) => t.path)),
-    ].join(",");
-    const allowWrite = [stateDir, runDir].join(",");
+    ]);
+    const allowWrite = denoPermissionList("write", [stateDir, runDir]);
     const allowEnv = DITHER_ENV_VARS.join(",");
 
     const denoArgs = [
@@ -403,7 +413,7 @@ async function runPluginLocked(
       if (grantNet.length === 1 && grantNet[0] === "*") {
         denoArgs.push("--allow-net");
       } else {
-        denoArgs.push(`--allow-net=${grantNet.join(",")}`);
+        denoArgs.push(`--allow-net=${denoPermissionList("net", grantNet)}`);
       }
     }
     denoArgs.push(join(pluginDir, "plugin.ts"));
