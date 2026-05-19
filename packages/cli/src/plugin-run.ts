@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import matter from "gray-matter";
 import { resolveHome } from "./home";
-import { assertInitialized, type DitherConfig } from "./config";
+import { assertInitialized, libraryRoot as resolveLibraryRoot, type DitherConfig } from "./config";
 import { parsePackage } from "./manifest";
 import { updateIndex } from "./update-index";
 import { needsReindexPath } from "./daemon-jobs";
@@ -24,7 +24,6 @@ import { ensureDeno } from "./deno-bootstrap";
 import { claimInbox, clearInflight, restoreInflight, type WatchTarget } from "./inbox";
 import { clearRefire, decideRunOutcome, readRefire, writeRefire } from "./refire";
 import { resolveWatchPath } from "./watch-paths";
-import { libraryRoot as resolveLibraryRoot } from "./paths";
 
 export interface ProgressMessage {
   message: string;

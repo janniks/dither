@@ -162,3 +162,30 @@ export async function assertInitialized(): Promise<DitherConfig> {
   if (!cfg) throw new NotInitializedError();
   return cfg;
 }
+
+/**
+ * Library-relative path helpers. Async variants load the config; the
+ * `*FromConfig` variants take a pre-loaded config to avoid re-reading.
+ * Dither-home paths (pid, locks, plugins, daemon log, qmd index db) live
+ * in `home.ts` and never go through here — they're independent of the
+ * library configuration.
+ */
+
+export async function libraryRoot(): Promise<string> {
+  return (await assertInitialized()).library.path;
+}
+
+export async function collectionDir(name: string): Promise<string> {
+  return join(await libraryRoot(), name);
+}
+
+export function libraryRootFromConfig(cfg: { library: { path: string } }): string {
+  return cfg.library.path;
+}
+
+export function collectionDirFromConfig(
+  cfg: { library: { path: string } },
+  name: string,
+): string {
+  return join(cfg.library.path, name);
+}

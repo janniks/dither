@@ -2,7 +2,7 @@ import { mkdir, writeFile, readFile, readdir, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { pidFilePath, statusSnapshotPath, locksDirPath, resolveHome } from "./home";
-import { libraryRoot as resolveLibraryRoot } from "./paths";
+import { libraryRoot as resolveLibraryRoot } from "./config";
 import { listRuns, type RunSummary } from "./journal";
 import { listPlugins } from "./plugin-list";
 import { Scheduler, type ScheduleEntry } from "./scheduler";

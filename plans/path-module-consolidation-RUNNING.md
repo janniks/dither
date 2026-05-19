@@ -19,10 +19,10 @@
 End-to-end: same four functions (`libraryRoot`, `collectionDir`, plus their *FromConfig variants), new home. Import paths update across callers.
 
 **Acceptance:**
-- [ ] `paths.ts` is deleted.
-- [ ] `config.ts` exports `libraryRoot`, `collectionDir`, `libraryRootFromConfig`, `collectionDirFromConfig`.
-- [ ] No `./paths` imports remain.
-- [ ] `npm test` and `npm run typecheck` pass.
+- [x] `paths.ts` is deleted.
+- [x] `config.ts` exports `libraryRoot`, `collectionDir`, `libraryRootFromConfig`, `collectionDirFromConfig`.
+- [x] No `./paths` imports remain.
+- [x] `npm test` and `npm run typecheck` pass.
 
 ---
 
