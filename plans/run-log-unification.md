@@ -79,4 +79,4 @@ End-to-end: `journal.ts` and `events-log.ts` deleted along with their test files
 | e7144bb | Phase 1 — `run-log.ts` built with appendGlobal/appendRun/followGlobal/followRun + openRun lifecycle; 8 tests |
 | bb5fcd1 | Phase 2 — daemon.ts, daemon-jobs.ts, init.ts migrated to global scope; events-log.ts still in place |
 | 4283064 | Phase 3 — plugin-run.ts uses openRun; runs.ts tail rebuilt on followRun + result-poll; journal.ts has no callers |
-| <next> | Phase 4 — journal.ts, events-log.ts + their test files deleted; eventsLogPath removed from home.ts |
+| 254bfe2 | Phase 4 — journal.ts, events-log.ts + their test files deleted; eventsLogPath removed from home.ts; 837 lines removed |
