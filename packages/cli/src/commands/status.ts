@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 import pc from "picocolors";
 import { getStatus, type DitherStatus } from "../status";
-import { tildePath } from "../display";
+import { tildePath } from "../prompt";
 
 const fmt = (n: number): string => new Intl.NumberFormat(undefined).format(n);
 

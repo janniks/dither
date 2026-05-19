@@ -1,5 +1,5 @@
 import pc from "picocolors";
-import { tildePath } from "./display";
+import { tildePath } from "./prompt";
 
 /**
  * Render qmd's model-weight download as one clean two-line summary instead
