@@ -20,13 +20,13 @@
 End-to-end: new module exposes the three methods over the **Run-log** global scope. The DI-style transport hook accepts a stub iterable for tests. No `init.ts` changes yet.
 
 **Acceptance:**
-- [ ] `daemonClient({transport})` returns `{signalReconcile, watchReconcile, triggerAndWatch}`.
-- [ ] `watchReconcile` is an `AsyncIterable<DaemonEvent>` over the **Run-log** global scope.
-- [ ] Internal events filtered; closed `DaemonEvent` union.
-- [ ] Iterator throws `DaemonStoppedDuringReconcileError` on mid-reconcile `daemon-stopped`; throws `DaemonDiedError` if PID is ESRCH on a poll tick.
-- [ ] Iterator completes on `reconcile-done`.
-- [ ] AbortSignal aborts iteration cleanly; signal handlers unregister.
-- [ ] Tests drive a stub transport: assert events, completion, errors, abort.
+- [x] `daemonClient({transport})` returns `{signalReconcile, watchReconcile, triggerAndWatch}`.
+- [x] `watchReconcile` is an `AsyncIterable<DaemonEvent>` over the **Run-log** global scope.
+- [x] Internal events filtered; closed `DaemonEvent` union (7 renderable kinds).
+- [x] Iterator throws `DaemonStoppedDuringReconcileError` on mid-reconcile `daemon-stopped`; throws `DaemonDiedError` on dead-PID probe; throws `DaemonReconcileFailedError` on reconcile-failed.
+- [x] Iterator yields `reconcile-done` as a final event, then returns.
+- [x] AbortSignal aborts iteration cleanly; no throw on clean detach.
+- [x] 7 tests drive a stub transport: start-on-demand, reuse-live, event filtering, daemon-stopped, daemon-died, clean-abort, triggerAndWatch.
 
 ---
 
