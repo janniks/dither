@@ -21,9 +21,9 @@
 End-to-end: new module under a name like `run-log.ts` exposes `append`, `read`, `follow`, `truncate`. Both scopes share the poll-tail primitive. The module is not yet wired into any caller; its tests are self-contained.
 
 **Acceptance:**
-- [ ] `run-log.ts` exports `append(scope, event)`, `read(scope)`, `follow(scope, onEvent)`, `truncate(scope)`.
-- [ ] One closed `EventKind` union covers every event currently emitted by daemon-jobs and plugin-run (`daemon-started`, `daemon-stopped`, `job-started`, `job-progress`, `job-done`, `model-download-progress`, `reconcile-done`, `progress`, `stderr`, `promoted`, `error`, `reschedule`, `reindex-deferred`).
-- [ ] Test file covers: write→read round-trip, follow streams new appends, rotation truncates at 1 MB threshold, ENOENT-during-poll is tolerated.
+- [x] `run-log.ts` exports `appendGlobal/appendRun`, `readGlobal/readRun`, `followGlobal/followRun`, `truncateGlobal`, plus `openRun`, `listRuns`. The scope-named functions replaced the planned `{kind}` discriminator (which would have collided with each event's own `kind` field).
+- [x] One closed `EventKind` union covers every event currently emitted by daemon-jobs and plugin-run, plus `job-failed`, `job-skipped` already present in events-log.
+- [x] 8 tests cover: write→read round-trip, scope tagging, rotation, ENOENT tolerance, follow streaming, openRun/close lifecycle, listRuns summary states.
 
 ---
 

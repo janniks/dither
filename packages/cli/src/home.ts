@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 /**
  * Dither-home paths only. Library paths (entries, collection dirs) live in
- * `paths.ts` and route through the config file. The qmd index sqlite stays
+ * `config.ts` and route through the config file. The qmd index sqlite stays
  * here — it's dither-managed bookkeeping, not user content.
  *
  * Resolution chain for the dither working directory ("config dir"), first
@@ -68,6 +68,19 @@ export function statusSnapshotPath(): string {
  */
 export function eventsLogPath(): string {
   return join(resolveHome(), "events.jsonl");
+}
+
+/**
+ * Global scope of the Run-log — daemon lifecycle, Job progress, Reconciler
+ * ticks. One file, 1 MB rotation threshold. See `run-log.ts`.
+ */
+export function runLogPath(): string {
+  return join(resolveHome(), "run-log.jsonl");
+}
+
+/** Per-Run scope of the Run-log. See `run-log.ts`. */
+export function runEventsPath(runId: string): string {
+  return join(resolveHome(), "history", runId, "events.jsonl");
 }
 
 export function locksDirPath(): string {
