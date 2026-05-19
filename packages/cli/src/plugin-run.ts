@@ -8,6 +8,8 @@ import { resolveHome } from "./home";
 import { assertInitialized, type DitherConfig } from "./config";
 import { parsePackage } from "./manifest";
 import { updateIndex } from "./update-index";
+import { needsReindexPath } from "./daemon-jobs";
+import { tryAcquireQmdLock, releaseQmdLock } from "./qmd-locks";
 import { getGlobalEnv } from "./global-env";
 import { validateCollectionPath, validateGrantPattern, grantsCover } from "./collection-paths";
 import { resolveCollection } from "./collection-registry";
@@ -509,7 +511,21 @@ async function runPluginLocked(
       const touchedCollections = Array.from(
         new Set(candidates.map((c) => c.collection.split("/")[0]!)),
       );
-      await updateIndex(touchedCollections);
+      // qmd-index.lock coordinates with the daemon's job runner; if
+      // it's busy (daemon is mid-indexing), defer by touching
+      // needs-reindex so the daemon coalesces this into its next
+      // post-job reconciliation. Promoted files are already on disk —
+      // only the rescan is deferred.
+      const indexLock = await tryAcquireQmdLock("index");
+      if (indexLock.busy) {
+        await writeFile(needsReindexPath(), "", "utf-8").catch(() => undefined);
+      } else {
+        try {
+          await updateIndex(touchedCollections);
+        } finally {
+          await releaseQmdLock(indexLock);
+        }
+      }
     }
 
     return { promoted, reschedule: lastReschedule };

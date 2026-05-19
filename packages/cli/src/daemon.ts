@@ -13,6 +13,7 @@ import { inboxHasItems, recoverOrphanInflight } from "./inbox";
 import { Refirer } from "./refirer";
 import { readRefire } from "./refire";
 import { appendEvent, truncateEventsLog } from "./events-log";
+import { qmdReconcile } from "./daemon-jobs";
 
 /**
  * Long-lived daemon process. In phase 3 the inner loop is a quiet heartbeat
@@ -280,6 +281,26 @@ export async function runDaemon(): Promise<void> {
   });
   await writeStatusSnapshot(state, scheduler, watcher, detector);
 
+  // qmd state reconciliation runs in the background — it can take
+  // minutes (model download + embedding). We don't await it; the
+  // events log is the watcher's hand-off point. Multiple concurrent
+  // calls are safe because the per-theme locks serialize the actual
+  // work — and `qmdReconcile` itself is short on no-work paths.
+  let qmdReconcileInFlight: Promise<void> | null = null;
+  const fireQmdReconcile = (): void => {
+    if (qmdReconcileInFlight) return; // coalesce — current cycle will pick up new state
+    qmdReconcileInFlight = qmdReconcile()
+      .catch((err) => {
+        console.error(
+          `[daemon] qmd reconcile failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      })
+      .then(() => {
+        qmdReconcileInFlight = null;
+      });
+  };
+  fireQmdReconcile();
+
   let resolveExit: () => void;
   const exited = new Promise<void>((r) => {
     resolveExit = r;
@@ -317,6 +338,9 @@ export async function runDaemon(): Promise<void> {
     void Promise.all([reconcile(), refirer.reload()]).catch((err) => {
       console.error(`[daemon] reload failed: ${err instanceof Error ? err.message : String(err)}`);
     });
+    // SIGHUP is also the handoff signal from `dither init` / `dither
+    // index update` — reconcile qmd state too.
+    fireQmdReconcile();
   }
 
   process.on("SIGTERM", onTerm);

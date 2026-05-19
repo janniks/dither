@@ -1,18 +1,20 @@
 import { defineCommand } from "citty";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { access, lstat, mkdir, realpath } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { resolveHome } from "../home";
 import { loadConfig, saveConfig, type DitherConfig } from "../config";
-import { openStore } from "../store";
 import { confirm, promptText, stepDone, stepFail, stepStart } from "../prompt";
 import { tildePath } from "../display";
 import { applyQmdImport, discoverQmdCollections } from "../qmd-import";
-import { ProgressLine, embedLoop, formatDuration } from "../progress";
+import { ProgressLine, formatDuration } from "../progress";
 import { QmdDownloadCapture } from "../qmd-download-render";
 import { welcomeDocExists, writeWelcomeIfMissing } from "../welcome-doc";
+import { readDaemonPid, startDaemon } from "../daemon-control";
+import { followEvents, type BaseEvent } from "../events-log";
+import { embedDisabledPath } from "../daemon-jobs";
 
 /**
  * Resolve a `--library <path>` value into a canonical, writable directory
@@ -61,72 +63,177 @@ export function defaultLibraryPath(): string {
 }
 
 /**
- * Best-effort model weight prefetch + initial embedding pass. qmd's
- * embedding/rerank models are downloaded lazily on first use — calling
- * `embed()` here triggers both the model download *and* the per-chunk
- * embedding so the first `dither search` doesn't hang on a surprise pause.
+ * Foreground watch of the daemon's reconcile cycle. Opens the events
+ * log at its current end, signals the daemon via SIGHUP, then follows
+ * the log, rendering progress lines and model-download summaries as
+ * events arrive. Returns when the daemon emits `reconcile-done`.
  *
- * Two visible sub-phases share this one call:
- *   1. Model weights download — qmd prints its own download bar to stdout.
- *      We bracket it with our own `→`/`✓` lines for context.
- *   2. Chunk embedding — once `onProgress` starts firing, the download is
- *      done; we tear down the weights step and start a ProgressLine.
+ * Per-job state machine: a `job-started` event spawns a ProgressLine
+ * (for indexing/embedding) or a QmdDownloadCapture (for model-download);
+ * `job-progress` updates the line; `job-done` finalizes with the rich
+ * summary; `job-skipped` / `job-failed` emit a stepFail and continue.
  *
- * Embedding runs via `embedLoop`, which re-invokes `store.embed()` until a
- * call reports zero chunks done — this dodges qmd's hardcoded 10-min
- * `LLMSession` ceiling that would otherwise silently skip the tail of a
- * large library.
- *
- * Failure is non-fatal: search degrades to lex-only until the models land
- * on a later attempt.
+ * Daemon-dead detection: if no events arrive in 5s AND the daemon PID
+ * is no longer alive, we exit with an error. The watch is non-blocking
+ * for the user (Ctrl-C lands in phase 7).
  */
-async function prefetchWeights(): Promise<{ ok: boolean; reason?: string }> {
+async function watchDaemonReconcile(): Promise<{ ok: boolean; reason?: string }> {
+  const pid = await readDaemonPid();
+  if (!pid) {
+    return { ok: false, reason: "daemon not running" };
+  }
+
+  const ac = new AbortController();
+  const iter = followEvents(ac.signal);
+
+  // Trigger the reconcile after we're positioned at the log end. There's
+  // a small race window where the SIGHUP-induced reconcile-started could
+  // fire before our follower's first poll; followEvents seeks to current
+  // end of file at open, and the next 100ms poll catches the new lines.
+  await new Promise((r) => setTimeout(r, 50));
   try {
-    const store = await openStore();
-    if (!store) return { ok: true }; // empty library — nothing to do
-
-    stepStart("downloading model weights (first run, may take a few minutes)...");
-    const capture = new QmdDownloadCapture();
-    capture.start();
-    let progress: ProgressLine | null = null;
-    let downloadFinished = false;
-
-    const finishDownload = (): void => {
-      if (downloadFinished) return;
-      downloadFinished = true;
-      const dlSummary = capture.finish();
-      if (!dlSummary && !process.stdout.isTTY) {
-        // Non-TTY path: capture never installed; emit a tidy line so logs
-        // have a discernible "download done" event.
-        stepDone("model weights ready");
-      }
-      // dlSummary handled: QmdDownloadCapture printed its own ✓ line.
-      // Cached-model case: no buffer captured → no output; that's fine.
-    };
-
-    const summary = await embedLoop(store, (cumEmbedded, totalEstimate) => {
-      finishDownload();
-      if (!progress) {
-        progress = new ProgressLine("embedding library");
-      }
-      progress.update(cumEmbedded, totalEstimate);
-    });
-
-    // Edge: embed had nothing to do (empty index). The capture window
-    // must still be closed; the model may have been downloaded
-    // beforehand if a previous run left it stale.
-    finishDownload();
-
-    const trunc =
-      summary.truncated > 0 ? ` (${summary.truncated} truncated to fit 2048-token context)` : "";
-    if (progress !== null) {
-      (progress as ProgressLine).done(
-        `embedded ${summary.chunks} chunks in ${formatDuration(summary.durationMs)}${trunc}`,
-      );
-    }
-    return { ok: true };
+    process.kill(pid, "SIGHUP");
   } catch (err) {
-    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+    ac.abort();
+    return { ok: false, reason: `signal daemon failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  // Per-job UI state. Keys are jobId; values are the ProgressLine for
+  // index/embed or the QmdDownloadCapture for model-download.
+  const progressByJob = new Map<string, ProgressLine>();
+  const downloadCaptures = new Map<string, { capture: QmdDownloadCapture; startedAt: number }>();
+  let cycleStarted = false;
+  let result: { ok: boolean; reason?: string } = { ok: true };
+
+  const cleanup = (): void => {
+    for (const p of progressByJob.values()) p.done("interrupted");
+    for (const { capture } of downloadCaptures.values()) capture.finish();
+    progressByJob.clear();
+    downloadCaptures.clear();
+  };
+
+  const watchdog = setTimeout(() => undefined, 0);
+  clearTimeout(watchdog);
+  let lastEventAt = Date.now();
+  const watchdogTimer = setInterval(() => {
+    if (Date.now() - lastEventAt < 5_000) return;
+    // No event for 5s — is the daemon still alive?
+    try {
+      process.kill(pid, 0);
+    } catch {
+      result = { ok: false, reason: "daemon died mid-reconcile" };
+      ac.abort();
+    }
+  }, 1_000);
+
+  try {
+    for await (const event of iter) {
+      lastEventAt = Date.now();
+      if (event.kind === "reconcile-started") {
+        cycleStarted = true;
+        continue;
+      }
+      if (!cycleStarted) continue; // pre-cycle noise (e.g. daemon-started from a previous fire)
+      if (event.kind === "reconcile-done") {
+        break;
+      }
+      if (event.kind === "reconcile-failed") {
+        result = {
+          ok: false,
+          reason: `daemon reconcile failed: ${String(event.error ?? "unknown")}`,
+        };
+        break;
+      }
+      handleJobEvent(event, progressByJob, downloadCaptures);
+    }
+  } finally {
+    clearInterval(watchdogTimer);
+    ac.abort();
+    cleanup();
+  }
+  return result;
+}
+
+function handleJobEvent(
+  event: BaseEvent,
+  progressByJob: Map<string, ProgressLine>,
+  downloadCaptures: Map<string, { capture: QmdDownloadCapture; startedAt: number }>,
+): void {
+  const jobId = typeof event.jobId === "string" ? event.jobId : null;
+  const type = typeof event.type === "string" ? event.type : null;
+  if (!jobId || !type) return;
+
+  if (event.kind === "job-started") {
+    if (type === "model-download") {
+      stepStart("downloading model weights (first run, may take a few minutes)...");
+      const capture = new QmdDownloadCapture();
+      capture.start();
+      downloadCaptures.set(jobId, { capture, startedAt: Date.now() });
+    } else if (type === "indexing") {
+      progressByJob.set(jobId, new ProgressLine("indexing library"));
+    } else if (type === "embedding") {
+      // Close any in-flight download capture: model is ready, embed has begun.
+      // (Daemon emits job-done for download before job-started for embed in
+      // the cached-model case, but we belt-and-suspenders here.)
+      for (const [dlId, { capture }] of downloadCaptures) {
+        capture.finish();
+        downloadCaptures.delete(dlId);
+      }
+      progressByJob.set(jobId, new ProgressLine("embedding library"));
+    }
+    return;
+  }
+
+  if (event.kind === "job-progress") {
+    const line = progressByJob.get(jobId);
+    if (!line) return;
+    const current = typeof event.current === "number" ? event.current : 0;
+    const total = typeof event.total === "number" ? event.total : 0;
+    line.update(current, total);
+    return;
+  }
+
+  if (event.kind === "job-done") {
+    if (type === "model-download") {
+      const dl = downloadCaptures.get(jobId);
+      if (dl) {
+        dl.capture.finish();
+        downloadCaptures.delete(jobId);
+      }
+      return;
+    }
+    const line = progressByJob.get(jobId);
+    if (!line) return;
+    if (type === "indexing") {
+      const filesIndexed = typeof event.filesIndexed === "number" ? event.filesIndexed : 0;
+      line.done(
+        filesIndexed > 0
+          ? `indexed ${filesIndexed} file${filesIndexed === 1 ? "" : "s"}`
+          : "library scanned — no files to index",
+      );
+    } else if (type === "embedding") {
+      const chunks = typeof event.chunks === "number" ? event.chunks : 0;
+      const durationMs = typeof event.durationMs === "number" ? event.durationMs : 0;
+      const truncated = typeof event.truncated === "number" ? event.truncated : 0;
+      const trunc = truncated > 0 ? ` (${truncated} truncated to fit 2048-token context)` : "";
+      line.done(`embedded ${chunks} chunks in ${formatDuration(durationMs)}${trunc}`);
+    }
+    progressByJob.delete(jobId);
+    return;
+  }
+
+  if (event.kind === "job-skipped") {
+    const reason = typeof event.reason === "string" ? event.reason : "unknown";
+    stepFail(`${type} skipped (${reason})`);
+    return;
+  }
+
+  if (event.kind === "job-failed") {
+    const error = typeof event.error === "string" ? event.error : "unknown error";
+    stepFail(`${type} failed: ${error}`);
+    progressByJob.delete(jobId);
+    downloadCaptures.delete(jobId);
+    return;
   }
 }
 
@@ -256,34 +363,35 @@ export const initCommand = defineCommand({
       // existing-file path: silent — user may have edited it.
     }
 
-    // Initialize the qmd index over the new library's subdirs. Empty
-    // library → openStore returns null and no SQLite is created until a
-    // plugin promotes content; that's fine, schema is created lazily then.
-    const store = await openStore();
-    if (!store) {
-      stepDone("library empty — index deferred");
-    } else {
-      const progress = new ProgressLine("indexing library");
-      const startedAt = Date.now();
-      const result = await store.update({
-        onProgress: ({ current, total }) => progress.update(current, total),
-      });
-      const filesTouched = result.indexed + result.updated;
-      const summary =
-        filesTouched > 0
-          ? `indexed ${filesTouched} file${filesTouched === 1 ? "" : "s"} in ${formatDuration(Date.now() - startedAt)}`
-          : `library scanned — no files to index`;
-      progress.done(summary);
+    // `--no-download` means: skip embedding for this init. We honor it
+    // by writing the embed-disabled marker so the daemon's reconciler
+    // skips the embed phase. `dither index update` clears it.
+    if (!args.download) {
+      writeFileSync(embedDisabledPath(), "", "utf-8");
+      stepDone("weights skipped (--no-download)");
     }
 
-    if (args.download) {
-      const result = await prefetchWeights();
-      if (!result.ok) {
-        stepFail(`weight prefetch failed: ${result.reason} (search will fall back to lex-only)`);
+    // Long-running work (model download, indexing, embedding) now runs
+    // inside the daemon. Init ensures the daemon is up, then watches
+    // the events log as it reconciles qmd state. See daemon-jobs.ts.
+    //
+    // Test bypass: vitest tests don't want to spawn real daemons; we
+    // skip the watch in that environment. Daemon-jobs has its own
+    // isolated tests that don't depend on init.
+    const inTestMode = process.env.VITEST_WORKER_ID !== undefined || process.env.CI === "true";
+    if (!inTestMode) {
+      stepStart("starting dither daemon...");
+      const daemonStart = await startDaemon();
+      stepDone(
+        daemonStart.alreadyRunning
+          ? `daemon already running (pid ${daemonStart.pid})`
+          : `daemon started (pid ${daemonStart.pid})`,
+      );
+
+      const watchResult = await watchDaemonReconcile();
+      if (!watchResult.ok) {
+        stepFail(`${watchResult.reason} (search will fall back to lex-only until next run)`);
       }
-      // Success path prints its own `✓ embedded …` / `✓ model weights ready`.
-    } else {
-      stepDone("weights skipped (--no-download)");
     }
 
     console.log("");

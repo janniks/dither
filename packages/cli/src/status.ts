@@ -5,6 +5,7 @@ import { resolveHome } from "./home";
 import { loadConfig } from "./config";
 import { listPlugins } from "./plugin-list";
 import { getDaemonStatus, type DaemonStatus } from "./daemon-control";
+import { readJobsSnapshot, type JobsSnapshot } from "./daemon-jobs";
 
 /**
  * Status surfaces the two location concepts separately:
@@ -39,6 +40,12 @@ export interface DitherStatus {
   collections: number | null;
   entries: number | null;
   daemon: DaemonStatus;
+  /**
+   * Snapshot of qmd-mutating job state, sourced from the events log
+   * cross-checked against live lock holders. Includes deferred-work
+   * markers so the user sees pending reindex / cancelled-embed state.
+   */
+  jobs: JobsSnapshot;
 }
 
 async function countMarkdownEntries(root: string): Promise<{
@@ -116,6 +123,7 @@ export async function getStatus(): Promise<DitherStatus> {
   }
 
   const daemon = await getDaemonStatus();
+  const jobs = await readJobsSnapshot();
   return {
     configDir,
     configDirSource,
@@ -126,5 +134,6 @@ export async function getStatus(): Promise<DitherStatus> {
     collections,
     entries,
     daemon,
+    jobs,
   };
 }

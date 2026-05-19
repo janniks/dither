@@ -65,6 +65,54 @@ function printHumanStatus(s: DitherStatus): void {
   } else {
     console.log(`daemon:      ${pc.dim("not running")}`);
   }
+
+  // qmd job state. Quiet when idle + no recent activity; shows current
+  // job inline, recent jobs as one line each, and marker hints.
+  const j = s.jobs;
+  const hasContent =
+    j.current.length > 0 || j.recent.length > 0 || j.needsReindex || j.embedDisabled;
+  if (hasContent) {
+    console.log("");
+    if (j.current.length === 0) {
+      console.log(`current:     ${pc.dim("none")}`);
+    } else {
+      for (const c of j.current) {
+        const progress =
+          typeof c.current === "number" && typeof c.total === "number" && c.total > 0
+            ? ` ${c.current}/${c.total}`
+            : "";
+        const elapsed = Math.round((Date.now() - new Date(c.startedAt).getTime()) / 1000);
+        console.log(
+          `current:     ${pc.green(c.type)}${progress}  ${pc.dim(`(${elapsed}s)`)}`,
+        );
+      }
+    }
+    if (j.recent.length > 0) {
+      console.log("recent:");
+      for (const r of j.recent.slice(-5)) {
+        let label = `${pc.dim("✓")} ${r.type}`;
+        if (r.type === "indexing" && typeof r.filesIndexed === "number") {
+          label = `${pc.dim("✓")} indexed ${fmt(r.filesIndexed)} file${r.filesIndexed === 1 ? "" : "s"}`;
+        } else if (r.type === "embedding" && typeof r.chunks === "number") {
+          const trunc = r.truncated && r.truncated > 0 ? ` (${r.truncated} truncated)` : "";
+          label = `${pc.dim("✓")} embedded ${fmt(r.chunks)} chunks${trunc}`;
+        } else if (r.type === "model-download") {
+          label = `${pc.dim("✓")} model-download`;
+        }
+        if (r.failed) label = `${pc.yellow("⚠")} ${r.type} failed: ${r.failed}`;
+        if (r.skipped) label = `${pc.dim("⊘")} ${r.type} skipped (${r.skipped})`;
+        console.log(`  ${label}`);
+      }
+    }
+    if (j.needsReindex) {
+      console.log(`             ${pc.dim("needs-reindex pending")}`);
+    }
+    if (j.embedDisabled) {
+      console.log(
+        `             ${pc.dim("embed-disabled (run `dither index update` to resume)")}`,
+      );
+    }
+  }
 }
 
 export const statusCommand = defineCommand({
