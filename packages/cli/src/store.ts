@@ -23,10 +23,9 @@ export async function openStore(): Promise<QMDStore | null> {
   mkdirSync(root, { recursive: true });
 
   const collections: Record<string, Collection> = {};
-  for (const name of readdirSync(root)) {
-    const fullPath = join(root, name);
-    if (statSync(fullPath).isDirectory()) {
-      collections[name] = { path: fullPath, pattern: "**/*.md" };
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      collections[entry.name] = { path: join(root, entry.name), pattern: "**/*.md" };
     }
   }
 

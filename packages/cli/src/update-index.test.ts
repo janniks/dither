@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -45,6 +45,20 @@ describe("updateIndex", () => {
     const { search } = await import("./search");
     const hits = await search({ query: "quick", mode: "lex" });
     expect(hits.length).toBeGreaterThan(0);
+  });
+
+  it("does not index symlinked top-level library children", async () => {
+    const outside = join(home, "outside");
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(join(outside, "leak.md"), "# leak\n\noutsideboundarytoken", "utf-8");
+    mkdirSync(join(home, "entries"), { recursive: true });
+    symlinkSync(outside, join(home, "entries", "linked"), "dir");
+
+    const { updateIndex } = await import("./update-index");
+    await updateIndex();
+
+    const { search } = await import("./search");
+    expect(await search({ query: "outsideboundarytoken", mode: "lex" })).toEqual([]);
   });
 
   it("search WITHOUT a prior updateIndex call returns no hits for newly-written files", async () => {
