@@ -20,6 +20,7 @@
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
+    "prepack": "npm run build",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
