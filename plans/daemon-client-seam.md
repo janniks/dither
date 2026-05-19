@@ -50,4 +50,4 @@ End-to-end: `init.ts` builds a `daemonClient`, calls `triggerAndWatch`, renders 
 | commit | summary |
 |--|--|
 | 65d9b06 | Phase 1 — daemonClient built with DI-style transport; 7 tests cover all paths (start-on-demand, reuse, filter, throws, abort, compose) |
-| <next> | Phase 2 — init.ts watch flow rewritten on triggerAndWatch + AbortController; ~100 LoC of orchestration deleted; 372 tests pass. VITEST_WORKER_ID env check left at init's level (pragmatic — tests don't reach daemonClient construction); seam itself stays pure |
+| cd1e4c1 | Phase 2 — init.ts watch flow rewritten on triggerAndWatch + AbortController; ~100 LoC of orchestration deleted; 372 tests pass. VITEST_WORKER_ID env check left at init's level (pragmatic — tests don't reach daemonClient construction); seam itself stays pure |
