@@ -3,11 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "generate": "fumadocs-mdx",
+    "prebuild": "npm run generate",
     "build": "next build",
+    "pretypecheck": "npm run generate",
+    "typecheck": "tsc --noEmit",
     "dev": "next dev",
     "dev:turbo": "next dev --turbo",
     "start": "next start",
-    "postinstall": "fumadocs-mdx"
+    "postinstall": "npm run generate"
   },
   "dependencies": {
     "@paper-design/shaders-react": "^0.0.76",
