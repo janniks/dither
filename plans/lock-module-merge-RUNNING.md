@@ -24,7 +24,7 @@ End-to-end: `locks.ts` exports `LockTheme`, `LOCK_THEMES`, `acquireTheme`, `rele
 - [x] `acquireTheme("index")` writes `~/.dither/locks/qmd-index.lock`.
 - [x] `status("index")` returns `{startedAt, pid} | null`; stale (dead-PID) entries return null.
 - [x] `statusAll()` returns `Record<LockTheme, LockEntry | null>`.
-- [ ] `isPidAlive` exists exactly once in the package. (Lands at Phase 2 — qmd-locks.ts still imports its own.)
+- [x] `isPidAlive` exists exactly once in the package. (Landed with Phase 2.)
 - [x] New theme-surface tests pass.
 
 ---
@@ -36,10 +36,10 @@ End-to-end: `locks.ts` exports `LockTheme`, `LOCK_THEMES`, `acquireTheme`, `rele
 End-to-end: every importer of `qmd-locks` switches to `locks`. `qmd-locks.ts` and `qmd-locks.test.ts` deleted. Tests still green.
 
 **Acceptance:**
-- [ ] No `qmd-locks` references remain (search confirms).
-- [ ] `commands/index.ts`, `daemon-jobs.ts`, `plugin-run.ts`, `commands/init.ts`, `commands/search.ts`, `status.ts` call `acquireTheme`/`status`/`lockPath` instead of the `qmd*` names.
-- [ ] `qmd-locks.ts` deleted; `qmd-locks.test.ts` deleted (assertions absorbed by `locks.test.ts`).
-- [ ] `npm test` and `npm run typecheck` pass.
+- [x] No `qmd-locks` references remain (search confirms).
+- [x] `commands/index.ts`, `daemon-jobs.ts`, `plugin-run.ts`, `commands/search.ts`, `commands/index.test.ts`, `cli-dispatch.test.ts` call `acquireTheme`/`status`/`themeLockPath` instead of the `qmd*` names.
+- [x] `qmd-locks.ts` deleted; `qmd-locks.test.ts` deleted (assertions absorbed by `locks.test.ts`).
+- [x] `npm test` and `npm run typecheck` pass.
 
 ---
 

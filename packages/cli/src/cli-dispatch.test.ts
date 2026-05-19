@@ -86,9 +86,9 @@ describe("CLI dispatch", () => {
 
     // Manually create a fake qmd-embed.lock to simulate the daemon
     // being mid-embed during search.
-    const { qmdLockPath } = await import("./qmd-locks");
+    const { themeLockPath } = await import("./locks");
     mkdirSync(join(home, "locks"), { recursive: true });
-    writeFileSync(qmdLockPath("embed"), String(process.pid), "utf-8");
+    writeFileSync(themeLockPath("embed"), String(process.pid), "utf-8");
 
     const { main } = await import("./main");
     const output = await captureLogs(async () => {

@@ -5,12 +5,13 @@ import { assertInitialized } from "../config";
 import { readDaemonPid, startDaemon } from "../daemon-control";
 import { embedDisabledPath, needsReindexPath } from "../daemon-jobs";
 import {
-  qmdLockPath,
-  qmdLockStatus,
-  releaseQmdLock,
-  tryAcquireQmdLock,
-  type QmdLockTheme,
-} from "../qmd-locks";
+  acquireTheme,
+  releaseTheme,
+  status,
+  statusAll,
+  themeLockPath,
+  type LockTheme,
+} from "../locks";
 import { updateIndex } from "../update-index";
 
 /**
@@ -45,12 +46,12 @@ const updateSubcommand = defineCommand({
     // daemon is already indexing, print the uniform busy message,
     // touch needs-reindex (so the daemon's next reconcile covers any
     // new files), and exit.
-    const lock = await tryAcquireQmdLock("index");
-    if (lock.busy) {
-      const elapsedSec = Math.max(
-        0,
-        Math.round((Date.now() - lock.startedAt.getTime()) / 1000),
-      );
+    const handle = await acquireTheme("index");
+    if (handle === null) {
+      const busy = status("index");
+      const elapsedSec = busy
+        ? Math.max(0, Math.round((Date.now() - busy.startedAt.getTime()) / 1000))
+        : 0;
       console.error(
         `${pc.yellow("⚠")} qmd is busy: indexing (started ${elapsedSec}s ago).`,
       );
@@ -64,7 +65,7 @@ const updateSubcommand = defineCommand({
     try {
       result = await updateIndex();
     } finally {
-      await releaseQmdLock(lock);
+      await releaseTheme(handle);
     }
     console.log(
       `index updated: ${result.collections} collection(s), ` +
@@ -109,16 +110,14 @@ const cancelSubcommand = defineCommand({
   },
   async run() {
     await assertInitialized();
-    const locks = qmdLockStatus();
-    const themes = (Object.keys(locks) as QmdLockTheme[]).filter(
-      (t) => locks[t] !== undefined,
-    );
-    if (themes.length === 0) {
+    const locks = statusAll();
+    const active = (Object.entries(locks) as [LockTheme, (typeof locks)[LockTheme]][])
+      .filter((entry): entry is [LockTheme, NonNullable<(typeof locks)[LockTheme]>] => entry[1] !== null);
+    if (active.length === 0) {
       console.log(`${pc.dim("nothing to cancel — no qmd job running.")}`);
       return;
     }
-    for (const theme of themes) {
-      const info = locks[theme]!;
+    for (const [theme, info] of active) {
       // For embeds specifically, write the disable marker first so the
       // daemon's post-job reconcile doesn't immediately re-queue.
       if (theme === "embed") {
@@ -140,10 +139,10 @@ const cancelSubcommand = defineCommand({
   },
 });
 
-async function waitForLockRelease(theme: QmdLockTheme, timeoutMs: number): Promise<void> {
+async function waitForLockRelease(theme: LockTheme, timeoutMs: number): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    if (!existsSync(qmdLockPath(theme))) return;
+    if (!existsSync(themeLockPath(theme))) return;
     await new Promise((r) => setTimeout(r, 100));
   }
   // Timeout — caller proceeds anyway; the lock will be reclaimed via

@@ -9,11 +9,15 @@ import { assertInitialized, type DitherConfig } from "./config";
 import { parsePackage } from "./manifest";
 import { updateIndex } from "./update-index";
 import { needsReindexPath } from "./daemon-jobs";
-import { tryAcquireQmdLock, releaseQmdLock } from "./qmd-locks";
 import { getGlobalEnv } from "./global-env";
 import { validateCollectionPath, validateGrantPattern, grantsCover } from "./collection-paths";
 import { resolveCollection } from "./collection-registry";
-import { acquire as acquireLock, release as releaseLock } from "./locks";
+import {
+  acquire as acquireLock,
+  release as releaseLock,
+  acquireTheme,
+  releaseTheme,
+} from "./locks";
 import { startRun, type RunJournal } from "./journal";
 import { isMacOS, findProtectedPathInError, formatFdaError, FDA_REQUIRED } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
@@ -526,8 +530,8 @@ async function runPluginLocked(
       // needs-reindex so the daemon coalesces this into its next
       // post-job reconciliation. Promoted files are already on disk —
       // only the rescan is deferred.
-      const indexLock = await tryAcquireQmdLock("index");
-      if (indexLock.busy) {
+      const indexLock = await acquireTheme("index");
+      if (indexLock === null) {
         await writeFile(needsReindexPath(), "", "utf-8").catch(() => undefined);
         await journal.append("reindex-deferred", {
           reason: "qmd-index.lock busy",
@@ -537,7 +541,7 @@ async function runPluginLocked(
         try {
           await updateIndex(touchedCollections);
         } finally {
-          await releaseQmdLock(indexLock);
+          await releaseTheme(indexLock);
         }
       }
     }

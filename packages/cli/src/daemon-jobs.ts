@@ -4,14 +4,9 @@ import { randomUUID } from "node:crypto";
 import { resolveHome } from "./home";
 import { openStore } from "./store";
 import { appendEvent } from "./events-log";
-import {
-  tryAcquireQmdLock,
-  releaseQmdLock,
-  type QmdLockHandle,
-} from "./qmd-locks";
+import { acquireTheme, releaseTheme, statusAll, type LockHandle, type LockTheme } from "./locks";
 import { embedLoop } from "./progress";
 import { readEvents, type BaseEvent } from "./events-log";
-import { qmdLockStatus } from "./qmd-locks";
 
 /**
  * Daemon-side qmd state reconciler + job runners.
@@ -31,7 +26,7 @@ import { qmdLockStatus } from "./qmd-locks";
  *     reconciler skips embedding while this exists. Cleared by
  *     `dither index update`.
  *
- * Lock topology (see qmd-locks.ts): one lock per job theme. Jobs
+ * Lock topology (see locks.ts → theme surface): one lock per job theme. Jobs
  * acquire their theme lock at start, release at end. Failed
  * acquisitions (lock already held by another process) emit a
  * `job-skipped` event and the reconciler continues to the next phase.
@@ -139,10 +134,10 @@ function reduceJobsSnapshot(events: BaseEvent[]): JobsSnapshot {
   // Cross-check inflight against lock state: a "current" job whose lock
   // isn't held anymore is stale (daemon crashed between job-started and
   // job-done) and shouldn't be reported as live.
-  const locks = qmdLockStatus();
+  const locks = statusAll();
   const liveCurrent: CurrentJob[] = [];
   for (const job of inflight.values()) {
-    const theme =
+    const theme: LockTheme =
       job.type === "model-download" ? "download" : job.type === "indexing" ? "index" : "embed";
     if (locks[theme]) liveCurrent.push(job);
   }
@@ -244,8 +239,8 @@ async function runIndexJob(
   store: NonNullable<Awaited<ReturnType<typeof openStore>>>,
   reason: string,
 ): Promise<boolean> {
-  const lockResult = await tryAcquireQmdLock("index");
-  if (lockResult.busy) {
+  const handle = await acquireTheme("index");
+  if (handle === null) {
     await appendEvent({
       kind: "job-skipped",
       type: "indexing",
@@ -253,7 +248,7 @@ async function runIndexJob(
     });
     return false;
   }
-  return runJobWithLock(lockResult, async (jobId, emitProgress) => {
+  return runJobWithLock(handle, "index", async (jobId, emitProgress) => {
     await appendEvent({ kind: "job-started", jobId, type: "indexing", reason });
     const result = await store.update({
       onProgress: ({ current, total }) => {
@@ -283,12 +278,12 @@ async function runIndexJob(
 async function runEmbedJob(
   store: NonNullable<Awaited<ReturnType<typeof openStore>>>,
 ): Promise<boolean> {
-  const lockResult = await tryAcquireQmdLock("embed");
-  if (lockResult.busy) {
+  const handle = await acquireTheme("embed");
+  if (handle === null) {
     await appendEvent({ kind: "job-skipped", type: "embedding", reason: "lock-busy" });
     return false;
   }
-  return runJobWithLock(lockResult, async (jobId, emitProgress) => {
+  return runJobWithLock(handle, "embed", async (jobId, emitProgress) => {
     let downloadJobId: string | null = null;
     // Optimistic: emit a model-download job-started; if the first
     // embed-onProgress arrives quickly the model was already cached
@@ -335,13 +330,15 @@ async function runEmbedJob(
  * abort), and exposes a debounced `emitProgress` callback.
  */
 async function runJobWithLock(
-  lockResult: QmdLockHandle,
+  handle: LockHandle,
+  theme: LockTheme,
   fn: (
     jobId: string,
     emitProgress: (info: { current: number; total: number }) => void,
   ) => Promise<void>,
 ): Promise<boolean> {
   const jobId = randomUUID();
+  const jobType = theme === "index" ? "indexing" : "embedding";
   let lastEmitAt = 0;
   const PROGRESS_DEBOUNCE_MS = 100;
   const emitProgress = (info: { current: number; total: number }): void => {
@@ -353,7 +350,7 @@ async function runJobWithLock(
     void appendEvent({
       kind: "job-progress",
       jobId,
-      type: lockResult.theme === "index" ? "indexing" : "embedding",
+      type: jobType,
       current: info.current,
       total: info.total,
     });
@@ -365,11 +362,11 @@ async function runJobWithLock(
     await appendEvent({
       kind: "job-failed",
       jobId,
-      type: lockResult.theme === "index" ? "indexing" : "embedding",
+      type: jobType,
       error: err instanceof Error ? err.message : String(err),
     });
     throw err;
   } finally {
-    await releaseQmdLock(lockResult);
+    await releaseTheme(handle);
   }
 }

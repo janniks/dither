@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCommand } from "citty";
 import { embedDisabledPath, needsReindexPath } from "../daemon-jobs";
-import { qmdLockPath } from "../qmd-locks";
+import { themeLockPath } from "../locks";
 
 async function captureLogs(fn: () => Promise<void>): Promise<string> {
   const logs: string[] = [];
@@ -69,7 +69,7 @@ describe("dither index commands", () => {
 
     it("writes embed-disabled marker when cancelling an active embed lock", async () => {
       // Set up config + fake lock file pointing at our own PID so
-      // isPidAlive() returns true and qmd-locks treats the lock as
+      // isPidAlive() returns true and the locks module treats the lock as
       // active. Stub process.kill so cancel doesn't actually SIGTERM
       // the test runner.
       writeFileSync(
@@ -82,7 +82,7 @@ describe("dither index commands", () => {
         "utf-8",
       );
       mkdirSync(join(home, "locks"), { recursive: true });
-      writeFileSync(qmdLockPath("embed"), String(process.pid), "utf-8");
+      writeFileSync(themeLockPath("embed"), String(process.pid), "utf-8");
 
       const killSpy = vi.spyOn(process, "kill").mockImplementation((_pid: number, signal?: string | number) => {
         // Probe (signal === 0) must still return true.
@@ -91,7 +91,7 @@ describe("dither index commands", () => {
           // Simulate the holder cleaning up its lock on SIGTERM so the
           // wait-for-release path exits promptly instead of timing out.
           try {
-            unlinkSync(qmdLockPath("embed"));
+            unlinkSync(themeLockPath("embed"));
           } catch {
             // Already gone.
           }
@@ -156,7 +156,7 @@ describe("dither index commands", () => {
 
       // Hand-place qmd-index.lock with our own PID so it's "live".
       mkdirSync(join(home, "locks"), { recursive: true });
-      writeFileSync(qmdLockPath("index"), String(process.pid), "utf-8");
+      writeFileSync(themeLockPath("index"), String(process.pid), "utf-8");
 
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
       const exitCode = process.exitCode;

@@ -2,7 +2,7 @@ import { defineCommand } from "citty";
 import pc from "picocolors";
 import { existsSync } from "node:fs";
 import { search, type SearchHit } from "../search";
-import { qmdLockPath } from "../qmd-locks";
+import { themeLockPath } from "../locks";
 import { assertInitialized } from "../config";
 
 // Collapse whitespace and trim — titles can contain newlines or tweet bodies.
@@ -175,7 +175,7 @@ export const searchCommand = defineCommand({
     // so partial vector results aren't mistaken for "the doc isn't
     // there." Cheap: one stat call. Doesn't fire when no embed lock is
     // held (the common case).
-    if (existsSync(qmdLockPath("embed"))) {
+    if (existsSync(themeLockPath("embed"))) {
       console.log("");
       console.log(
         pc.dim(
