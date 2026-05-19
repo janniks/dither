@@ -22,7 +22,9 @@ export async function openStore(): Promise<QMDStore | null> {
   // See notes/qmd-library-edge-cases.md (#2).
   mkdirSync(root, { recursive: true });
 
-  const collections: Record<string, Collection> = {};
+  // Null-prototype to keep reserved keys (__proto__, constructor) safe as
+  // ordinary collection names rather than mutating Object.prototype.
+  const collections: Record<string, Collection> = Object.create(null);
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     if (entry.isDirectory()) {
       collections[entry.name] = { path: join(root, entry.name), pattern: "**/*.md" };
