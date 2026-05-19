@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { basename, dirname, join } from "node:path";
 import { resolveHome } from "./home";
 
 export const CONFIG_SCHEMA_VERSION = 2;
@@ -141,8 +142,11 @@ function validate(parsed: unknown, path: string): DitherConfig {
 
 export async function saveConfig(cfg: DitherConfig): Promise<void> {
   const path = configPath();
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(cfg, null, 2)}\n`, "utf-8");
+  const dir = dirname(path);
+  await mkdir(dir, { recursive: true });
+  const tmp = join(dir, `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`);
+  await writeFile(tmp, `${JSON.stringify(cfg, null, 2)}\n`, "utf-8");
+  await rename(tmp, path);
 }
 
 export async function assertInitialized(): Promise<DitherConfig> {
