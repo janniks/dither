@@ -8,3 +8,9 @@ dist
 !.env.example
 coverage
 test.local/
+
+# Agent / tooling state (per-clone, never committed)
+.claude/
+.clawpatch/
+.mcp.json
+.playwright-mcp/
