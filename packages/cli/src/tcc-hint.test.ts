@@ -34,6 +34,18 @@ runOnMac("TCC hint (macOS)", () => {
     expect(findProtectedPathInError(blob)).toBe(join(home, "Library/Messages/chat.db"));
   });
 
+  it("findProtectedPathInError extracts quoted Application Support paths", () => {
+    const path = join(home, "Library/Application Support/AddressBook/Sources/x");
+    const blob = `EPERM: operation not permitted, open '${path}'`;
+    expect(findProtectedPathInError(blob)).toBe(path);
+  });
+
+  it("findProtectedPathInError extracts unquoted Application Support paths", () => {
+    const path = join(home, "Library/Application Support/com.apple.TCC/TCC.db");
+    const blob = `EPERM: operation not permitted, open ${path}`;
+    expect(findProtectedPathInError(blob)).toBe(path);
+  });
+
   it("findProtectedPathInError returns null for unprotected paths", () => {
     expect(findProtectedPathInError("EPERM: opening /etc/passwd")).toBeNull();
     expect(findProtectedPathInError("nothing to see here")).toBeNull();

@@ -52,8 +52,11 @@ export function tccPrefixFor(path: string, home = homedir()): string | null {
  * Used at runtime to detect that a non-zero exit was an FDA failure.
  */
 export function findProtectedPathInError(blob: string): string | null {
-  const matches = blob.match(/\/[^\s"']*Library[^\s"']*/g);
-  if (!matches) return null;
+  const quoted = Array.from(
+    blob.matchAll(/["'](\/[^\0"']*Library[^\0"']*)["']/g),
+    (m) => m[1]!,
+  );
+  const matches = [...quoted, ...(blob.match(/\/[^\0\r\n"']*Library[^\0\r\n"']*/g) ?? [])];
   for (const candidate of matches) {
     if (tccPrefixFor(candidate)) return candidate;
   }
