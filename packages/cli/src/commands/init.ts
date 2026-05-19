@@ -11,8 +11,14 @@ import { applyQmdImport, discoverQmdCollections } from "../qmd-import";
 import { ProgressLine, formatDuration } from "../progress";
 import { QmdDownloadCapture } from "../qmd-download-render";
 import { welcomeDocExists, writeWelcomeIfMissing } from "../welcome-doc";
-import { readDaemonPid, startDaemon } from "../daemon-control";
-import { followGlobal, type LogEvent } from "../run-log";
+import { startDaemon } from "../daemon-control";
+import {
+  daemonClient,
+  DaemonDiedError,
+  DaemonReconcileFailedError,
+  DaemonStoppedDuringReconcileError,
+  type DaemonEvent,
+} from "../daemon-client";
 import { embedDisabledPath } from "../daemon-jobs";
 
 /**
@@ -74,38 +80,20 @@ export function defaultLibraryPath(): string {
 }
 
 /**
- * Foreground watch of the daemon's reconcile cycle. Opens the events
- * log at its current end, signals the daemon via SIGHUP, then follows
- * the log, rendering progress lines and model-download summaries as
- * events arrive. Returns when the daemon emits `reconcile-done`.
+ * Foreground watch of the daemon's reconcile cycle. Delegates the
+ * orchestration (SIGHUP trigger, Run-log follow, dead-PID probe,
+ * reconcile-done/failed/stopped handling) to `daemonClient`; this
+ * function is now a pure renderer over the yielded events.
  *
- * Per-job state machine: a `job-started` event spawns a ProgressLine
- * (for indexing/embedding) or a QmdDownloadCapture (for model-download);
- * `job-progress` updates the line; `job-done` finalizes with the rich
- * summary; `job-skipped` / `job-failed` emit a stepFail and continue.
- *
- * Daemon-dead detection: if no events arrive in 5s AND the daemon PID
- * is no longer alive, we exit with an error. The watch is non-blocking
- * for the user (Ctrl-C lands in phase 7).
+ * Detach via single AbortController wired to SIGINT/SIGHUP. The daemon
+ * keeps running; only the foreground watcher disengages.
  */
 async function watchDaemonReconcile(): Promise<{
   ok: boolean;
   reason?: string;
   detached?: boolean;
 }> {
-  const pid = await readDaemonPid();
-  if (!pid) {
-    return { ok: false, reason: "daemon not running" };
-  }
-
   const ac = new AbortController();
-  const iter = followGlobal(ac.signal);
-
-  // Single Ctrl-C (SIGINT) or terminal close (SIGHUP) disconnects the
-  // watcher cleanly — the daemon never sees the signal (it's detached
-  // with its own session). Init prints a detach block + epilogue and
-  // exits 0. The actual cancel-the-running-job path is a separate
-  // explicit command (`dither index cancel`).
   let detached = false;
   const onDetach = (): void => {
     if (detached) return;
@@ -115,81 +103,43 @@ async function watchDaemonReconcile(): Promise<{
   process.on("SIGINT", onDetach);
   process.on("SIGHUP", onDetach);
 
-  // Trigger the reconcile after we're positioned at the log end. There's
-  // a small race window where the SIGHUP-induced reconcile-started could
-  // fire before our follower's first poll; followEvents seeks to current
-  // end of file at open, and the next 100ms poll catches the new lines.
-  await new Promise((r) => setTimeout(r, 50));
-  try {
-    process.kill(pid, "SIGHUP");
-  } catch (err) {
-    ac.abort();
-    return { ok: false, reason: `signal daemon failed: ${err instanceof Error ? err.message : String(err)}` };
-  }
-
-  // Per-job UI state. Keys are jobId; values are the ProgressLine for
-  // index/embed or the QmdDownloadCapture for model-download.
+  const client = daemonClient();
   const progressByJob = new Map<string, ProgressLine>();
   const downloadCaptures = new Map<string, { capture: QmdDownloadCapture; startedAt: number }>();
-  let cycleStarted = false;
-  let result: { ok: boolean; reason?: string } = { ok: true };
 
   const cleanup = (): void => {
     for (const p of progressByJob.values()) p.done("interrupted");
     for (const { capture } of downloadCaptures.values()) capture.finish();
     progressByJob.clear();
     downloadCaptures.clear();
-  };
-
-  const watchdog = setTimeout(() => undefined, 0);
-  clearTimeout(watchdog);
-  let lastEventAt = Date.now();
-  const watchdogTimer = setInterval(() => {
-    if (Date.now() - lastEventAt < 5_000) return;
-    // No event for 5s — is the daemon still alive?
-    try {
-      process.kill(pid, 0);
-    } catch {
-      result = { ok: false, reason: "daemon died mid-reconcile" };
-      ac.abort();
-    }
-  }, 1_000);
-
-  try {
-    for await (const event of iter) {
-      lastEventAt = Date.now();
-      if (event.kind === "reconcile-started") {
-        cycleStarted = true;
-        continue;
-      }
-      if (!cycleStarted) continue; // pre-cycle noise (e.g. daemon-started from a previous fire)
-      if (event.kind === "reconcile-done") {
-        break;
-      }
-      if (event.kind === "reconcile-failed") {
-        result = {
-          ok: false,
-          reason: `daemon reconcile failed: ${String(event.error ?? "unknown")}`,
-        };
-        break;
-      }
-      handleJobEvent(event, progressByJob, downloadCaptures);
-    }
-  } finally {
-    clearInterval(watchdogTimer);
-    ac.abort();
-    cleanup();
     process.off("SIGINT", onDetach);
     process.off("SIGHUP", onDetach);
+  };
+
+  try {
+    for await (const event of client.triggerAndWatch({ signal: ac.signal })) {
+      if (event.kind === "reconcile-done") break;
+      handleJobEvent(event, progressByJob, downloadCaptures);
+    }
+    cleanup();
+    return detached ? { ok: true, detached: true } : { ok: true };
+  } catch (err) {
+    cleanup();
+    if (err instanceof DaemonDiedError) {
+      return { ok: false, reason: "daemon died mid-reconcile" };
+    }
+    if (err instanceof DaemonStoppedDuringReconcileError) {
+      return { ok: false, reason: "daemon stopped mid-reconcile" };
+    }
+    if (err instanceof DaemonReconcileFailedError) {
+      return { ok: false, reason: err.message };
+    }
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
-  if (detached) {
-    return { ok: true, detached: true };
-  }
-  return result;
 }
 
 function handleJobEvent(
-  event: LogEvent,
+  event: DaemonEvent,
   progressByJob: Map<string, ProgressLine>,
   downloadCaptures: Map<string, { capture: QmdDownloadCapture; startedAt: number }>,
 ): void {
@@ -432,7 +382,7 @@ export const initCommand = defineCommand({
         // --no-wait: signal the daemon to reconcile, then exit without
         // following the events log. CI / scripted use case.
         try {
-          process.kill(daemonStart.pid, "SIGHUP");
+          await daemonClient().signalReconcile();
         } catch (err) {
           stepFail(
             `signal daemon failed: ${err instanceof Error ? err.message : String(err)}`,

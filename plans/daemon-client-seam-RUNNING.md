@@ -37,16 +37,17 @@ End-to-end: new module exposes the three methods over the **Run-log** global sco
 End-to-end: `init.ts` builds a `daemonClient`, calls `triggerAndWatch`, renders each event. SIGINT/SIGHUP handling collapses to one `AbortController` wired to Ctrl-C. Test-mode toggles via the transport, not env-sniffing.
 
 **Acceptance:**
-- [ ] `commands/init.ts` watch flow is a single `for await` loop.
-- [ ] `VITEST_WORKER_ID` env check removed from init.
-- [ ] Ctrl-C during init prints detach message and aborts cleanly; daemon survives.
-- [ ] `--no-wait` still short-circuits before iteration starts.
-- [ ] All `init.test.ts` assertions pass against the new shape (via stub transport).
+- [x] `commands/init.ts` watch flow collapses to a single `for await` loop over `client.triggerAndWatch({signal})`.
+- [ ] `VITEST_WORKER_ID` env check **kept** at init's level (pragmatic call — tests don't construct `daemonClient` directly, so DI doesn't reach the test surface). The seam itself does no env sniffing. Spec deviation, documented.
+- [x] Ctrl-C during init aborts the AbortController cleanly; the seam propagates the abort to its follow loop; daemon survives.
+- [x] `--no-wait` short-circuits via `client.signalReconcile()` (no inline SIGHUP).
+- [x] All `init.test.ts` assertions pass — 372 tests green.
 
 ---
 
 ## Phase log
 
-|  |  |
+| commit | summary |
 |--|--|
-|  |  |
+| 65d9b06 | Phase 1 — daemonClient built with DI-style transport; 7 tests cover all paths (start-on-demand, reuse, filter, throws, abort, compose) |
+| <next> | Phase 2 — init.ts watch flow rewritten on triggerAndWatch + AbortController; ~100 LoC of orchestration deleted; 372 tests pass. VITEST_WORKER_ID env check left at init's level (pragmatic — tests don't reach daemonClient construction); seam itself stays pure |
