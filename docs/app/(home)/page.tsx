@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Boxes, Plug, Quote, Terminal } from "lucide-react";
+import { ArrowRight, Quote } from "lucide-react";
 import { RotatingHeadline } from "./rotating-headline";
 import { FooterSection } from "./footer-section";
 import { FeatureGrid } from "./marketing/feature-grid";
@@ -7,8 +7,6 @@ import { NoBsStrip } from "./marketing/no-bs-strip";
 import { PluginUsp } from "./marketing/plugin-usp";
 import { WaveRow } from "./marketing/wave-row";
 import { ScheduleWatchDemo } from "./marketing/schedule-watch-demo";
-import { ArchitectureDiagram } from "./marketing/architecture-diagram";
-import { TerminalMcp } from "./marketing/terminal-mcp";
 import { TerminalTabs } from "./marketing/terminal-tabs";
 import { JustMarkdown } from "./marketing/just-markdown";
 import { SphereRow } from "./marketing/sphere-row";
@@ -16,31 +14,6 @@ import { Manifesto } from "./marketing/manifesto";
 import { Faq } from "./marketing/faq";
 import { OssCard } from "./marketing/oss-card";
 import { DitheredCta } from "./marketing/dithered-cta";
-import { AgentMarquee } from "./marketing/agent-marquee";
-
-const links = [
-  {
-    href: "/docs/cli",
-    title: "CLI reference",
-    description:
-      "Every command, every flag, with worked examples for ingest, index, and search.",
-    icon: Terminal,
-  },
-  {
-    href: "/docs/plugins",
-    title: "Plugin authoring",
-    description:
-      "Write a Deno plugin that pulls data from the world into a collection.",
-    icon: Plug,
-  },
-  {
-    href: "/docs/concepts",
-    title: "Concepts",
-    description:
-      "Entries, collections, grants, the run-dir model — the mental picture behind the CLI.",
-    icon: Boxes,
-  },
-];
 
 export default function HomePage() {
   return (
