@@ -89,9 +89,10 @@ const TextRotate = forwardRef<TextRotateRef, TextRotateProps>(
     ref
   ) => {
     const [currentTextIndex, setCurrentTextIndex] = useState(0);
+    const hasTexts = texts.length > 0;
+    const currentText = texts[currentTextIndex] ?? "";
 
     const elements = useMemo(() => {
-      const currentText = texts[currentTextIndex];
       if (splitBy === "characters") {
         const text = currentText.split(" ");
         return text.map((word, i) => ({
@@ -104,7 +105,7 @@ const TextRotate = forwardRef<TextRotateRef, TextRotateProps>(
         : splitBy === "lines"
           ? currentText.split("\n")
           : currentText.split(splitBy);
-    }, [texts, currentTextIndex, splitBy]);
+    }, [currentText, splitBy]);
 
     const getStaggerDelay = useCallback(
       (index: number, totalChars: number) => {
@@ -134,42 +135,46 @@ const TextRotate = forwardRef<TextRotateRef, TextRotateProps>(
     );
 
     const next = useCallback(() => {
+      if (!hasTexts) return;
       const nextIndex =
-        currentTextIndex === texts.length - 1
+        currentTextIndex >= texts.length - 1
           ? loop
             ? 0
-            : currentTextIndex
+            : texts.length - 1
           : currentTextIndex + 1;
       if (nextIndex !== currentTextIndex) {
         handleIndexChange(nextIndex);
       }
-    }, [currentTextIndex, texts.length, loop, handleIndexChange]);
+    }, [hasTexts, currentTextIndex, texts.length, loop, handleIndexChange]);
 
     const previous = useCallback(() => {
+      if (!hasTexts) return;
+      const currentIndex = Math.min(currentTextIndex, texts.length - 1);
       const prevIndex =
-        currentTextIndex === 0
+        currentIndex === 0
           ? loop
             ? texts.length - 1
-            : currentTextIndex
-          : currentTextIndex - 1;
+            : 0
+          : currentIndex - 1;
       if (prevIndex !== currentTextIndex) {
         handleIndexChange(prevIndex);
       }
-    }, [currentTextIndex, texts.length, loop, handleIndexChange]);
+    }, [hasTexts, currentTextIndex, texts.length, loop, handleIndexChange]);
 
     const jumpTo = useCallback(
       (index: number) => {
+        if (!hasTexts) return;
         const validIndex = Math.max(0, Math.min(index, texts.length - 1));
         if (validIndex !== currentTextIndex) {
           handleIndexChange(validIndex);
         }
       },
-      [texts.length, currentTextIndex, handleIndexChange]
+      [hasTexts, texts.length, currentTextIndex, handleIndexChange]
     );
 
     const reset = useCallback(() => {
-      if (currentTextIndex !== 0) handleIndexChange(0);
-    }, [currentTextIndex, handleIndexChange]);
+      if (hasTexts && currentTextIndex !== 0) handleIndexChange(0);
+    }, [hasTexts, currentTextIndex, handleIndexChange]);
 
     const getAnimationProps = useCallback(
       (index: number) => {
@@ -201,10 +206,20 @@ const TextRotate = forwardRef<TextRotateRef, TextRotateProps>(
     );
 
     useEffect(() => {
-      if (!auto) return;
+      if (!hasTexts) {
+        if (currentTextIndex !== 0) setCurrentTextIndex(0);
+        return;
+      }
+      if (currentTextIndex >= texts.length) {
+        setCurrentTextIndex(texts.length - 1);
+      }
+    }, [hasTexts, currentTextIndex, texts.length]);
+
+    useEffect(() => {
+      if (!auto || !hasTexts) return;
       const intervalId = setInterval(next, rotationInterval);
       return () => clearInterval(intervalId);
-    }, [next, rotationInterval, auto]);
+    }, [next, rotationInterval, auto, hasTexts]);
 
     const MotionComponent = useMemo(() => motion.create(as ?? "p"), [as]);
 
@@ -215,7 +230,7 @@ const TextRotate = forwardRef<TextRotateRef, TextRotateProps>(
         layout
         {...props}
       >
-        <span className="sr-only">{texts[currentTextIndex]}</span>
+        <span className="sr-only">{currentText}</span>
 
         <AnimatePresence
           mode={animatePresenceMode}
