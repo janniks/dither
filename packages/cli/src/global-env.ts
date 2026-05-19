@@ -1,7 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname } from "node:path";
 import { globalEnvPath } from "./home";
+import { writePrivateJson } from "./secure-json";
 
 /**
  * dither-managed global env store. Plain JSON at ~/.dither/env.json.
@@ -19,9 +19,7 @@ async function readStore(): Promise<Record<string, string>> {
 }
 
 async function writeStore(store: Record<string, string>): Promise<void> {
-  const path = globalEnvPath();
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(store, null, 2), "utf-8");
+  await writePrivateJson(globalEnvPath(), store);
 }
 
 export async function getGlobalEnv(name: string): Promise<string | undefined> {

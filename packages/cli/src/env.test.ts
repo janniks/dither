@@ -1,10 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  rmSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const ECHO_FIXTURE = resolve(__dirname, "..", "test", "fixtures", "echo-config");
 const READ_FILE_FIXTURE = resolve(__dirname, "..", "test", "fixtures", "read-file");
+
+function mode(path: string): number {
+  return statSync(path).mode & 0o777;
+}
 
 describe("plugin env flow", () => {
   let home: string;
@@ -49,6 +61,28 @@ describe("plugin env flow", () => {
     expect(content).toContain("Greeting: hello world");
     expect(content).toContain("Token: tok-deadbeef");
     expect(content).toContain("Max runs: 3");
+  }, 60000);
+
+  it("stores global env in a private file under a private dir", async () => {
+    chmodSync(home, 0o755);
+    const { setGlobalEnv } = await import("./global-env");
+
+    await setGlobalEnv("API_TOKEN", "secret");
+
+    expect(mode(home)).toBe(0o700);
+    expect(mode(join(home, "env.json"))).toBe(0o600);
+  });
+
+  it("stores plugin grants in a private file under a private dir", async () => {
+    const { installPlugin } = await import("./plugin-install");
+
+    await installPlugin({
+      source: ECHO_FIXTURE,
+      env: { GREETING: "hi", API_TOKEN: "tok-secret" },
+    });
+
+    expect(mode(join(home, "grants"))).toBe(0o700);
+    expect(mode(join(home, "grants", "echo-config.json"))).toBe(0o600);
   }, 60000);
 
   it("rejects install when a required env has no value and no default", async () => {

@@ -6,6 +6,7 @@ import { resolveHome } from "./home";
 import { validateGrantPattern } from "./collection-paths";
 import { maybeWarnInstall } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
+import { writePrivateJson } from "./secure-json";
 import {
   MissingInputsError,
   planInstall,
@@ -129,26 +130,18 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
   }
 
   const grantsDir = join(home, "grants");
-  await mkdir(grantsDir, { recursive: true });
   const grantsPath = join(grantsDir, `${parsed.name}.json`);
-  await writeFile(
-    grantsPath,
-    JSON.stringify(
-      {
-        name: parsed.name,
-        version: parsed.version,
-        installedAt: new Date().toISOString(),
-        manifest: parsed.manifest,
-        env,
-        envRefs,
-        files,
-        net,
-        collections,
-      },
-      null,
-      2,
-    ),
-  );
+  await writePrivateJson(grantsPath, {
+    name: parsed.name,
+    version: parsed.version,
+    installedAt: new Date().toISOString(),
+    manifest: parsed.manifest,
+    env,
+    envRefs,
+    files,
+    net,
+    collections,
+  });
 
   maybeWarnInstall(files);
 
