@@ -441,4 +441,24 @@ describe("dither init (Phase 1)", () => {
       expect(out).not.toContain("adopted");
     });
   });
+
+  describe("resolveLibraryPath dry-run", () => {
+    it("does not create the directory when dryRun is true", async () => {
+      const target = join(home, "validator-probe");
+      expect(existsSync(target)).toBe(false);
+
+      const { resolveLibraryPath } = await import("./init");
+      const out = await resolveLibraryPath(target, { dryRun: true });
+
+      expect(existsSync(target)).toBe(false);
+      expect(out.created).toBe(true);
+    });
+
+    it("rejects an unwritable parent without creating anything", async () => {
+      const { resolveLibraryPath } = await import("./init");
+      await expect(
+        resolveLibraryPath("/usr/local/etc/forbidden-dither", { dryRun: true }),
+      ).rejects.toThrow(/parent directory/);
+    });
+  });
 });

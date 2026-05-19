@@ -3,7 +3,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { access, lstat, mkdir, realpath } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { resolveHome } from "../home";
 import { loadConfig, saveConfig, type DitherConfig } from "../config";
 import { confirm, promptText, stepDone, stepFail, stepStart } from "../prompt";
@@ -25,10 +25,12 @@ import { embedDisabledPath } from "../daemon-jobs";
  * resolved target. Same rationale as install-time file grants — replacing
  * a symlink later must not silently widen the library scope.
  */
-async function resolveLibraryPath(input: string): Promise<{ path: string; created: boolean }> {
+export async function resolveLibraryPath(
+  input: string,
+  opts: { dryRun?: boolean } = {},
+): Promise<{ path: string; created: boolean }> {
   const expanded = input.startsWith("~/") ? join(homedir(), input.slice(2)) : input;
   const absolute = resolve(expanded);
-  let created = false;
 
   if (existsSync(absolute)) {
     const stat = await lstat(absolute);
@@ -42,12 +44,22 @@ async function resolveLibraryPath(input: string): Promise<{ path: string; create
     } catch {
       throw new Error(`library path is not writable: ${absolute}`);
     }
-  } else {
-    await mkdir(absolute, { recursive: true });
-    created = true;
+    return { path: await realpath(absolute), created: false };
   }
 
-  return { path: await realpath(absolute), created };
+  const parent = dirname(absolute);
+  if (!existsSync(parent)) {
+    throw new Error(`parent directory does not exist: ${parent}`);
+  }
+  try {
+    await access(parent, constants.W_OK);
+  } catch {
+    throw new Error(`parent directory is not writable: ${parent}`);
+  }
+
+  if (opts.dryRun) return { path: absolute, created: true };
+  await mkdir(absolute, { recursive: true });
+  return { path: await realpath(absolute), created: true };
 }
 
 /**
@@ -321,7 +333,7 @@ export const initCommand = defineCommand({
           validate: async (v) => {
             if (!v.trim()) return "path cannot be empty";
             try {
-              await resolveLibraryPath(v);
+              await resolveLibraryPath(v, { dryRun: true });
               return null;
             } catch (err) {
               return err instanceof Error ? err.message : String(err);
