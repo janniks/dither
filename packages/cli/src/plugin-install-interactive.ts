@@ -3,7 +3,7 @@ import { lstat, readFile, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parsePackage, type Manifest, type ParsedPackage } from "./manifest";
 import { promptConfirm, promptMultiSelect, promptSelect, promptText } from "./prompt";
-import { validateGrantPattern } from "./collection-paths";
+import { validateGrantPattern } from "./grants";
 import { resolveHome } from "./home";
 
 /**

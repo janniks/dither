@@ -10,8 +10,8 @@ import { parsePackage } from "./manifest";
 import { updateIndex } from "./update-index";
 import { needsReindexPath } from "./daemon-jobs";
 import { getGlobalEnv } from "./global-env";
-import { validateCollectionPath, validateGrantPattern, grantsCover } from "./collection-paths";
-import { resolveCollection } from "./collection-registry";
+import { resolveCollection, validateCollectionPath } from "./collection-registry";
+import { grantsCover, validateGrantPattern } from "./grants";
 import {
   acquire as acquireLock,
   release as releaseLock,

@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { resolveHome } from "./home";
-import { validateGrantPattern } from "./collection-paths";
+import { validateGrantPattern } from "./grants";
 import { maybeWarnInstall } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
 import { writePrivateJson } from "./secure-json";

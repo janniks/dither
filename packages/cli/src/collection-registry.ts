@@ -2,7 +2,58 @@ import { accessSync, constants, lstatSync, readdirSync, realpathSync } from "nod
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import type { DitherConfig, ExternalCollection } from "./config";
-import { validateCollectionPath } from "./collection-paths";
+
+/**
+ * A concrete collection path — the value a plugin emits in frontmatter.
+ *
+ *   - non-empty
+ *   - segments are `[a-zA-Z0-9_-]+` plus a leading dot only inside the
+ *     middle of a segment (e.g. `notes.md` permitted, `.git` not)
+ *   - segments separated by single `/`, no leading/trailing `/`, no `//`
+ *   - no `..` or `.` segment, no `...`/`....` (Windows normalisation traps)
+ *   - no trailing `.md` (paths name directories, not files)
+ *
+ * Throws on violation; returns void on success.
+ */
+export function validateCollectionPath(path: string): void {
+  if (!path) throw new Error(`collection path is empty`);
+  if (path.startsWith("/") || path.endsWith("/")) {
+    throw new Error(`collection path '${path}' must not start or end with '/'`);
+  }
+  if (path.includes("//")) {
+    throw new Error(`collection path '${path}' contains an empty segment ('//')`);
+  }
+  if (path.toLowerCase().endsWith(".md")) {
+    throw new Error(`collection path '${path}' must not end with '.md' (it names a directory)`);
+  }
+  for (const seg of path.split("/")) {
+    validateCollectionPathSegment(seg, path);
+  }
+}
+
+/**
+ * Validate a single segment of a collection path. Exposed for `grants.ts`,
+ * which reuses the same per-segment rules for grant-pattern segments
+ * (with `*` and `**` handled separately).
+ */
+export function validateCollectionPathSegment(seg: string, path: string): void {
+  if (seg === "." || seg === "..") {
+    throw new Error(`collection path '${path}' must not contain '${seg}'`);
+  }
+  // `...`, `....` etc. — Windows / SMB can normalise these to `..`.
+  if (/^\.+$/.test(seg)) {
+    throw new Error(`collection path '${path}' segment '${seg}' is dot-only`);
+  }
+  // Disallow leading `.` to keep dotfiles (`.git`, `.ssh`) out of the library.
+  if (seg.startsWith(".")) {
+    throw new Error(`collection path '${path}' segment '${seg}' must not start with '.'`);
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(seg)) {
+    throw new Error(
+      `collection path '${path}' segment '${seg}' contains disallowed characters (allowed: A-Z a-z 0-9 . _ -)`,
+    );
+  }
+}
 
 /**
  * What dither knows about one collection — either auto-discovered from the
@@ -63,7 +114,7 @@ export function defaultSlug(path: string): string {
 /**
  * Expand `~/` to the user's home and resolve to an absolute path. Mirrors
  * the helper in `commands/init.ts` rather than importing it, to keep this
- * module dependency-free aside from `config` and `collection-paths`.
+ * module dependency-free aside from `config`.
  */
 function expandUserPath(input: string): string {
   const expanded = input.startsWith("~/") ? join(homedir(), input.slice(2)) : input;
