@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, writeFile, readFile, readdir, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -13,7 +14,7 @@ import { LoopDetector, type HaltRecord } from "./loop-detector";
 import { inboxHasItems, recoverOrphanInflight } from "./inbox";
 import { Refirer } from "./refirer";
 import { readRefire } from "./refire";
-import { qmdReconcile, clearInflightJobs } from "./daemon-jobs";
+import { qmdReconcile, clearInflightJobs, needsReindexPath } from "./daemon-jobs";
 
 /**
  * Long-lived daemon process. In phase 3 the inner loop is a quiet heartbeat
@@ -323,7 +324,10 @@ export async function runDaemon(): Promise<void> {
       })
       .then(() => {
         qmdReconcileInFlight = null;
-        if (qmdReconcileQueued) {
+        // Level-triggered check: if a `needs-reindex` marker landed
+        // during this cycle (e.g. plugin-run wrote it after promoting
+        // files), pick it up without waiting for an external SIGHUP.
+        if (qmdReconcileQueued || existsSync(needsReindexPath())) {
           qmdReconcileQueued = false;
           fireQmdReconcile();
         }
