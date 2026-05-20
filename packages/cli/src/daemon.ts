@@ -305,8 +305,16 @@ export async function runDaemon(): Promise<void> {
   // calls are safe because the per-theme locks serialize the actual
   // work — and `qmdReconcile` itself is short on no-work paths.
   let qmdReconcileInFlight: Promise<void> | null = null;
+  let qmdReconcileQueued = false;
   const fireQmdReconcile = (): void => {
-    if (qmdReconcileInFlight) return; // coalesce — current cycle will pick up new state
+    if (qmdReconcileInFlight) {
+      // A reconcile is running. Mark a follow-up cycle so a SIGHUP /
+      // init handoff that arrives mid-cycle doesn't get dropped — it
+      // will pick up any marker (incl. a fresh `needs-reindex`) the
+      // in-flight cycle didn't see.
+      qmdReconcileQueued = true;
+      return;
+    }
     qmdReconcileInFlight = qmdReconcile()
       .catch((err) => {
         console.error(
@@ -315,6 +323,10 @@ export async function runDaemon(): Promise<void> {
       })
       .then(() => {
         qmdReconcileInFlight = null;
+        if (qmdReconcileQueued) {
+          qmdReconcileQueued = false;
+          fireQmdReconcile();
+        }
       });
   };
   fireQmdReconcile();

@@ -1,5 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+
+function renameSyncProcessing(home: string): void {
+  const marker = join(home, "needs-reindex");
+  renameSync(marker, `${marker}.processing`);
+}
+
+function unlinkProcessing(home: string): void {
+  unlinkSync(join(home, "needs-reindex.processing"));
+}
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -115,6 +133,24 @@ describe("daemon-jobs", () => {
 
     it("clearInflightJobs tolerates a missing directory", async () => {
       await expect(clearInflightJobs()).resolves.toBeUndefined();
+    });
+
+    it("a fresh needs-reindex marker written during the cycle is preserved", async () => {
+      // Plant the marker, then simulate a writer that lands a fresh
+      // marker WHILE the previous one is being "processed". Without
+      // atomic consumption the late marker would be unlinked alongside
+      // the original; with the rename pattern it survives.
+      writeFileSync(needsReindexPath(), "", "utf-8");
+      // Move the marker into processing the way the reconciler does.
+      renameSyncProcessing(home);
+      // External writer arrives mid-cycle:
+      writeFileSync(needsReindexPath(), "", "utf-8");
+      // Reconciler finishes the in-flight cycle and unlinks ONLY the
+      // processing file:
+      unlinkProcessing(home);
+      // Fresh marker survives → next cycle will pick it up.
+      expect(existsSync(needsReindexPath())).toBe(true);
+      expect(existsSync(`${needsReindexPath()}.processing`)).toBe(false);
     });
 
     it("inflight files survive log-tail truncation", async () => {

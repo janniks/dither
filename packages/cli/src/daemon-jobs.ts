@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import { mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -230,14 +230,23 @@ export async function qmdReconcile(): Promise<ReconcileSummary> {
     // Step 1: explicit reindex request via marker, OR an empty/new
     // index that benefits from a first-pass scan.
     if (existsSync(needsReindexPath())) {
+      // Atomic consume: rename the marker aside so any reindex request
+      // that arrives during this cycle lands on a fresh `needs-reindex`
+      // file and is picked up by the next cycle. Unlinking the original
+      // at the *end* of a long index job would otherwise silently
+      // clobber the new request.
+      const processing = `${needsReindexPath()}.processing`;
+      try {
+        renameSync(needsReindexPath(), processing);
+      } catch {
+        // Vanished between check and rename — no-op.
+      }
       const ran = await runIndexJob(store, "needs-reindex-marker");
-      if (ran) {
-        jobsRun++;
-        try {
-          unlinkSync(needsReindexPath());
-        } catch {
-          // Already gone — fine.
-        }
+      if (ran) jobsRun++;
+      try {
+        unlinkSync(processing);
+      } catch {
+        // Already gone — fine.
       }
     } else {
       // First-ever reconcile on a fresh library: index everything.
