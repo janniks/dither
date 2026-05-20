@@ -100,8 +100,12 @@ async function watchDaemonReconcile(): Promise<{
     detached = true;
     ac.abort();
   };
-  process.on("SIGINT", onDetach);
-  process.on("SIGHUP", onDetach);
+  // process.once: the first signal triggers detach AND removes the listener,
+  // so we never leak a SIGHUP listener that could fire long after watch ended
+  // (in tests, embedded use, or if a future daemon-run shared the process).
+  // cleanup() still removes them on the happy non-detach path.
+  process.once("SIGINT", onDetach);
+  process.once("SIGHUP", onDetach);
 
   const client = daemonClient();
   const progressByJob = new Map<string, ProgressLine>();
