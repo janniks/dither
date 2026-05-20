@@ -47,6 +47,11 @@ export function parsePackage(pkg: unknown): ParsedPackage {
   if (typeof obj["name"] !== "string") {
     throw new Error("package.json missing 'name'");
   }
+  if (!/^[a-z0-9][a-z0-9._-]*$/.test(obj["name"])) {
+    throw new Error(
+      `package.json 'name' must be ascii lowercase letters/digits/._- and start with [a-z0-9]: ${JSON.stringify(obj["name"])}`,
+    );
+  }
   if (typeof obj["version"] !== "string") {
     throw new Error("package.json missing 'version'");
   }

@@ -29,7 +29,14 @@ function refireDir(): string {
 }
 
 function refirePath(plugin: string): string {
+  assertSafePluginName(plugin);
   return join(refireDir(), `${plugin}.json`);
+}
+
+function assertSafePluginName(plugin: string): void {
+  if (!plugin || plugin.includes("/") || plugin.includes("\\") || plugin === "." || plugin === "..") {
+    throw new Error(`invalid plugin name: ${JSON.stringify(plugin)}`);
+  }
 }
 
 export async function readRefire(plugin: string): Promise<RefireRow | null> {

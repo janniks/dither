@@ -65,3 +65,15 @@ describe("decideRunOutcome", () => {
     expect(out.row.retryCount).toBe(POISON_PILL_THRESHOLD);
   });
 });
+
+describe("refire path safety", () => {
+  it("read/write/clear reject traversal segments", async () => {
+    const { writeRefire, readRefire, clearRefire } = await import("./refire");
+    const row = { fireAt: new Date().toISOString(), retryCount: 0, suspended: false };
+    for (const bad of ["../escape", "/abs", "with/slash", "with\\back", "..", ".", ""]) {
+      await expect(writeRefire(bad, row)).rejects.toThrow(/invalid plugin name/);
+      await expect(readRefire(bad)).rejects.toThrow(/invalid plugin name/);
+      await expect(clearRefire(bad)).rejects.toThrow(/invalid plugin name/);
+    }
+  });
+});
