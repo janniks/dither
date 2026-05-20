@@ -89,14 +89,17 @@ const tailSubcommand = defineCommand({
     process.on("SIGTERM", onSig);
 
     // Poll for result.json in parallel with the event stream. When it
-    // appears, print and abort.
+    // appears, print and abort. `emitted` guards against a slow read
+    // letting a second tick re-launch readResult — duplicate _result
+    // lines would corrupt downstream JSONL consumers.
+    let emitted = false;
     const resultPoll = setInterval(() => {
-      if (existsSync(resultPath(runId))) {
-        void readResult(runId).then((r) => {
-          if (r) console.log(JSON.stringify({ type: "_result", ...r }));
-          ac.abort();
-        });
-      }
+      if (emitted || !existsSync(resultPath(runId))) return;
+      emitted = true;
+      void readResult(runId).then((r) => {
+        if (r) console.log(JSON.stringify({ type: "_result", ...r }));
+        ac.abort();
+      });
     }, 100);
 
     try {
