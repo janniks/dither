@@ -1,5 +1,5 @@
 import { readDaemonPid, startDaemon } from "./daemon-control";
-import { followGlobal, type LogEvent } from "./run-log";
+import { followGlobal, globalLogSize, type LogEvent } from "./run-log";
 
 /**
  * Client of the long-lived Daemon process. Wraps the SIGHUP-trigger +
@@ -72,9 +72,17 @@ export class DaemonReconcileFailedError extends Error {
 export interface DaemonTransport {
   readDaemonPid(): Promise<number | null>;
   startDaemon(): Promise<{ pid: number }>;
-  follow(signal: AbortSignal): AsyncIterable<LogEvent>;
+  follow(signal: AbortSignal, fromOffset?: number): AsyncIterable<LogEvent>;
   isAlive(pid: number): boolean;
   signal(pid: number, sig: "SIGHUP"): void;
+  /**
+   * Current byte size of the global Run-log. `triggerAndWatch` snapshots
+   * this BEFORE sending SIGHUP and passes the value to `follow`'s
+   * `fromOffset` — guarantees a `reconcile-started` event emitted
+   * between SIGHUP delivery and the follower's `open()` is still inside
+   * the read window. Optional: stub transports may omit it.
+   */
+  snapshotOffset?(): Promise<number>;
 }
 
 function defaultIsAlive(pid: number): boolean {
@@ -96,9 +104,10 @@ const defaultTransport: DaemonTransport = {
     const r = await startDaemon();
     return { pid: r.pid };
   },
-  follow: (signal) => followGlobal(signal),
+  follow: (signal, fromOffset) => followGlobal(signal, fromOffset),
   isAlive: defaultIsAlive,
   signal: (pid, sig) => process.kill(pid, sig),
+  snapshotOffset: globalLogSize,
 };
 
 export interface SignalReconcileResult {
@@ -110,6 +119,12 @@ export interface WatchOptions {
   signal?: AbortSignal;
   /** PID of the daemon to probe for liveness. If omitted, read it. */
   pid?: number;
+  /**
+   * Byte offset to start following from. `triggerAndWatch` passes the
+   * pre-SIGHUP snapshot so a fast daemon can't write `reconcile-started`
+   * before the follower opens. Direct callers omit it (follow from EOF).
+   */
+  fromOffset?: number;
 }
 
 export interface DaemonClient {
@@ -160,7 +175,7 @@ export function daemonClient(opts: { transport?: DaemonTransport } = {}): Daemon
     let abortedByCaller = false;
 
     try {
-      for await (const event of t.follow(innerAc.signal)) {
+      for await (const event of t.follow(innerAc.signal, watchOpts.fromOffset)) {
         if (event.kind === "reconcile-started") {
           cycleStarted = true;
           continue;
@@ -200,8 +215,20 @@ export function daemonClient(opts: { transport?: DaemonTransport } = {}): Daemon
   }
 
   async function* triggerAndWatch(opts: { signal?: AbortSignal } = {}): AsyncGenerator<DaemonEvent> {
-    const { pid } = await signalReconcile();
-    yield* watchReconcile({ signal: opts.signal, pid });
+    // Resolve pid first (may start the daemon) but do NOT send SIGHUP yet.
+    // The daemon's SIGHUP handler can emit `reconcile-started` before
+    // the follower's open() completes — open()-at-EOF would then miss
+    // the event, cycleStarted would never flip, and the iterator would
+    // hang. Snapshotting the log size before SIGHUP and pinning the
+    // follower to that offset closes the window.
+    let pid = await t.readDaemonPid();
+    if (pid === null) {
+      const started = await t.startDaemon();
+      pid = started.pid;
+    }
+    const fromOffset = t.snapshotOffset ? await t.snapshotOffset() : undefined;
+    t.signal(pid, "SIGHUP");
+    yield* watchReconcile({ signal: opts.signal, pid, fromOffset });
   }
 
   return { signalReconcile, watchReconcile, triggerAndWatch };

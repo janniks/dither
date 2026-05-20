@@ -200,4 +200,36 @@ describe("daemonClient", () => {
     expect(stub.signals).toEqual([{ pid: 1234, sig: "SIGHUP" }]);
     expect(seen).toEqual(["reconcile-done"]);
   });
+
+  it("triggerAndWatch snapshots the log offset before sending SIGHUP", async () => {
+    // Race protection: the daemon's SIGHUP handler can emit
+    // `reconcile-started` before the follower opens. If snapshotOffset
+    // doesn't run BEFORE signal, the iterator can hang waiting for an
+    // event that already landed below the open() byte position.
+    const stub = stubTransport();
+    const calls: string[] = [];
+    const transport = {
+      ...stub.transport,
+      snapshotOffset: async (): Promise<number> => {
+        calls.push("snapshotOffset");
+        return 0;
+      },
+      signal: (p: number, s: "SIGHUP"): void => {
+        calls.push("signal");
+        stub.transport.signal(p, s);
+      },
+    };
+    const { daemonClient } = await import("./daemon-client");
+    const client = daemonClient({ transport });
+
+    const pump = (async () => {
+      for await (const _ of client.triggerAndWatch()) void _;
+    })();
+
+    stub.emit({ kind: "reconcile-started", cycleId: "c1" });
+    stub.emit({ kind: "reconcile-done", cycleId: "c1", jobsRun: 0 });
+    await pump;
+
+    expect(calls).toEqual(["snapshotOffset", "signal"]);
+  });
 });

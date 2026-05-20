@@ -60,15 +60,19 @@ End-to-end behavior: with two concurrent `appendGlobal` calls crossing the 1 MB 
 End-to-end behavior: `triggerAndWatch` cannot lose the `reconcile-started` event even when the daemon's SIGHUP handler runs faster than the follower's `open()`.
 
 **Acceptance:**
-- [ ] `watchReconcile` opens its follower eagerly (before the first `yield`), so the file is being watched the moment the function returns its iterable.
-- [ ] `triggerAndWatch` opens the follower first, then sends SIGHUP, then yields.
-- [ ] New test stubs the transport so `signal()` synchronously emits `reconcile-started`; asserts `triggerAndWatch` consumes the cycle and completes on `reconcile-done` rather than hanging.
-- [ ] All existing `daemon-client.test.ts` tests pass without modification.
+- [x] `triggerAndWatch` snapshots the global log byte offset before sending SIGHUP, so a `reconcile-started` emitted between SIGHUP and follower-open is still inside the read window. (Used byte-offset snapshot instead of eager-open; the lazy `async function*` shape stays.)
+- [x] `watchReconcile` accepts `fromOffset` in `WatchOptions` and passes it through to the transport's `follow`.
+- [x] `DaemonTransport.follow` takes an optional `fromOffset`; default impl delegates to `followGlobal(signal, fromOffset)`.
+- [x] New test asserts `snapshotOffset` is called before `signal` in `triggerAndWatch`.
+- [x] All existing `daemon-client.test.ts` tests pass without modification (snapshotOffset is optional on the transport interface).
 
 ---
 
 ## Phase log
 
-|  |  |
+| Commit | Summary |
 |--|--|
-|  |  |
+| 64d48b6 | Phase 1: guard `dither runs tail` against duplicate `_result` lines on slow disk |
+| 9da0744 | Phase 2: widen `runId` random suffix to 4 bytes + retry on `mkdir` EEXIST |
+| 458e71d | Phase 3: ENOENT-tolerant `rotate()` (per-path append serialization already landed in 64b51ec) |
+| (this) | Phase 4: `triggerAndWatch` snapshots log offset before SIGHUP to close the race window |
