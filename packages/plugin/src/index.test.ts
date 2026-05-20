@@ -53,3 +53,73 @@ describe("plugin SDK state I/O", () => {
     });
   });
 });
+
+describe("plugin SDK writeEntry frontmatter", () => {
+  let runDir: string;
+  let prevRun: string | undefined;
+  let prevName: string | undefined;
+
+  beforeEach(() => {
+    runDir = mkdtempSync(join(tmpdir(), "dither-plugin-entry-"));
+    prevRun = process.env.DITHER_RUN_DIR;
+    prevName = process.env.DITHER_PLUGIN_NAME;
+    process.env.DITHER_RUN_DIR = runDir;
+    process.env.DITHER_PLUGIN_NAME = "test-plugin";
+  });
+
+  afterEach(() => {
+    if (prevRun === undefined) delete process.env.DITHER_RUN_DIR;
+    else process.env.DITHER_RUN_DIR = prevRun;
+    if (prevName === undefined) delete process.env.DITHER_PLUGIN_NAME;
+    else process.env.DITHER_PLUGIN_NAME = prevName;
+    rmSync(runDir, { recursive: true, force: true });
+  });
+
+  it("drops undefined frontmatter keys instead of writing 'undefined'", async () => {
+    const sdk = await import("./index");
+    const out = await sdk.writeEntry({
+      collection: "notes",
+      body: "hi",
+      frontmatter: { title: "ok", url: undefined, count: 3 },
+    });
+    const content = readFileSync(out, "utf-8");
+    expect(content).toContain('title: "ok"');
+    expect(content).toContain("count: 3");
+    expect(content).not.toContain("undefined");
+    expect(content).not.toContain("url:");
+  });
+
+  it("rejects bigint values with a clear error", async () => {
+    const sdk = await import("./index");
+    await expect(
+      sdk.writeEntry({
+        collection: "notes",
+        body: "hi",
+        // Cast through unknown so the test still compiles after the type
+        // constraint — we're exercising the runtime guard.
+        frontmatter: { big: 1n as unknown as string },
+      }),
+    ).rejects.toThrow(/bigint is not supported/);
+  });
+
+  it("rejects functions and symbols with a clear error", async () => {
+    const sdk = await import("./index");
+    await expect(
+      sdk.writeEntry({
+        collection: "notes",
+        body: "hi",
+        frontmatter: { fn: (() => 1) as unknown as string },
+      }),
+    ).rejects.toThrow(/function is not supported/);
+  });
+
+  it("emits null literal for explicit nulls", async () => {
+    const sdk = await import("./index");
+    const out = await sdk.writeEntry({
+      collection: "notes",
+      body: "hi",
+      frontmatter: { tag: null },
+    });
+    expect(readFileSync(out, "utf-8")).toContain("tag: null");
+  });
+});

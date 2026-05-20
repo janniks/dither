@@ -47,13 +47,22 @@ export interface PluginInput {
   targets: WatchTarget[];
 }
 
+/** Values writable to YAML frontmatter. Undefined keys are skipped. */
+export type FrontmatterValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly FrontmatterValue[]
+  | { readonly [key: string]: FrontmatterValue | undefined };
+
 export interface EntryOptions {
   /** Target collection (top-level folder under the library). Must be in this plugin's grant. */
   collection: string;
   /** Markdown body. Frontmatter is added by the SDK; do not include yourself. */
   body: string;
-  /** Optional frontmatter fields. `source` is auto-stamped to the plugin name. */
-  frontmatter?: Record<string, unknown>;
+  /** Optional frontmatter fields. `source` is auto-stamped to the plugin name. Undefined values are dropped. */
+  frontmatter?: Record<string, FrontmatterValue | undefined>;
   /** Optional output filename (in DITHER_RUN_DIR). Defaults to `<id>.md`. */
   filename?: string;
 }
@@ -107,10 +116,29 @@ export async function readFile(inputId: string): Promise<string> {
   return await fsReadFile(path, "utf-8");
 }
 
-function yamlValue(v: unknown): string {
+function yamlValue(v: unknown, path: string): string {
   // Lean YAML serializer: emit JSON for everything. Most YAML parsers accept
   // JSON-style strings/numbers/bools/arrays inline. Keeps the SDK dep-free.
-  return JSON.stringify(v);
+  // Reject types JSON.stringify would silently corrupt or throw on, so the
+  // failure surfaces at the call site instead of producing literal
+  // "undefined" or crashing on a bigint.
+  if (v === null) return "null";
+  const t = typeof v;
+  if (t === "string" || t === "number" || t === "boolean") return JSON.stringify(v);
+  if (t === "bigint") {
+    throw new Error(`frontmatter.${path}: bigint is not supported`);
+  }
+  if (t === "function" || t === "symbol" || t === "undefined") {
+    throw new Error(`frontmatter.${path}: ${t} is not supported`);
+  }
+  if (Array.isArray(v)) {
+    return `[${v.map((item, i) => yamlValue(item, `${path}[${i}]`)).join(", ")}]`;
+  }
+  if (t === "object") {
+    const entries = Object.entries(v as Record<string, unknown>).filter(([, val]) => val !== undefined);
+    return `{${entries.map(([k, val]) => `${JSON.stringify(k)}: ${yamlValue(val, `${path}.${k}`)}`).join(", ")}}`;
+  }
+  throw new Error(`frontmatter.${path}: unsupported value type`);
 }
 
 function assertFlatFilename(label: string, name: string): void {
@@ -146,7 +174,9 @@ export async function writeEntry(opts: EntryOptions): Promise<string> {
     collection: opts.collection,
   };
 
-  const fmLines = Object.entries(frontmatter).map(([k, v]) => `${k}: ${yamlValue(v)}`);
+  const fmLines = Object.entries(frontmatter)
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => `${k}: ${yamlValue(v, k)}`);
   const content = `---\n${fmLines.join("\n")}\n---\n\n${opts.body}\n`;
 
   await mkdir(dirname(out), { recursive: true });
