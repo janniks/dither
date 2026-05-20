@@ -95,18 +95,23 @@ const updateSubcommand = defineCommand({
 });
 
 /**
- * Cancel the currently-running qmd job. Reads the per-theme locks to
- * find the holder PID, sends SIGTERM, writes the `embed-disabled`
- * marker if cancelling an embed (so the next reconciliation doesn't
- * silently re-resume the work the user just stopped), waits up to 5s
- * for the lock to be released, prints `✓ cancelled <theme>`.
+ * Cancel the currently-running qmd job. Writes the `embed-disabled`
+ * marker so the daemon's embed loop exits at the next iteration
+ * boundary and the post-job reconcile doesn't re-queue. For indexing
+ * there's no in-flight cancel hook (qmd's store.update can't be
+ * interrupted mid-call), so the message is honest about what cancel
+ * does and doesn't do.
+ *
+ * Previously this SIGTERM'd the daemon PID (lock-holder), which
+ * graceful-shut-down the WHOLE daemon — wiping schedulers, watchers,
+ * refire timers. That's now removed.
  *
  * No-op (with a friendly message) when nothing is running.
  */
 const cancelSubcommand = defineCommand({
   meta: {
     name: "cancel",
-    description: "Cancel the running qmd job (model download, indexing, or embedding).",
+    description: "Cancel the running qmd job (embedding can be interrupted; indexing completes).",
   },
   async run() {
     await assertInitialized();
@@ -117,36 +122,37 @@ const cancelSubcommand = defineCommand({
       console.log(`${pc.dim("nothing to cancel — no qmd job running.")}`);
       return;
     }
-    for (const [theme, info] of active) {
-      // For embeds specifically, write the disable marker first so the
-      // daemon's post-job reconcile doesn't immediately re-queue.
+    let failures = 0;
+    for (const [theme] of active) {
       if (theme === "embed") {
         writeFileSync(embedDisabledPath(), "", "utf-8");
-      }
-      try {
-        process.kill(info.pid, "SIGTERM");
-      } catch (err) {
-        const code = (err as NodeJS.ErrnoException).code;
-        if (code !== "ESRCH") {
+        const released = await waitForLockRelease(theme, 30_000);
+        if (released) {
+          console.log(`${pc.green("✓")} cancelled embed`);
+        } else {
+          failures += 1;
           console.error(
-            `signal pid ${info.pid} failed: ${err instanceof Error ? err.message : String(err)}`,
+            `${pc.red("✗")} embed cancel timed out; embed-disabled marker written — the current batch will finish, then no new iterations start.`,
           );
         }
+        continue;
       }
-      await waitForLockRelease(theme, 5_000);
-      console.log(`${pc.green("✓")} cancelled ${theme}`);
+      // For index + model-download, no in-process cancel hook exists.
+      console.log(
+        `${pc.dim("→")} ${theme} cannot be interrupted mid-call; current run will complete.`,
+      );
     }
+    if (failures > 0) process.exit(1);
   },
 });
 
-async function waitForLockRelease(theme: LockTheme, timeoutMs: number): Promise<void> {
+async function waitForLockRelease(theme: LockTheme, timeoutMs: number): Promise<boolean> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    if (!existsSync(themeLockPath(theme))) return;
+    if (!existsSync(themeLockPath(theme))) return true;
     await new Promise((r) => setTimeout(r, 100));
   }
-  // Timeout — caller proceeds anyway; the lock will be reclaimed via
-  // stale-PID logic on next acquire if the holder really is dead.
+  return false;
 }
 
 export const indexCommand = defineCommand({

@@ -67,11 +67,10 @@ describe("dither index commands", () => {
       expect(out).toContain("nothing to cancel");
     });
 
-    it("writes embed-disabled marker when cancelling an active embed lock", async () => {
+    it("writes embed-disabled marker and waits for the embed lock to release", async () => {
       // Set up config + fake lock file pointing at our own PID so
-      // isPidAlive() returns true and the locks module treats the lock as
-      // active. Stub process.kill so cancel doesn't actually SIGTERM
-      // the test runner.
+      // isPidAlive() returns true and the locks module treats the lock
+      // as active.
       writeFileSync(
         join(home, "config.json"),
         JSON.stringify({
@@ -84,34 +83,24 @@ describe("dither index commands", () => {
       mkdirSync(join(home, "locks"), { recursive: true });
       writeFileSync(themeLockPath("embed"), String(process.pid), "utf-8");
 
-      const killSpy = vi.spyOn(process, "kill").mockImplementation((_pid: number, signal?: string | number) => {
-        // Probe (signal === 0) must still return true.
-        if (signal === 0) return true;
-        if (signal === "SIGTERM" || signal === 15) {
-          // Simulate the holder cleaning up its lock on SIGTERM so the
-          // wait-for-release path exits promptly instead of timing out.
-          try {
-            unlinkSync(themeLockPath("embed"));
-          } catch {
-            // Already gone.
-          }
-          return true;
+      // Simulate the daemon's embedLoop noticing the marker and
+      // releasing the lock shortly after the cancel command writes it.
+      const releaseTimer = setInterval(() => {
+        if (existsSync(embedDisabledPath())) {
+          unlinkSync(themeLockPath("embed"));
+          clearInterval(releaseTimer);
         }
-        return true;
-      });
+      }, 50);
 
       try {
         const { main } = await import("../main");
         const out = await captureLogs(async () => {
           await runCommand(main, { rawArgs: ["index", "cancel"] });
         });
-        // Embed-disabled marker MUST be written before SIGTERM so the
-        // daemon's post-cancel reconcile doesn't immediately re-queue.
         expect(existsSync(embedDisabledPath())).toBe(true);
         expect(out).toMatch(/cancelled embed/);
-        expect(killSpy).toHaveBeenCalledWith(process.pid, "SIGTERM");
       } finally {
-        killSpy.mockRestore();
+        clearInterval(releaseTimer);
       }
     });
   });

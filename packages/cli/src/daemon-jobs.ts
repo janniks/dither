@@ -363,10 +363,18 @@ async function runEmbedJob(
 
     await markJobStarted({ jobId, type: "embedding", startedAt: new Date().toISOString() });
     await appendGlobal({ kind: "job-started", jobId, type: "embedding" });
-    const summary = await embedLoop(store, (cumEmbedded, totalEstimate) => {
-      void closeDownload();
-      emitProgress({ current: cumEmbedded, total: totalEstimate });
-    });
+    const summary = await embedLoop(
+      store,
+      (cumEmbedded, totalEstimate) => {
+        void closeDownload();
+        emitProgress({ current: cumEmbedded, total: totalEstimate });
+      },
+      // Cancellation hand-off: `dither index cancel` writes the
+      // embed-disabled marker. Between iterations the loop checks it
+      // and exits early — current store.embed() batch still completes,
+      // but no further iterations are queued.
+      () => existsSync(embedDisabledPath()),
+    );
     // Edge: nothing to embed → onProgress never fired → close download anyway.
     await closeDownload();
 

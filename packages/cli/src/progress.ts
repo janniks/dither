@@ -117,6 +117,7 @@ const EMBED_LOOP_MAX_ITERATIONS = 20;
 export async function embedLoop(
   store: EmbedCallable,
   onProgress?: (cumEmbedded: number, totalEstimate: number) => void,
+  shouldCancel?: () => boolean,
 ): Promise<EmbedLoopResult> {
   let cumEmbedded = 0;
   let cumDuration = 0;
@@ -125,6 +126,7 @@ export async function embedLoop(
   let iterations = 0;
 
   while (iterations < EMBED_LOOP_MAX_ITERATIONS) {
+    if (shouldCancel?.()) break;
     iterations++;
     const { result, truncatedCount } = await withTruncationFilter(async () =>
       store.embed({
