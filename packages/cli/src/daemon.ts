@@ -13,7 +13,7 @@ import { LoopDetector, type HaltRecord } from "./loop-detector";
 import { inboxHasItems, recoverOrphanInflight } from "./inbox";
 import { Refirer } from "./refirer";
 import { readRefire } from "./refire";
-import { qmdReconcile } from "./daemon-jobs";
+import { qmdReconcile, clearInflightJobs } from "./daemon-jobs";
 
 /**
  * Long-lived daemon process. In phase 3 the inner loop is a quiet heartbeat
@@ -267,6 +267,13 @@ export async function runDaemon(): Promise<void> {
   await truncateGlobal().catch((err) => {
     console.error(
       `[daemon] truncate events log failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  });
+  // Wipe any inflight-jobs files from a previous (possibly-crashed) daemon
+  // so `dither status` doesn't report stale "current" jobs.
+  await clearInflightJobs().catch((err) => {
+    console.error(
+      `[daemon] clear inflight jobs failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   });
   await appendGlobal({ kind: "daemon-started", pid: process.pid }).catch((err) => {

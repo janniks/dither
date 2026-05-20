@@ -1,5 +1,6 @@
-import { existsSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
+import { mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { resolveHome } from "./home";
 import { openStore } from "./store";
@@ -70,39 +71,85 @@ export interface JobsSnapshot {
   embedDisabled: boolean;
 }
 
+// Persistent inflight-jobs directory. One file per active job; updated
+// from emitProgress and unlinked at job end. Survives independently of
+// the bounded log tail so long-running jobs don't disappear from status
+// after their job-started event scrolls off.
+function jobsDir(): string {
+  return join(resolveHome(), "jobs");
+}
+
+function jobFilePath(jobId: string): string {
+  return join(jobsDir(), `${jobId}.json`);
+}
+
+async function markJobStarted(job: CurrentJob): Promise<void> {
+  await mkdir(dirname(jobFilePath(job.jobId)), { recursive: true });
+  await writeFile(jobFilePath(job.jobId), JSON.stringify(job));
+}
+
+async function markJobProgress(jobId: string, current: number, total: number): Promise<void> {
+  try {
+    const raw = await readFile(jobFilePath(jobId), "utf-8");
+    const cur = JSON.parse(raw) as CurrentJob;
+    cur.current = current;
+    cur.total = total;
+    await writeFile(jobFilePath(jobId), JSON.stringify(cur));
+  } catch (err) {
+    // ENOENT: job ended between progress emits — fine.
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+}
+
+async function markJobEnded(jobId: string): Promise<void> {
+  await unlink(jobFilePath(jobId)).catch((err: NodeJS.ErrnoException) => {
+    if (err.code !== "ENOENT") throw err;
+  });
+}
+
+/** Wipe inflight-jobs files. Daemon calls this at startup so a previous
+ *  crashed daemon's stale entries don't show up in `dither status`. */
+export async function clearInflightJobs(): Promise<void> {
+  await rm(jobsDir(), { recursive: true, force: true });
+}
+
 /**
- * Read the events log to reconstruct current + recent job state. Used
- * by `dither status` so the user has one command to ask "what is the
- * daemon doing right now, and what did it just finish?" `current` is
- * derived from the latest `job-started` events without a matching
- * `job-done` / `job-failed` / `job-skipped` AND a live lock holder.
- * `recent` is the last few terminal events.
- *
- * Read-only — never writes to the log. Cheap; reads at most the last
- * 200 lines.
+ * Reconstruct current + recent job state for `dither status`. Current
+ * jobs come from the persistent <home>/jobs/ directory (independent of
+ * log retention). Recent terminal events come from the last 200 log
+ * lines.
  */
 export async function readJobsSnapshot(): Promise<JobsSnapshot> {
   const events = await readGlobal(200);
-  return reduceJobsSnapshot(events);
+  return reduceJobsSnapshot(events, readCurrentJobsFromDisk());
 }
 
-function reduceJobsSnapshot(events: LogEvent[]): JobsSnapshot {
-  const inflight = new Map<string, CurrentJob>();
+function readCurrentJobsFromDisk(): CurrentJob[] {
+  let entries: string[];
+  try {
+    entries = readdirSync(jobsDir());
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+  return entries.flatMap((name) => {
+    if (!name.endsWith(".json")) return [];
+    try {
+      const raw = readFileSync(join(jobsDir(), name), "utf-8");
+      return [JSON.parse(raw) as CurrentJob];
+    } catch {
+      return [];
+    }
+  });
+}
+
+function reduceJobsSnapshot(events: LogEvent[], inflightOnDisk: CurrentJob[]): JobsSnapshot {
   const recent: RecentJob[] = [];
   for (const e of events) {
     const jobId = typeof e.jobId === "string" ? e.jobId : null;
     const type = typeof e.type === "string" ? (e.type as JobType) : null;
     if (!jobId || !type) continue;
-    if (e.kind === "job-started") {
-      inflight.set(jobId, { jobId, type, startedAt: e.ts });
-    } else if (e.kind === "job-progress") {
-      const cur = inflight.get(jobId);
-      if (cur) {
-        cur.current = typeof e.current === "number" ? e.current : undefined;
-        cur.total = typeof e.total === "number" ? e.total : undefined;
-      }
-    } else if (e.kind === "job-done") {
-      inflight.delete(jobId);
+    if (e.kind === "job-done") {
       recent.push({
         jobId,
         type,
@@ -113,7 +160,6 @@ function reduceJobsSnapshot(events: LogEvent[]): JobsSnapshot {
         filesIndexed: typeof e.filesIndexed === "number" ? e.filesIndexed : undefined,
       });
     } else if (e.kind === "job-failed") {
-      inflight.delete(jobId);
       recent.push({
         jobId,
         type,
@@ -130,23 +176,19 @@ function reduceJobsSnapshot(events: LogEvent[]): JobsSnapshot {
     }
   }
 
-  // Cross-check inflight against lock state: a "current" job whose lock
-  // isn't held anymore is stale (daemon crashed between job-started and
-  // job-done) and shouldn't be reported as live.
+  // Cross-check inflight-on-disk against live locks: an inflight file
+  // whose lock isn't held anymore is stale (daemon crashed between
+  // job-started and job-done) and shouldn't be reported as live.
   const locks = statusAll();
-  const liveCurrent: CurrentJob[] = [];
-  for (const job of inflight.values()) {
+  const liveCurrent = inflightOnDisk.filter((job) => {
     const theme: LockTheme =
       job.type === "model-download" ? "download" : job.type === "indexing" ? "index" : "embed";
-    if (locks[theme]) liveCurrent.push(job);
-  }
-
-  // Keep the last few terminal events in chronological order; cap at 10.
-  const recentTail = recent.slice(-10);
+    return locks[theme];
+  });
 
   return {
     current: liveCurrent,
-    recent: recentTail,
+    recent: recent.slice(-10),
     needsReindex: existsSync(needsReindexPath()),
     embedDisabled: existsSync(embedDisabledPath()),
   };
@@ -248,6 +290,7 @@ async function runIndexJob(
     return false;
   }
   return runJobWithLock(handle, "index", async (jobId, emitProgress) => {
+    await markJobStarted({ jobId, type: "indexing", startedAt: new Date().toISOString() });
     await appendGlobal({ kind: "job-started", jobId, type: "indexing", reason });
     const result = await store.update({
       onProgress: ({ current, total }) => {
@@ -289,12 +332,18 @@ async function runEmbedJob(
     // and we close the download event immediately. Otherwise the
     // download is genuinely in progress.
     downloadJobId = randomUUID();
+    await markJobStarted({
+      jobId: downloadJobId,
+      type: "model-download",
+      startedAt: new Date().toISOString(),
+    });
     await appendGlobal({ kind: "job-started", jobId: downloadJobId, type: "model-download" });
     const downloadStartedAt = Date.now();
     let downloadClosed = false;
     const closeDownload = async (): Promise<void> => {
       if (downloadClosed || !downloadJobId) return;
       downloadClosed = true;
+      await markJobEnded(downloadJobId);
       await appendGlobal({
         kind: "job-done",
         jobId: downloadJobId,
@@ -303,6 +352,7 @@ async function runEmbedJob(
       });
     };
 
+    await markJobStarted({ jobId, type: "embedding", startedAt: new Date().toISOString() });
     await appendGlobal({ kind: "job-started", jobId, type: "embedding" });
     const summary = await embedLoop(store, (cumEmbedded, totalEstimate) => {
       void closeDownload();
@@ -346,6 +396,7 @@ async function runJobWithLock(
       return;
     }
     lastEmitAt = now;
+    void markJobProgress(jobId, info.current, info.total);
     void appendGlobal({
       kind: "job-progress",
       jobId,
@@ -366,6 +417,7 @@ async function runJobWithLock(
     });
     throw err;
   } finally {
+    await markJobEnded(jobId);
     await releaseTheme(handle);
   }
 }
