@@ -101,7 +101,25 @@ export async function appendRun(runId: string, event: RunEventInput): Promise<vo
   await appendAt(runEventsPath(runId), { ...event, scope: "run", runId });
 }
 
+// Per-path serialization queue. Append+rotate is not atomic, so two
+// concurrent appendAt calls near the rotation threshold could both decide
+// to rotate, race on unlink/rename, and move a freshly-written event into
+// .old. The queue funnels everything per-path so each step (size check,
+// rotate, open, write, close) completes before the next caller starts.
+const queues = new Map<string, Promise<void>>();
+
 async function appendAt(path: string, event: Partial<LogEvent>): Promise<void> {
+  const tail = queues.get(path) ?? Promise.resolve();
+  const next = tail.catch(() => undefined).then(() => writeOne(path, event));
+  queues.set(path, next);
+  try {
+    await next;
+  } finally {
+    if (queues.get(path) === next) queues.delete(path);
+  }
+}
+
+async function writeOne(path: string, event: Partial<LogEvent>): Promise<void> {
   const ts = (event.ts as string | undefined) ?? new Date().toISOString();
   const line = `${JSON.stringify({ ...event, ts })}\n`;
   await mkdir(dirname(path), { recursive: true });

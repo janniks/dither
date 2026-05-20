@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -62,6 +62,44 @@ describe("run-log", () => {
       // After rotation the main file holds only the new event.
       expect(existsSync(`${runLogPath()}.old`)).toBe(true);
       expect(statSync(runLogPath()).size).toBeLessThan(500);
+    });
+
+    it("concurrent appends at the rotation threshold all survive", async () => {
+      const { ROTATION_THRESHOLD_BYTES, appendGlobal } = await import("./run-log");
+      const { runLogPath } = await import("./home");
+      await mkdir(home, { recursive: true });
+      const filler = "x".repeat(ROTATION_THRESHOLD_BYTES - 50);
+      writeFileSync(runLogPath(), filler);
+
+      // Fire 5 concurrent appends straddling the rotation point.
+      await Promise.all(
+        Array.from({ length: 5 }, (_, i) =>
+          appendGlobal({ kind: `concurrent-${i}` } as never),
+        ),
+      );
+
+      const main = readFileSync(runLogPath(), "utf-8").trim().split("\n").filter(Boolean);
+      const old = existsSync(`${runLogPath()}.old`)
+        ? readFileSync(`${runLogPath()}.old`, "utf-8").trim().split("\n").filter(Boolean)
+        : [];
+      // Of the 5 new events, no event was clobbered by the rotation race.
+      const newKinds = [...main, ...old]
+        .flatMap((l) => {
+          try {
+            return [(JSON.parse(l) as { kind: string }).kind];
+          } catch {
+            return [];
+          }
+        })
+        .filter((k) => k.startsWith("concurrent-"))
+        .sort();
+      expect(newKinds).toEqual([
+        "concurrent-0",
+        "concurrent-1",
+        "concurrent-2",
+        "concurrent-3",
+        "concurrent-4",
+      ]);
     });
 
     it("followGlobal yields events as they're appended; aborts cleanly on signal", async () => {
