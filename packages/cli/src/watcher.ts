@@ -58,6 +58,10 @@ export class Watcher {
   private plugins = new Map<string, PluginWatcher>();
   private suppress = new Map<string, number>();
   private libraryRoot = "";
+  // Monotonic generation token: bumped on every stop()/set() so handlers
+  // queued against a prior FSWatcher (whose async close is in flight) can
+  // detect they're stale and drop their event.
+  private generation = 0;
   private debounceMs: number;
   private debounceCapMs: number;
 
@@ -85,14 +89,15 @@ export class Watcher {
       }
     }
 
+    const gen = this.generation;
     this.fsWatcher = watch(Array.from(watchPaths), {
       ignoreInitial: true,
       persistent: true,
       alwaysStat: true,
       awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
     });
-    this.fsWatcher.on("add", (path, stats) => void this.onChange(path, stats));
-    this.fsWatcher.on("change", (path, stats) => void this.onChange(path, stats));
+    this.fsWatcher.on("add", (path, stats) => void this.onChange(gen, path, stats));
+    this.fsWatcher.on("change", (path, stats) => void this.onChange(gen, path, stats));
   }
 
   /**
@@ -105,6 +110,7 @@ export class Watcher {
   }
 
   stop(): void {
+    this.generation += 1;
     if (this.fsWatcher) {
       void this.fsWatcher.close();
       this.fsWatcher = null;
@@ -125,7 +131,11 @@ export class Watcher {
     return { count: entries.length, entries };
   }
 
-  private async onChange(path: string, stats: Stats | undefined): Promise<void> {
+  private async onChange(gen: number, path: string, stats: Stats | undefined): Promise<void> {
+    // Drop events that arrived after a stop()/set() — they belong to the
+    // previous chokidar watcher and would otherwise leak into the new
+    // active plugin set's inbox.
+    if (gen !== this.generation) return;
     const expiry = this.suppress.get(path);
     if (expiry !== undefined) {
       if (expiry > Date.now()) {
