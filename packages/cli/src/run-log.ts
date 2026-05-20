@@ -266,10 +266,16 @@ async function* followAt(path: string, signal?: AbortSignal): AsyncGenerator<Log
 }
 
 async function rotate(path: string): Promise<void> {
-  if (!existsSync(path)) return;
   const oldPath = `${path}.old`;
-  if (existsSync(oldPath)) await unlink(oldPath);
-  await rename(path, oldPath);
+  // ENOENT-tolerant on both steps. Serialization above means there's no
+  // intra-process race; this is defense in depth against any external
+  // tampering (manual log cleanup, deploy script) racing the daemon.
+  await unlink(oldPath).catch(ignoreENOENT);
+  await rename(path, oldPath).catch(ignoreENOENT);
+}
+
+function ignoreENOENT(err: unknown): void {
+  if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
 }
 
 function parseLine(line: string): LogEvent | null {

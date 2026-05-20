@@ -45,11 +45,11 @@ End-to-end behavior: a plugin scheduled `every 1s` runs N times in close success
 End-to-end behavior: with two concurrent `appendGlobal` calls crossing the 1 MB rotation threshold, neither throws, both lines land on disk, and exactly one rotation occurred.
 
 **Acceptance:**
-- [ ] Module-level mutex serializes `appendAt(runLogPath(), …)` calls inside the process.
-- [ ] Per-Run appends use per-runId chains (not blocked by global chain).
-- [ ] `rotate()` is ENOENT-tolerant on both `unlink(.old)` and `rename(path,oldPath)`.
-- [ ] New test fills the log near threshold, fires multiple parallel `appendGlobal` calls, asserts no throw, all events present across `path` + `.old`, `.old` non-empty.
-- [ ] Existing run-log tests still pass.
+- [x] Module-level mutex serializes `appendAt(runLogPath(), …)` calls inside the process. (already landed in 64b51ec)
+- [x] Per-Run appends use per-runId chains (not blocked by global chain). (already landed in 64b51ec)
+- [x] `rotate()` is ENOENT-tolerant on both `unlink(.old)` and `rename(path,oldPath)`.
+- [x] New test fills the log near threshold, fires multiple parallel `appendGlobal` calls, asserts no throw, all events present across `path` + `.old`, `.old` non-empty. (already landed in 64b51ec)
+- [x] Existing run-log tests still pass.
 
 ---
 
