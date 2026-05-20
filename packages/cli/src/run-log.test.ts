@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -172,6 +172,44 @@ describe("run-log", () => {
       const runs = await listRuns();
       expect(runs).toHaveLength(1);
       expect(runs[0]!.status).toBe("running");
+    });
+
+    it("openRun retries on runId collision and produces distinct ids with intact manifests", async () => {
+      // Force a single collision: first two randomBytes calls return the
+      // same suffix; third call returns a different one. With the retry
+      // loop in openRun, the second call should regenerate and succeed.
+      vi.resetModules();
+      vi.doMock("node:crypto", async () => {
+        const actual = await vi.importActual<typeof import("node:crypto")>("node:crypto");
+        let n = 0;
+        return {
+          ...actual,
+          default: actual,
+          randomBytes: (size: number): Buffer => {
+            n++;
+            if (n <= 2) return Buffer.from([0xab, 0xcd, 0xef, 0x01]);
+            return Buffer.from([0x12, 0x34, 0x56, 0x78]);
+          },
+        };
+      });
+
+      const { openRun, listRuns } = await import("./run-log");
+      const h1 = await openRun("myplugin", "watch");
+      const h2 = await openRun("myplugin", "watch");
+
+      expect(h1.runId).not.toBe(h2.runId);
+      expect(existsSync(join(h1.dir, "manifest.json"))).toBe(true);
+      expect(existsSync(join(h2.dir, "manifest.json"))).toBe(true);
+
+      const m1 = JSON.parse(readFileSync(join(h1.dir, "manifest.json"), "utf-8")) as { runId: string };
+      const m2 = JSON.parse(readFileSync(join(h2.dir, "manifest.json"), "utf-8")) as { runId: string };
+      expect(m1.runId).toBe(h1.runId);
+      expect(m2.runId).toBe(h2.runId);
+
+      const runs = await listRuns();
+      expect(runs.map((r) => r.runId).toSorted()).toEqual([h1.runId, h2.runId].toSorted());
+
+      vi.doUnmock("node:crypto");
     });
 
     it("followRun streams new events appended after the iterator starts", async () => {

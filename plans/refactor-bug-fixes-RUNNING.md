@@ -31,10 +31,10 @@ End-to-end behavior this slice delivers: a user running `dither runs tail <runId
 End-to-end behavior: a plugin scheduled `every 1s` runs N times in close succession; all N Runs appear in `dither runs list` with distinct `runId`s and intact `manifest.json` files.
 
 **Acceptance:**
-- [ ] `generateRunId` random suffix widened from 2 to 4 bytes.
-- [ ] `openRun` uses `mkdir({recursive:false})`; on `EEXIST`, regenerates runId and retries up to 3 times; otherwise throws.
-- [ ] New test stubs `randomBytes` to force a collision once and asserts both `openRun` calls succeed with distinct ids and intact manifests.
-- [ ] Existing run-log tests still pass.
+- [x] `generateRunId` random suffix widened from 2 to 4 bytes.
+- [x] `openRun` uses `mkdir({recursive:false})`; on `EEXIST`, regenerates runId and retries up to 3 times; otherwise throws.
+- [x] New test stubs `randomBytes` to force a collision once and asserts both `openRun` calls succeed with distinct ids and intact manifests.
+- [x] Existing run-log tests still pass.
 
 ---
 

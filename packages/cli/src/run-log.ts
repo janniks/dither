@@ -324,7 +324,9 @@ export function generateRunId(plugin: string): string {
   const stamp =
     `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}` +
     `T${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}`;
-  const rand = randomBytes(2).toString("hex");
+  // 4-byte suffix: a 2-byte suffix collides 1/65536 within a single UTC
+  // second; daemon-driven `every 1s` schedules made that reachable.
+  const rand = randomBytes(4).toString("hex");
   const safe = plugin.replace(/[^a-zA-Z0-9._-]/g, "_");
   return `${stamp}-${safe}-${rand}`;
 }
@@ -342,9 +344,23 @@ export interface RunHandle {
  * + `close` are tied to this runId. Closing writes `result.json`.
  */
 export async function openRun(plugin: string, trigger: string): Promise<RunHandle> {
-  const runId = generateRunId(plugin);
-  const dir = runDirOf(runId);
-  await mkdir(dir, { recursive: true });
+  // `mkdir({recursive:false})` lets us detect runId collisions: the
+  // wider 4-byte suffix already makes them astronomically unlikely, but
+  // a silent overwrite would clobber the prior Run's manifest.
+  await mkdir(historyDir(), { recursive: true });
+  let runId = generateRunId(plugin);
+  let dir = runDirOf(runId);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await mkdir(dir, { recursive: false });
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      if (attempt === 2) throw new Error(`openRun: runId collisions exhausted for plugin ${plugin}`);
+      runId = generateRunId(plugin);
+      dir = runDirOf(runId);
+    }
+  }
   const manifest: RunManifest = {
     runId,
     plugin,
