@@ -176,17 +176,43 @@ async function readFromPath(path: string, tailLines: number): Promise<LogEvent[]
   }
 }
 
-/** Follow the global Run-log from the current end. */
-export function followGlobal(signal?: AbortSignal): AsyncGenerator<LogEvent> {
-  return followAt(runLogPath(), signal);
+/**
+ * Follow the global Run-log. If `fromOffset` is provided, the follower
+ * starts at that byte offset instead of the current EOF — used by
+ * `triggerAndWatch` to pin the start point before sending SIGHUP, so a
+ * `reconcile-started` event written between SIGHUP and follower-open is
+ * still in the read window. If the offset is past the current file size
+ * (e.g. rotation happened between snapshot and follow), the follower
+ * reopens from byte 0 of the new file.
+ */
+export function followGlobal(signal?: AbortSignal, fromOffset?: number): AsyncGenerator<LogEvent> {
+  return followAt(runLogPath(), signal, fromOffset);
 }
 
 /** Follow a Run's log from the current end. */
-export function followRun(runId: string, signal?: AbortSignal): AsyncGenerator<LogEvent> {
-  return followAt(runEventsPath(runId), signal);
+export function followRun(
+  runId: string,
+  signal?: AbortSignal,
+  fromOffset?: number,
+): AsyncGenerator<LogEvent> {
+  return followAt(runEventsPath(runId), signal, fromOffset);
 }
 
-async function* followAt(path: string, signal?: AbortSignal): AsyncGenerator<LogEvent> {
+/** Current byte size of the global Run-log, or 0 if it doesn't exist yet. */
+export async function globalLogSize(): Promise<number> {
+  try {
+    return (await stat(runLogPath())).size;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return 0;
+    throw err;
+  }
+}
+
+async function* followAt(
+  path: string,
+  signal?: AbortSignal,
+  fromOffset?: number,
+): AsyncGenerator<LogEvent> {
   await mkdir(dirname(path), { recursive: true });
 
   // Box `fh` inside a holder so TS can't narrow it away through closure
@@ -211,7 +237,10 @@ async function* followAt(path: string, signal?: AbortSignal): AsyncGenerator<Log
       lineBuffer = "";
     } else {
       const st = await holder.fh.stat();
-      offset = st.size;
+      // If caller pinned a start offset (triggerAndWatch snapshot
+      // before SIGHUP), honor it — but cap to current size in case
+      // rotation shrank the file.
+      offset = fromOffset !== undefined ? Math.min(fromOffset, st.size) : st.size;
     }
   };
 
@@ -382,7 +411,13 @@ export async function openRun(plugin: string, trigger: string): Promise<RunHandl
       await appendRun(runId, event);
     },
     async close(result) {
-      await writeFile(join(dir, "result.json"), JSON.stringify(result, null, 2));
+      // Atomic write: tail polls via existsSync + readFile, so a partial
+      // write would race the reader. tmp+rename guarantees the path only
+      // ever resolves to a complete file.
+      const target = join(dir, "result.json");
+      const tmp = `${target}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+      await writeFile(tmp, JSON.stringify(result, null, 2));
+      await rename(tmp, target);
     },
   };
 }

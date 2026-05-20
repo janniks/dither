@@ -92,14 +92,26 @@ const tailSubcommand = defineCommand({
     // appears, print and abort. `emitted` guards against a slow read
     // letting a second tick re-launch readResult — duplicate _result
     // lines would corrupt downstream JSONL consumers.
+    // `inFlight` guards against a slow read letting a second tick re-launch
+    // readResult — duplicate _result lines would corrupt downstream JSONL
+    // consumers. `emitted` is only set AFTER readResult succeeds, so a
+    // partial-write read failure leaves the loop free to retry.
+    let inFlight = false;
     let emitted = false;
     const resultPoll = setInterval(() => {
-      if (emitted || !existsSync(resultPath(runId))) return;
-      emitted = true;
-      void readResult(runId).then((r) => {
-        if (r) console.log(JSON.stringify({ type: "_result", ...r }));
-        ac.abort();
-      });
+      if (emitted || inFlight || !existsSync(resultPath(runId))) return;
+      inFlight = true;
+      void readResult(runId)
+        .then((r) => {
+          if (!r) return;
+          emitted = true;
+          console.log(JSON.stringify({ type: "_result", ...r }));
+          ac.abort();
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          inFlight = false;
+        });
     }, 100);
 
     try {
