@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, renameSync, unlinkSync } from "node:fs";
-import { mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { resolveHome } from "./home";
 import { openStore } from "./store";
 import { appendGlobal, readGlobal, type LogEvent } from "./run-log";
@@ -83,9 +83,18 @@ function jobFilePath(jobId: string): string {
   return join(jobsDir(), `${jobId}.json`);
 }
 
+// Atomic write — tmp+rename so a concurrent `dither status` (via
+// readCurrentJobsFromDisk) never observes a half-written job file.
+// Matches the pattern openRun.close() uses for result.json.
+async function writeJobFileAtomic(path: string, job: CurrentJob): Promise<void> {
+  const tmp = `${path}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+  await writeFile(tmp, JSON.stringify(job));
+  await rename(tmp, path);
+}
+
 async function markJobStarted(job: CurrentJob): Promise<void> {
   await mkdir(dirname(jobFilePath(job.jobId)), { recursive: true });
-  await writeFile(jobFilePath(job.jobId), JSON.stringify(job));
+  await writeJobFileAtomic(jobFilePath(job.jobId), job);
 }
 
 async function markJobProgress(jobId: string, current: number, total: number): Promise<void> {
@@ -94,7 +103,7 @@ async function markJobProgress(jobId: string, current: number, total: number): P
     const cur = JSON.parse(raw) as CurrentJob;
     cur.current = current;
     cur.total = total;
-    await writeFile(jobFilePath(jobId), JSON.stringify(cur));
+    await writeJobFileAtomic(jobFilePath(jobId), cur);
   } catch (err) {
     // ENOENT: job ended between progress emits — fine.
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
