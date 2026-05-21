@@ -86,9 +86,4 @@ export class LoopDetector {
       if (v.lastTouched < cutoff) this.chains.delete(k);
     }
   }
-
-  size(): number {
-    this.gc();
-    return this.chains.size;
-  }
 }
