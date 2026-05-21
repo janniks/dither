@@ -210,4 +210,9 @@ all phases complete.
 
 | commit | summary |
 |--|--|
-|  |  |
+| 18d322e | Phase 1 — auth (leveldb byte-scan + workspace match) + slackFetch (pacer + 429) + plugin.ts orchestrator emits `workspace.md`; manifest + deno.json + README. |
+| (no SHA — test.local) | Phase 2 — `state.ts` per-conv cursor + user/channel caches; `render.ts` mrkdwn→CommonMark + mentions/channel/emoji/files; `filters.ts` activity / Slackbot / bots-by-default drop; `cursor.ts` forward pass with per-day re-fetch model; `plugin.ts` users.conversations + allow/deny + round-robin sort. Type-clean. |
+| (no SHA — test.local) | Phase 3 — `cursor.ts` thread fan-out (fetchReplies on `reply_count > thread_seen[ts]`); `render.ts` `threadFilename`, `threadPointer`, `permalink` helpers; `plugin.ts` thread emit with root-author resolution + participant count + permalink in frontmatter; channel-day docs gain pointer line under thread roots. |
+| (no SHA — test.local) | Phase 4 — `cursor.ts` `backward()` pass with `seedBackfill()` helper and shared `fanThreads()` between forward + backward; `plugin.ts` first-run head_ts seed to "now", 60/40 forward/backward budget split, round-robin backward by `last_polled` ascending with per-conv slice, `SLACK_MIN_DATE` floor, `SLACK_BACKFILL=off` honored. |
+| (no SHA — test.local) | Phase 5 — `bookmarks.ts` channel-only `bookmarks.list` pass, 24h-per-channel `bookmarks_last_refreshed` cadence, one md per bookmark with title + link + emoji frontmatter; `plugin.ts` invokes after forward + backward. |
+| (no SHA — test.local) | Phase 6 — `api.ts` single retry on 5xx with 2s backoff (retries counter param); `plugin.ts` `loadState()` wrapper rethrows JSON.parse failures as `state.json is unparseable; delete it to reset and re-run`. All structural failure paths code-complete. |
