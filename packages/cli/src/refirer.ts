@@ -81,5 +81,3 @@ export class Refirer {
 // larger overflows and fires immediately. Chunk longer waits into hops of
 // this size and reschedule until fireAt is reached.
 const MAX_TIMER_MS = 0x7fffffff;
-
-export type { RefireRow };
