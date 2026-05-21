@@ -299,7 +299,7 @@ export async function promptInteractive(
  * use a flashy header to mislead about what's about to be installed.
  * Capped at ~60 chars so it fits on one line in a narrow terminal.
  */
-export function printHeader(parsed: ParsedPackage): void {
+function printHeader(parsed: ParsedPackage): void {
   const title = parsed.manifest.display_name ?? parsed.name;
   const full = `${title}@${parsed.version}`;
   const line = full.length > 60 ? `${full.slice(0, 57)}…` : full;

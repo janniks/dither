@@ -30,7 +30,7 @@ import { resolveHome, runEventsPath, runLogPath } from "./home";
  */
 
 export const ROTATION_THRESHOLD_BYTES = 1_048_576; // 1 MiB
-export const FOLLOW_POLL_MS = 100;
+const FOLLOW_POLL_MS = 100;
 
 /** Closed event-kind union — every kind any producer emits. */
 export type EventKind =
@@ -96,8 +96,8 @@ export async function appendGlobal(event: GlobalEventInput): Promise<void> {
   await appendAt(runLogPath(), { ...event, scope: "global" });
 }
 
-/** Append one event to a Run's scope. */
-export async function appendRun(runId: string, event: RunEventInput): Promise<void> {
+/** Append one event to a Run's scope. Reached via `openRun().append`. */
+async function appendRun(runId: string, event: RunEventInput): Promise<void> {
   await appendAt(runEventsPath(runId), { ...event, scope: "run", runId });
 }
 
@@ -354,7 +354,7 @@ function pad(n: number, w = 2): string {
   return String(n).padStart(w, "0");
 }
 
-export function generateRunId(plugin: string): string {
+function generateRunId(plugin: string): string {
   const now = new Date();
   const stamp =
     `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}` +

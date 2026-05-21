@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { basename, dirname, join } from "node:path";
 import { resolveHome } from "./home";
 
-export const CONFIG_SCHEMA_VERSION = 2;
+const CONFIG_SCHEMA_VERSION = 2;
 
 export interface ExternalCollection {
   name: string;
@@ -24,7 +24,7 @@ export class NotInitializedError extends Error {
   }
 }
 
-export function configPath(): string {
+function configPath(): string {
   return join(resolveHome(), "config.json");
 }
 

@@ -17,7 +17,7 @@ export const WELCOME_DOC_FILENAME = "welcome.md";
  * demo `dither search` → `dither get`, not to be a manual. Keep it under
  * a screenful.
  */
-export const WELCOME_CONTENT = `# Welcome to dither
+const WELCOME_CONTENT = `# Welcome to dither
 
 This is your first document. You found it by running:
 

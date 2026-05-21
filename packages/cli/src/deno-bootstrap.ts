@@ -19,7 +19,7 @@ import { acquire, release } from "./locks";
  * the same vector that would compromise the binary).
  */
 
-export const VERSION = "2.7.13";
+const VERSION = "2.7.13";
 
 type Target =
   | "aarch64-apple-darwin"

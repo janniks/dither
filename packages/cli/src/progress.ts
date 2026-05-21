@@ -161,7 +161,7 @@ export async function embedLoop(
  * qmd emits these via `console.warn(\`⚠ Text truncated to fit embedding
  * context (\${N} tokens)\`)` and the same with a `Batch ` prefix.
  */
-export async function withTruncationFilter<T>(
+async function withTruncationFilter<T>(
   fn: () => Promise<T>,
 ): Promise<{ result: T; truncatedCount: number }> {
   const original = console.warn;
