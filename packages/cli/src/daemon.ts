@@ -307,6 +307,12 @@ export async function runDaemon(): Promise<void> {
   // work — and `qmdReconcile` itself is short on no-work paths.
   let qmdReconcileInFlight: Promise<void> | null = null;
   let qmdReconcileQueued = false;
+  // Backoff for level-triggered re-fires: a plugin that re-creates
+  // `needs-reindex` faster than reconcile can consume it would otherwise
+  // spin the CPU. 500ms is well below human-perceivable latency for
+  // catch-up indexing yet bounds wasted work.
+  const LEVEL_TRIGGER_MIN_INTERVAL_MS = 500;
+  let lastQmdReconcileStart = 0;
   const fireQmdReconcile = (): void => {
     if (qmdReconcileInFlight) {
       // A reconcile is running. Mark a follow-up cycle so a SIGHUP /
@@ -316,6 +322,7 @@ export async function runDaemon(): Promise<void> {
       qmdReconcileQueued = true;
       return;
     }
+    lastQmdReconcileStart = Date.now();
     qmdReconcileInFlight = qmdReconcile()
       .catch((err) => {
         console.error(
@@ -327,8 +334,13 @@ export async function runDaemon(): Promise<void> {
         // Level-triggered check: if a `needs-reindex` marker landed
         // during this cycle (e.g. plugin-run wrote it after promoting
         // files), pick it up without waiting for an external SIGHUP.
-        if (qmdReconcileQueued || existsSync(needsReindexPath())) {
-          qmdReconcileQueued = false;
+        if (!qmdReconcileQueued && !existsSync(needsReindexPath())) return;
+        qmdReconcileQueued = false;
+        const elapsed = Date.now() - lastQmdReconcileStart;
+        const wait = Math.max(0, LEVEL_TRIGGER_MIN_INTERVAL_MS - elapsed);
+        if (wait > 0) {
+          setTimeout(fireQmdReconcile, wait).unref();
+        } else {
           fireQmdReconcile();
         }
       });
