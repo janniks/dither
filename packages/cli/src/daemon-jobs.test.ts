@@ -9,15 +9,6 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-
-function renameSyncProcessing(home: string): void {
-  const marker = join(home, "needs-reindex");
-  renameSync(marker, `${marker}.processing`);
-}
-
-function unlinkProcessing(home: string): void {
-  unlinkSync(join(home, "needs-reindex.processing"));
-}
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -28,6 +19,15 @@ import {
   readJobsSnapshot,
 } from "./daemon-jobs";
 import { readGlobal } from "./run-log";
+
+function renameSyncProcessing(home: string): void {
+  const marker = join(home, "needs-reindex");
+  renameSync(marker, `${marker}.processing`);
+}
+
+function unlinkProcessing(home: string): void {
+  unlinkSync(join(home, "needs-reindex.processing"));
+}
 
 describe("daemon-jobs", () => {
   let home: string;
