@@ -49,4 +49,4 @@ Add `findLastRunForPlugin(name)` to `run-log.ts`. Add `plugin runs [target?]` su
 | Commit | Summary |
 |--------|---------|
 | 413b3fc | Phase 1: rename promoted → added across user-visible surfaces |
-|  | Phase 2: plugin runs subcommand + delete top-level runs |
+| 03fe2c2 | Phase 2: plugin runs subcommand + delete top-level runs |
