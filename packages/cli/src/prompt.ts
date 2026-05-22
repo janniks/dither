@@ -2,6 +2,7 @@ import { consola } from "consola";
 import { homedir } from "node:os";
 import { clearScreenDown, moveCursor } from "node:readline";
 import pc from "picocolors";
+import { sanitizePluginText, wrapPluginText } from "./untrusted-text";
 
 const HOME = homedir();
 
@@ -212,6 +213,40 @@ export function accepted(label: string, value: string): void {
   const cols = process.stdout.columns ?? 80;
   const room = Math.max(20, cols - label.length - 5);
   process.stdout.write(`${pc.green("✓")} ${label}: ${clip(value, room)}\n`);
+}
+
+/**
+ * Render manifest-supplied prose (a plugin's `description`, env / file
+ * `description`) inside a labelled `from plugin` box. The chrome is
+ * Dither's voice (dim); the contents are the plugin's voice, sanitized
+ * through `sanitizePluginText` so ANSI escapes, OSC 8 hyperlinks, and
+ * stray control characters can't reach the user's terminal raw.
+ *
+ * Every render of plugin-supplied text in the CLI must flow through
+ * this single entry point. Audit rule: nothing else in packages/cli/
+ * may read `manifest.*.description` and write it directly to stdout
+ * (see specs/plugin-prompt-untrusted-text.md).
+ *
+ * Empty / whitespace-only descriptions render nothing.
+ */
+export function pluginText(raw: string): void {
+  const safe = sanitizePluginText(raw);
+  if (safe.text === "") return;
+  const cols = Math.max(40, Math.min(100, process.stdout.columns ?? 80));
+  const inner = cols - 4;
+  const lines = wrapPluginText(safe.text, inner);
+  if (safe.truncated) lines.push("", "(description truncated)");
+  const label = " from plugin ";
+  const topFill = "─".repeat(Math.max(0, cols - 2 - label.length));
+  const bot = "─".repeat(cols - 2);
+  const out: string[] = [];
+  out.push(pc.dim(`┌─${label}${topFill}┐`));
+  for (const line of lines) {
+    const pad = " ".repeat(Math.max(0, inner - line.length));
+    out.push(`${pc.dim("│")} ${line}${pad} ${pc.dim("│")}`);
+  }
+  out.push(pc.dim(`└${bot}┘`));
+  process.stdout.write(`${out.join("\n")}\n`);
 }
 
 /**

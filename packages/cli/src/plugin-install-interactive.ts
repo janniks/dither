@@ -1,11 +1,11 @@
 import { existsSync } from "node:fs";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import pc from "picocolors";
 import { parsePackage, type Manifest, type ParsedPackage } from "./manifest";
 import {
   accepted,
   confirm,
+  pluginText,
   promptSelect,
   promptText,
   untildePath,
@@ -21,14 +21,6 @@ import { resolveHome } from "./home";
  *   - `foo\ bar`→ `foo bar` (shell-style backslash escapes)
  *   - quoted strings → unwrapped
  */
-/**
- * Write a dim hint line above a prompt. Used for descriptions that would
- * otherwise wrap and clutter the prompt itself.
- */
-function writeHint(text: string): void {
-  process.stdout.write(`${pc.dim(text)}\n`);
-}
-
 function normalizePath(raw: string): string {
   let v = raw.trim();
   if (
@@ -261,6 +253,7 @@ export async function promptInteractive(
   missing: MissingField[],
 ): Promise<InstallInputs> {
   printHeader(parsed);
+  if (parsed.description) pluginText(parsed.description);
 
   const env: Record<string, string> = {};
   const envRefs: string[] = [];
@@ -269,9 +262,10 @@ export async function promptInteractive(
   for (const field of missing) {
     if (field.kind === "env") {
       const def = (parsed.manifest.env ?? []).find((e) => e.name === field.name);
-      // Render the manifest description as a dim doc line above the prompt,
-      // so the prompt itself stays short and never wraps on narrow terminals.
-      if (def?.description) writeHint(def.description);
+      // Manifest descriptions are untrusted plugin prose — render them
+      // inside a labelled `from plugin` box above the prompt so the user
+      // can tell Dither's voice from the plugin's voice.
+      if (def?.description) pluginText(def.description);
       const globalValue = await getGlobalEnv(field.name);
       if (globalValue !== undefined) {
         const mode = await promptSelect<"literal" | "ref">({
@@ -294,7 +288,7 @@ export async function promptInteractive(
     }
     // kind === "file"
     const def = (parsed.manifest.files ?? []).find((f) => f.id === field.name);
-    if (def?.description) writeHint(def.description);
+    if (def?.description) pluginText(def.description);
     const hint = def?.default_hint ? ` (${def.default_hint})` : "";
     const dflt = def?.default;
     const value = await promptText({

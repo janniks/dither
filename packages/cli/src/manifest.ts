@@ -44,6 +44,10 @@ export type Manifest = z.infer<typeof ManifestSchema>;
 export interface ParsedPackage {
   name: string;
   version: string;
+  /** package.json top-level `description`. Treated as untrusted plugin
+   *  prose — rendered via `pluginText` only, never spliced into a
+   *  prompt or printed raw. */
+  description?: string;
   manifest: Manifest;
 }
 
@@ -70,6 +74,8 @@ export function parsePackage(pkg: unknown): ParsedPackage {
   return {
     name: obj["name"],
     version: obj["version"],
+    description:
+      typeof obj["description"] === "string" ? obj["description"] : undefined,
     manifest,
   };
 }
