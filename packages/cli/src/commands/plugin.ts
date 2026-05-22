@@ -20,6 +20,7 @@ import { parseSchedule } from "../schedule-parser";
 import { runPlugin, PLUGIN_NOT_INSTALLED } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
 import { removePlugin } from "../plugin-remove";
+import { fitOneLine } from "../prompt";
 import { resolveHome } from "../home";
 import { assertInitialized, libraryRoot } from "../config";
 import { reloadDaemon, startDaemon, readDaemonPid } from "../daemon-control";
@@ -438,7 +439,11 @@ const runSubcommand = defineCommand({
         verbose: args.verbose,
         onProgress: (msg) => {
           if (tty) {
-            process.stderr.write(`\r\x1b[K${msg.message}`);
+            // Middle-truncate so the line fits on one terminal row.
+            // `\r\x1b[K` only clears one visual line — if the message
+            // wraps, the next rewrite leaves the overflow as garbage.
+            const cols = process.stderr.columns ?? 80;
+            process.stderr.write(`\r\x1b[K${fitOneLine(msg.message, cols)}`);
           } else {
             process.stderr.write(`${msg.message}\n`);
           }

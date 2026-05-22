@@ -174,6 +174,26 @@ function clip(value: string, room: number): string {
 }
 
 /**
+ * Middle-truncate a line so it fits on one terminal row. Used by
+ * carriage-return rewrites (progress lines) where wrapping would leave
+ * garbage: `\r\x1b[K` only clears one visual line, so the overflow stays.
+ *
+ * Keeps the head + tail intact (most context-rich), drops the middle.
+ * Returns the input unchanged for non-TTY callers.
+ *
+ *   fitOneLine("forward: mpdm-foo--bar--baz--qux (mpim) — budget 200", 40)
+ *   → "forward: mpdm-foo--ba…(mpim) — budget 200"
+ */
+export function fitOneLine(value: string, cols: number): string {
+  if (value.length <= cols) return value;
+  if (cols < 4) return value.slice(0, cols);
+  const half = Math.floor((cols - 1) / 2);
+  const head = value.slice(0, half);
+  const tail = value.slice(value.length - (cols - half - 1));
+  return `${head}…${tail}`;
+}
+
+/**
  * After `promptText` resolves, overwrite consola's echoed line with a
  * compact `✓ label: value` confirmation. consola's submit handler renders
  * a final frame (the prompt + the typed answer) and `close()` then writes
