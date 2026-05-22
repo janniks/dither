@@ -97,4 +97,4 @@ When starting implementation, this file is named `./plans/plugin-spotify-RUNNING
 | 72b58a7 | Phase 1 — manifest, deno.json, auth + recently-played modules with tests (9/9 pass), plugin orchestrator skeleton. Test.local is gitignored so the plugin code itself doesn't appear in the commit (matches existing plugin convention). |
 | 369d9e2 | Phase 2 — process.ts (MODES + seen filter), entry.ts (song/episode shaping), wired into plugin.ts. 23/23 tests pass. Placeholder body for songs until phase 3. |
 | 75b3273 | Phase 3 — lyrics.ts with LRCLIB fetch. Song body now uses real lyrics when LRCLIB hits, falls back to placeholder otherwise. 28/28 tests pass. |
-| (next) | Phase 4 — AZLyrics fallback: search → page → parse comment-marker div. 1.5s throttle (parameterized for tests). Pure-function parsers covered by inline fixtures. 34/34 tests pass. |
+| 3ae1f7f | Phase 4 — AZLyrics fallback: search → page → parse comment-marker div. 1.5s throttle (parameterized for tests). Pure-function parsers covered by inline fixtures. 34/34 tests pass. |
