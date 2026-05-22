@@ -45,6 +45,11 @@ export interface PluginInput {
    *  queued for this fire. Empty array on scheduled/manual runs unless the
    *  caller supplied explicit targets. */
   targets: WatchTarget[];
+  /** Hosts this run is allowed to reach (mirrors the `--allow-net=` argv
+   *  the host spawned us with). Lets plugins read their own network grant
+   *  instead of hardcoding the same host in code AND manifest. Empty array
+   *  means "no network"; a single `"*"` means "any host". */
+  net: string[];
 }
 
 /** Values writable to YAML frontmatter. Undefined keys are skipped. */

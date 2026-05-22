@@ -4,13 +4,10 @@ import { join, resolve } from "node:path";
 import { parsePackage, type Manifest, type ParsedPackage } from "./manifest";
 import {
   confirm,
-  promptConfirm,
-  promptMultiSelect,
   promptSelect,
   promptText,
   untildePath,
 } from "./prompt";
-import { validateGrantPattern } from "./grants";
 import { getGlobalEnv } from "./global-env";
 import { resolveHome } from "./home";
 
@@ -310,32 +307,38 @@ export async function promptInteractive(
     confirm(field.name, final);
   }
 
-  const net = await reviewList({
-    declared: parsed.manifest.net,
-    current: current.net,
-    label: "Network hosts",
-    addPrompt: "Additional host to grant (blank to stop)",
-  });
-
-  const collections = await reviewList({
-    declared: parsed.manifest.collections,
-    current: current.collections,
-    label: "Collections to grant write access",
-    addPrompt: "Additional collection pattern (blank to stop)",
-    validateAdd: (v) => {
-      try {
-        validateGrantPattern(v);
-        return null;
-      } catch (err) {
-        return err instanceof Error ? err.message : String(err);
-      }
-    },
-  });
-
-  const proceed = await promptConfirm("Proceed with install?");
-  if (!proceed) throw new InstallCancelledError();
+  // Manifest is the source of truth for net + collections. The user
+  // overrides via --allow-net / --allow-collection flags; otherwise we
+  // grant exactly what the manifest declares. No picker, no add-loop —
+  // both add friction without saving anything most installs need.
+  const net = accept("net", current.net, parsed.manifest.net);
+  const collections = accept(
+    "collections",
+    current.collections,
+    parsed.manifest.collections,
+  );
 
   return { env, envRefs, files, net, collections };
+}
+
+/**
+ * Resolve a grant list from a flag override or manifest declaration. Prints
+ * a single `✓ label: a, b, c` line so the user sees what was granted.
+ * Returns undefined when both are empty (so `mergeInputs` no-ops).
+ */
+function accept(
+  label: string,
+  flag: string[] | undefined,
+  declared: string[] | undefined,
+): string[] | undefined {
+  const chosen = flag !== undefined && flag.length > 0
+    ? Array.from(new Set(flag))
+    : declared && declared.length > 0
+    ? Array.from(new Set(declared))
+    : [];
+  if (chosen.length === 0) return undefined;
+  confirm(label, chosen.join(", "));
+  return chosen;
 }
 
 /**
@@ -349,52 +352,6 @@ function printHeader(parsed: ParsedPackage): void {
   const full = `${title}@${parsed.version}`;
   const line = full.length > 60 ? `${full.slice(0, 57)}…` : full;
   process.stdout.write(`\n${line}\n\n`);
-}
-
-/**
- * Multi-select pre-checked against the manifest declaration (or, if the
- * user already passed a flag, against that subset). Followed by a loop
- * that lets the user add entries not in the manifest. Returns `undefined`
- * when there's nothing to review so `mergeInputs` falls back to the
- * existing flag/manifest behavior.
- */
-async function reviewList(opts: {
-  declared: string[] | undefined;
-  current: string[] | undefined;
-  label: string;
-  addPrompt: string;
-  validateAdd?: (v: string) => string | null | Promise<string | null>;
-}): Promise<string[] | undefined> {
-  const declared = opts.declared ?? [];
-  const preChecked = opts.current && opts.current.length > 0 ? opts.current : declared;
-  // Show the multi-select if the manifest declared anything OR the user
-  // already granted things via flag. Nothing-to-review → return undefined
-  // and let mergeInputs preserve the existing behavior.
-  if (declared.length === 0 && (!opts.current || opts.current.length === 0)) {
-    return undefined;
-  }
-
-  // Union of (manifest declarations, current grants) — so a user who
-  // previously --allow-net'd something off the manifest list still sees
-  // it as a check-uncheck option.
-  const optionValues = Array.from(new Set([...declared, ...(opts.current ?? [])]));
-  let chosen = await promptMultiSelect({
-    message: opts.label,
-    options: optionValues.map((v) => ({ label: v, value: v })),
-    initial: preChecked,
-  });
-
-  for (;;) {
-    const extra = await promptText({
-      message: opts.addPrompt,
-      validate: opts.validateAdd
-        ? async (v) => (v.trim() === "" ? null : opts.validateAdd!(v.trim()))
-        : undefined,
-    });
-    if (extra.trim() === "") break;
-    chosen = Array.from(new Set([...chosen, extra.trim()]));
-  }
-  return chosen;
 }
 
 /**

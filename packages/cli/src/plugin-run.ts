@@ -360,6 +360,7 @@ async function runPluginLocked(
           env: resolvedEnv,
           files: grantFiles,
           targets,
+          net: grantNet,
         },
         null,
         2,
