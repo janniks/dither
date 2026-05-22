@@ -45,13 +45,13 @@ Plugin installs cleanly, refreshes an access token, fetches recently-played, pri
 End-to-end: a run finds new tracks/episodes in recently-played, writes one entry per id, never rewrites. MODES gates which kinds are written. Songs get a placeholder body + metadata table. Episodes get Spotify's `description` field. Seen-set persists to state.
 
 **Acceptance:**
-- [ ] `process.ts` filters events by MODES + seen-state; returns the list of newly-promotable items classified as `track` / `episode`
-- [ ] `entry.ts` shapes a song entry (placeholder body + metadata) with the agreed frontmatter
-- [ ] `entry.ts` shapes an episode entry (Spotify description body) with the agreed frontmatter
-- [ ] Top-level plugin wires the loop: refresh → fetch → process → write → seen.add → state-flush at end
-- [ ] Empty MODES is a clean no-op after the token refresh
-- [ ] `process.test.ts` covers MODES gating + seen dedup
-- [ ] `entry.test.ts` covers song + episode body/frontmatter shape
+- [x] `process.ts` filters events by MODES + seen-state; returns the list of newly-promotable items classified as `track` / `episode`
+- [x] `entry.ts` shapes a song entry (placeholder body + metadata) with the agreed frontmatter
+- [x] `entry.ts` shapes an episode entry (Spotify description body) with the agreed frontmatter
+- [x] Top-level plugin wires the loop: refresh → fetch → process → write → seen.add → state-flush at end
+- [x] Empty MODES is a clean no-op after the token refresh
+- [x] `process.test.ts` covers MODES gating + seen dedup
+- [x] `entry.test.ts` covers song + episode body/frontmatter shape
 
 ---
 
@@ -94,4 +94,4 @@ When starting implementation, this file is named `./plans/plugin-spotify-RUNNING
 
 | Commit | Summary |
 |--------|---------|
-|        |         |
+| 72b58a7 | Phase 1 — manifest, deno.json, auth + recently-played modules with tests (9/9 pass), plugin orchestrator skeleton. Test.local is gitignored so the plugin code itself doesn't appear in the commit (matches existing plugin convention). |
