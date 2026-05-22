@@ -62,12 +62,12 @@ End-to-end: a run finds new tracks/episodes in recently-played, writes one entry
 When the song is on LRCLIB, the entry body is the lyrics instead of the placeholder; `lyrics_source: lrclib` recorded in frontmatter. Misses still produce the placeholder entry.
 
 **Acceptance:**
-- [ ] `lyrics.ts` exposes a `fetchLyrics({ title, artist, album, durationSec, fetch })` returning `{ body, source }`
-- [ ] Wires LRCLIB GET with all four query params
-- [ ] 200 with `plainLyrics` ⇒ returns lyrics; `lyrics_source: lrclib`
-- [ ] 404 ⇒ returns `{ body: null, source: 'none' }` for now (AZLyrics added phase 4)
-- [ ] Entry writer uses lyrics result when non-null; falls back to placeholder otherwise
-- [ ] `lyrics.test.ts` covers LRCLIB hit + miss with injected fetch
+- [x] `lyrics.ts` exposes a `fetchLyrics({ title, artist, album, durationSec, fetch })` returning `{ body, source }`
+- [x] Wires LRCLIB GET with all four query params
+- [x] 200 with `plainLyrics` ⇒ returns lyrics; `lyrics_source: lrclib`
+- [x] 404 ⇒ returns `null` for now (AZLyrics added phase 4)
+- [x] Entry writer uses lyrics result when non-null; falls back to placeholder otherwise
+- [x] `lyrics.test.ts` covers LRCLIB hit + miss with injected fetch
 
 ---
 
@@ -95,3 +95,4 @@ When starting implementation, this file is named `./plans/plugin-spotify-RUNNING
 | Commit | Summary |
 |--------|---------|
 | 72b58a7 | Phase 1 — manifest, deno.json, auth + recently-played modules with tests (9/9 pass), plugin orchestrator skeleton. Test.local is gitignored so the plugin code itself doesn't appear in the commit (matches existing plugin convention). |
+| 369d9e2 | Phase 2 — process.ts (MODES + seen filter), entry.ts (song/episode shaping), wired into plugin.ts. 23/23 tests pass. Placeholder body for songs until phase 3. |
