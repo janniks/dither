@@ -34,18 +34,19 @@ Sweep the rename through run-log, plugin-run, daemon, plugin command, runs comma
 Add `findLastRunForPlugin(name)` to `run-log.ts`. Add `plugin runs [target?]` subcommand with positional dispatch. Delete `commands/runs.ts` and its registration. Move/extend tests.
 
 **Acceptance:**
-- [ ] `dither plugin runs` lists recent runs
-- [ ] `dither plugin runs <runid>` tails that run (same behavior as old `runs tail`)
-- [ ] `dither plugin runs <name>` resolves to the newest matching run and tails it
-- [ ] Plugin name with zero runs prints a friendly error and exits non-zero
-- [ ] Runid-shaped but missing prints `no run found with id <runid>` and exits non-zero
-- [ ] `dither runs ...` is gone — citty reports unknown command
-- [ ] Tests cover all five dispatch paths
+- [x] `dither plugin runs` lists recent runs
+- [x] `dither plugin runs <runid>` tails that run (same behavior as old `runs tail`)
+- [x] `dither plugin runs <name>` resolves to the newest matching run and tails it
+- [x] Plugin name with zero runs prints a friendly error and exits non-zero
+- [x] Runid-shaped but missing prints `no run found with id <runid>` and exits non-zero
+- [x] `dither runs ...` is gone — citty reports unknown command
+- [x] Tests cover all five dispatch paths
 
 ---
 
 ## Phase log
 
-|  |  |
-|--|--|
-|  |  |
+| Commit | Summary |
+|--------|---------|
+| 413b3fc | Phase 1: rename promoted → added across user-visible surfaces |
+|  | Phase 2: plugin runs subcommand + delete top-level runs |

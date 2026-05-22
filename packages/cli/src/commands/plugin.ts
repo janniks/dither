@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 import { spawn } from "node:child_process";
 import { mkdirSync, openSync, existsSync } from "node:fs";
-import { readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { resolveWatchPath } from "../watch-paths";
 import { appendToInbox, type WatchTarget } from "../inbox";
@@ -27,6 +27,13 @@ import { reloadDaemon, startDaemon, readDaemonPid } from "../daemon-control";
 import { installAutostart } from "../persistence";
 import { readFileSync } from "node:fs";
 import { FDA_SETTINGS_URI, FDA_REQUIRED } from "../tcc-hint";
+import {
+  findLastRunForPlugin,
+  followRun,
+  listRuns,
+  readRun,
+  type RunResultRecord,
+} from "../run-log";
 
 // Install a plugin. On a TTY, drop into the interactive flow when the
 // manifest declares required env/files the caller didn't satisfy. On a
@@ -553,6 +560,139 @@ const removeSubcommand = defineCommand({
   },
 });
 
+// `generateRunId` (run-log.ts) emits `YYYYMMDDTHHMMSS-<plugin>-<8hex>`.
+// Plugin names can't satisfy this shape because the date prefix is rigid.
+const RUN_ID_PATTERN = /^\d{8}T\d{6}-[A-Za-z0-9._-]+-[0-9a-f]{8}$/;
+
+function formatRunDuration(ms: number | undefined): string {
+  if (ms === undefined || !Number.isFinite(ms)) return "—";
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60_000);
+  const s = Math.floor((ms % 60_000) / 1000);
+  return `${m}m${s}s`;
+}
+
+function resultPath(runId: string): string {
+  return join(resolveHome(), "history", runId, "result.json");
+}
+
+async function readResult(runId: string): Promise<RunResultRecord | null> {
+  try {
+    const raw = await readFile(resultPath(runId), "utf-8");
+    return JSON.parse(raw) as RunResultRecord;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+}
+
+async function listRecentRuns(limit: number): Promise<void> {
+  const runs = await listRuns(limit);
+  if (runs.length === 0) {
+    console.log("No runs yet. Try `dither plugin run <name>`.");
+    return;
+  }
+  for (const r of runs) {
+    const added = r.addedCount ?? 0;
+    console.log(
+      `${r.runId}  ${r.status.padEnd(7)} ${r.plugin.padEnd(20)} ` +
+        `${r.startedAt}  ${formatRunDuration(r.durationMs).padStart(7)}  ${added} added`,
+    );
+  }
+}
+
+async function tailRun(runId: string): Promise<void> {
+  const past = await readRun(runId);
+  for (const e of past) console.log(JSON.stringify(e));
+
+  const existing = await readResult(runId);
+  if (existing) {
+    console.log(JSON.stringify({ type: "_result", ...existing }));
+    return;
+  }
+
+  const ac = new AbortController();
+  const onSig = (): void => ac.abort();
+  process.on("SIGINT", onSig);
+  process.on("SIGTERM", onSig);
+
+  // Poll for result.json in parallel with the event stream. `inFlight`
+  // guards against a slow read letting a second tick re-launch readResult.
+  // `emitted` is only set AFTER readResult succeeds, so a partial-write
+  // read failure leaves the loop free to retry.
+  let inFlight = false;
+  let emitted = false;
+  const resultPoll = setInterval(() => {
+    if (emitted || inFlight || !existsSync(resultPath(runId))) return;
+    inFlight = true;
+    void readResult(runId)
+      .then((r) => {
+        if (!r) return;
+        emitted = true;
+        console.log(JSON.stringify({ type: "_result", ...r }));
+        ac.abort();
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        inFlight = false;
+      });
+  }, 100);
+
+  try {
+    for await (const event of followRun(runId, ac.signal)) {
+      console.log(JSON.stringify(event));
+    }
+  } finally {
+    clearInterval(resultPoll);
+    process.off("SIGINT", onSig);
+    process.off("SIGTERM", onSig);
+  }
+}
+
+const runsSubcommand = defineCommand({
+  meta: {
+    name: "runs",
+    description:
+      "Inspect plugin runs. No arg lists recent runs. A run id tails/replays it. A plugin name tails/replays that plugin's most-recent run.",
+  },
+  args: {
+    target: {
+      type: "positional",
+      required: false,
+      description: "Run id or installed plugin name. Omit to list recent runs.",
+    },
+    limit: {
+      type: "string",
+      description: "When listing: how many runs to show (default 20).",
+      default: "20",
+    },
+  },
+  async run({ args }) {
+    const target = args.target;
+    if (target === undefined) {
+      await listRecentRuns(Number.parseInt(args.limit, 10) || 20);
+      return;
+    }
+    if (RUN_ID_PATTERN.test(target)) {
+      if (!existsSync(join(resolveHome(), "history", target))) {
+        process.stderr.write(`no run found with id ${target}\n`);
+        process.exit(1);
+      }
+      await tailRun(target);
+      return;
+    }
+    const last = await findLastRunForPlugin(target);
+    if (!last) {
+      process.stderr.write(
+        `no runs yet for '${target}' — try 'dither plugin run ${target}'\n`,
+      );
+      process.exit(1);
+    }
+    await tailRun(last.runId);
+  },
+});
+
 export const pluginCommand = defineCommand({
   meta: {
     name: "plugin",
@@ -561,6 +701,7 @@ export const pluginCommand = defineCommand({
   subCommands: {
     install: installSubcommand,
     run: runSubcommand,
+    runs: runsSubcommand,
     list: listSubcommand,
     remove: removeSubcommand,
   },

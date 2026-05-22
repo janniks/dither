@@ -317,9 +317,9 @@ dither plugin run hello-world --env "GREETING=ahoy"
 dither plugin run hello-world --allow-collection "experiments"
 ```
 
-`run` blocks by default. While the plugin executes, the host overwrites a single status line with the latest `progress()` message (see §6a). When the plugin exits, the status line is cleared and promoted entries are printed.
+`run` blocks by default. While the plugin executes, the host overwrites a single status line with the latest `progress()` message (see §6a). When the plugin exits, the status line is cleared and added documents are printed.
 
-`--detach` forks the run into the background and returns immediately. Stdout and stderr are captured to `<dither-home>/logs/<plugin>-<ms>.log` (where `<ms>` is the spawn epoch in milliseconds). The plugin keeps running after your shell exits; tail the log to watch progress, or use `dither runs tail <runId>` once the runner has emitted a journal entry.
+`--detach` forks the run into the background and returns immediately. Stdout and stderr are captured to `<dither-home>/logs/<plugin>-<ms>.log` (where `<ms>` is the spawn epoch in milliseconds). The plugin keeps running after your shell exits; tail the log to watch progress, or use `dither plugin runs <runId>` once the runner has emitted a journal entry.
 
 The host:
 
@@ -413,4 +413,4 @@ A plugin cannot read or write outside those paths, cannot reach hosts off the `n
 - **The daemon must be running for `schedule` and `watch` to fire.** Installing a plugin with either declaration lazily starts the daemon; if you kill it, the triggers stop. Manual `dither plugin run` always works regardless.
 - **CLI flag parsing has no escape syntax.** A comma in a value will be treated as a pair separator. If you need a comma in a value, install programmatically via the `installPlugin()` API instead.
 - **Output filename collisions overwrite.** If two `writeEntry()` calls in one run produce the same `<id>.md` (e.g. you supplied the same `frontmatter.id`), the second overwrites the first inside the run dir, and only one is promoted.
-- **Detached runs aren't supervised after the fork.** `--detach` writes a log file and `unref()`s the child, so there's no `dither plugin stop`. The run is still recorded in `<dither-home>/history/<runId>/` — use `dither runs list` / `dither runs tail` to inspect it, or tail the printed log path; kill via `kill <pid>` if needed.
+- **Detached runs aren't supervised after the fork.** `--detach` writes a log file and `unref()`s the child, so there's no `dither plugin stop`. The run is still recorded in `<dither-home>/history/<runId>/` — use `dither plugin runs` (no arg lists; pass a runId or plugin name to inspect a specific run) or tail the printed log path; kill via `kill <pid>` if needed.

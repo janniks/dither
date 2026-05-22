@@ -26,7 +26,7 @@ import { resolveHome, runEventsPath, runLogPath } from "./home";
  * Each Run directory also holds `manifest.json` (written when the Run
  * opens) and `result.json` (written when the Run closes). These are not
  * events — they're the Run's identity card and terminal state, read by
- * `listRuns` for `dither runs list`.
+ * `listRuns` for `dither plugin runs`.
  */
 
 export const ROTATION_THRESHOLD_BYTES = 1_048_576; // 1 MiB
@@ -439,6 +439,29 @@ export async function listRuns(limit = 20): Promise<RunSummary[]> {
     if (summary) out.push(summary);
   }
   return out;
+}
+
+/**
+ * Newest Run on disk for the given plugin, or null. Walks history
+ * newest-first, capped at 500 dirs so a never-run plugin name doesn't
+ * scan millions of entries.
+ */
+export async function findLastRunForPlugin(plugin: string): Promise<RunSummary | null> {
+  let dirents: string[];
+  try {
+    dirents = await readdir(historyDir());
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+  const sorted = dirents.toSorted().toReversed();
+  let scanned = 0;
+  for (const id of sorted) {
+    if (scanned++ >= 500) break;
+    const summary = await readSummary(id);
+    if (summary?.plugin === plugin) return summary;
+  }
+  return null;
 }
 
 async function readSummary(runId: string): Promise<RunSummary | null> {
