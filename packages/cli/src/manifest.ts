@@ -9,6 +9,7 @@ const EnvDef = z.object({
 const FileDef = z.object({
   id: z.string(),
   name: z.string().optional(),
+  description: z.string().optional(),
   kind: z.enum(["file", "folder"]),
   extensions: z.array(z.string()).optional(),
   required: z.boolean().optional(),

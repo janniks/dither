@@ -1,8 +1,10 @@
 import { existsSync } from "node:fs";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import pc from "picocolors";
 import { parsePackage, type Manifest, type ParsedPackage } from "./manifest";
 import {
+  accepted,
   confirm,
   promptSelect,
   promptText,
@@ -19,6 +21,14 @@ import { resolveHome } from "./home";
  *   - `foo\ bar`→ `foo bar` (shell-style backslash escapes)
  *   - quoted strings → unwrapped
  */
+/**
+ * Write a dim hint line above a prompt. Used for descriptions that would
+ * otherwise wrap and clutter the prompt itself.
+ */
+function writeHint(text: string): void {
+  process.stdout.write(`${pc.dim(text)}\n`);
+}
+
 function normalizePath(raw: string): string {
   let v = raw.trim();
   if (
@@ -259,14 +269,13 @@ export async function promptInteractive(
   for (const field of missing) {
     if (field.kind === "env") {
       const def = (parsed.manifest.env ?? []).find((e) => e.name === field.name);
-      const desc = def?.description ? ` — ${def.description}` : "";
-      // Only show the literal-vs-ref select when a matching global env value
-      // actually exists; otherwise "ref" has no value to read and the choice
-      // is meaningless. Single ask → single line in scrollback.
+      // Render the manifest description as a dim doc line above the prompt,
+      // so the prompt itself stays short and never wraps on narrow terminals.
+      if (def?.description) writeHint(def.description);
       const globalValue = await getGlobalEnv(field.name);
       if (globalValue !== undefined) {
         const mode = await promptSelect<"literal" | "ref">({
-          message: `${field.name}${desc}`,
+          message: field.name,
           options: [
             { label: "Read from global dither env", value: "ref" },
             { label: "Enter a new literal value", value: "literal" },
@@ -278,20 +287,18 @@ export async function promptInteractive(
           continue;
         }
       }
-      const value = await promptText({
-        message: `${field.name}${desc}`,
-      });
+      const value = await promptText({ message: field.name });
       env[field.name] = value;
       confirm(field.name, value);
       continue;
     }
     // kind === "file"
     const def = (parsed.manifest.files ?? []).find((f) => f.id === field.name);
-    const label = def?.name ?? field.name;
+    if (def?.description) writeHint(def.description);
     const hint = def?.default_hint ? ` (${def.default_hint})` : "";
     const dflt = def?.default;
     const value = await promptText({
-      message: `Path for ${label}${hint}`,
+      message: `${field.name}${hint}`,
       default: dflt,
       placeholder: dflt,
       validate: (v) => {
@@ -337,7 +344,7 @@ function accept(
     ? Array.from(new Set(declared))
     : [];
   if (chosen.length === 0) return undefined;
-  confirm(label, chosen.join(", "));
+  accepted(label, chosen.join(", "));
   return chosen;
 }
 

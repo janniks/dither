@@ -160,12 +160,28 @@ export async function promptText(opts: PromptTextOptions): Promise<string> {
 }
 
 /**
+ * Truncate a value so the recap line fits on one terminal row even when
+ * the original answer is something long like a cookie or token. Shows the
+ * head + an ellipsis; the full value is still visible in consola's prompt
+ * echo above. Non-TTY callers (tests, pipes) keep the full value — wrap
+ * doesn't matter there and tests assert on full content.
+ */
+function clip(value: string, room: number): string {
+  if (!process.stdout.isTTY) return value;
+  if (value.length <= room) return value;
+  return `${value.slice(0, Math.max(8, room - 1))}…`;
+}
+
+/**
  * After `promptText` resolves, overwrite consola's echoed line with a
  * compact `✓ label: value` confirmation. consola's submit handler renders
  * a final frame (the prompt + the typed answer) and `close()` then writes
  * a trailing `\n`, so the cursor ends two lines below the prompt line —
  * `moveCursor(-2)` lands us back on it and `clearScreenDown` wipes both.
- * Without this we'd leave a stray `✔ Where should…` echo above our `✓`.
+ *
+ * Wrapping caveat: when the typed value spans multiple terminal lines we
+ * can't reliably wipe past it (we'd shred earlier output), so we skip the
+ * wipe in that case and just append the `✓` line under consola's echo.
  *
  * Convention: pass `label` lowercase (`"library"`, not `"Library"`) — the
  * rest of init's inline output is sentence-case, and Title-Cased inline
@@ -174,11 +190,28 @@ export async function promptText(opts: PromptTextOptions): Promise<string> {
  * On non-TTY (tests, pipes) the cursor moves are no-ops and we just append.
  */
 export function confirm(label: string, value: string): void {
+  const cols = process.stdout.columns ?? 80;
+  const room = Math.max(20, cols - label.length - 5);
+  const shown = clip(value, room);
   if (process.stdout.isTTY) {
-    moveCursor(process.stdout, 0, -2);
-    clearScreenDown(process.stdout);
+    const lineFits = value.length + label.length + 4 <= cols;
+    if (lineFits) {
+      moveCursor(process.stdout, 0, -2);
+      clearScreenDown(process.stdout);
+    }
   }
-  process.stdout.write(`${pc.green("✓")} ${label}: ${value}\n`);
+  process.stdout.write(`${pc.green("✓")} ${label}: ${shown}\n`);
+}
+
+/**
+ * Like `confirm` but for cases where no consola prompt rendered above
+ * (auto-accepts from manifest defaults). Never moves the cursor —
+ * unconditional safe append.
+ */
+export function accepted(label: string, value: string): void {
+  const cols = process.stdout.columns ?? 80;
+  const room = Math.max(20, cols - label.length - 5);
+  process.stdout.write(`${pc.green("✓")} ${label}: ${clip(value, room)}\n`);
 }
 
 /**
