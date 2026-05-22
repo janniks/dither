@@ -12,6 +12,13 @@ const FileDef = z.object({
   kind: z.enum(["file", "folder"]),
   extensions: z.array(z.string()).optional(),
   required: z.boolean().optional(),
+  /** Optional default path. `~` expands to the user's home. Plugin authors
+   *  set this when there's a canonical location (e.g. macOS Slack desktop's
+   *  `~/Library/Application Support/Slack/Local Storage/leveldb`). Surfaced
+   *  to the user as the prompt default — Enter accepts it. */
+  default: z.string().optional(),
+  /** Short hint text shown alongside the prompt (e.g. "(macOS)"). */
+  default_hint: z.string().optional(),
 });
 
 const ManifestSchema = z.object({

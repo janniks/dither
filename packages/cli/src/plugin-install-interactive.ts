@@ -2,9 +2,37 @@ import { existsSync } from "node:fs";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parsePackage, type Manifest, type ParsedPackage } from "./manifest";
-import { promptConfirm, promptMultiSelect, promptSelect, promptText } from "./prompt";
+import {
+  confirm,
+  promptConfirm,
+  promptMultiSelect,
+  promptSelect,
+  promptText,
+  untildePath,
+} from "./prompt";
 import { validateGrantPattern } from "./grants";
+import { getGlobalEnv } from "./global-env";
 import { resolveHome } from "./home";
+
+/**
+ * Normalize a path string typed at a prompt. Handles three muscle-memory
+ * traps from shell:
+ *   - `~/foo`   → `<home>/foo`
+ *   - `~`       → `<home>`
+ *   - `foo\ bar`→ `foo bar` (shell-style backslash escapes)
+ *   - quoted strings → unwrapped
+ */
+function normalizePath(raw: string): string {
+  let v = raw.trim();
+  if (
+    (v.startsWith('"') && v.endsWith('"')) ||
+    (v.startsWith("'") && v.endsWith("'"))
+  ) {
+    v = v.slice(1, -1);
+  }
+  v = v.replace(/\\(.)/g, "$1");
+  return untildePath(v);
+}
 
 /**
  * Inputs the user supplied (via flags or, later, interactive prompts).
@@ -106,7 +134,7 @@ async function resolveFilesCollect(
       if (def.required) missing.push({ kind: "file", name: def.id });
       continue;
     }
-    const inputPath = resolve(userValue);
+    const inputPath = resolve(normalizePath(userValue));
     if (!existsSync(inputPath)) {
       throw new Error(`File '${def.id}' path does not exist: ${inputPath}`);
     }
@@ -235,34 +263,51 @@ export async function promptInteractive(
     if (field.kind === "env") {
       const def = (parsed.manifest.env ?? []).find((e) => e.name === field.name);
       const desc = def?.description ? ` — ${def.description}` : "";
-      const mode = await promptSelect<"literal" | "ref">({
-        message: `Env ${field.name}${desc}`,
-        options: [
-          { label: "Enter a literal value", value: "literal" },
-          { label: "Read from global dither env", value: "ref" },
-        ],
-      });
-      if (mode === "ref") {
-        envRefs.push(field.name);
-        continue;
+      // Only show the literal-vs-ref select when a matching global env value
+      // actually exists; otherwise "ref" has no value to read and the choice
+      // is meaningless. Single ask → single line in scrollback.
+      const globalValue = await getGlobalEnv(field.name);
+      if (globalValue !== undefined) {
+        const mode = await promptSelect<"literal" | "ref">({
+          message: `${field.name}${desc}`,
+          options: [
+            { label: "Read from global dither env", value: "ref" },
+            { label: "Enter a new literal value", value: "literal" },
+          ],
+        });
+        if (mode === "ref") {
+          envRefs.push(field.name);
+          confirm(field.name, "(global)");
+          continue;
+        }
       }
-      env[field.name] = await promptText({
-        message: `  value for ${field.name}`,
+      const value = await promptText({
+        message: `${field.name}${desc}`,
       });
+      env[field.name] = value;
+      confirm(field.name, value);
       continue;
     }
     // kind === "file"
     const def = (parsed.manifest.files ?? []).find((f) => f.id === field.name);
     const label = def?.name ?? field.name;
-    files[field.name] = await promptText({
-      message: `Path for ${label}`,
+    const hint = def?.default_hint ? ` (${def.default_hint})` : "";
+    const dflt = def?.default;
+    const value = await promptText({
+      message: `Path for ${label}${hint}`,
+      default: dflt,
+      placeholder: dflt,
       validate: (v) => {
-        if (!v.trim()) return "path cannot be empty";
-        const abs = resolve(v);
+        const t = v.trim();
+        if (!t) return "path cannot be empty";
+        const abs = resolve(normalizePath(t));
         if (!existsSync(abs)) return `path does not exist: ${abs}`;
         return null;
       },
     });
+    const final = normalizePath(value);
+    files[field.name] = final;
+    confirm(field.name, final);
   }
 
   const net = await reviewList({

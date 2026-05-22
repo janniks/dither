@@ -20,6 +20,20 @@ export function tildePath(p: string): string {
 }
 
 /**
+ * Inverse of `tildePath`. Used when reading user-typed paths from prompts
+ * (or manifest defaults) before passing them to `resolve()` — `path.resolve`
+ * doesn't expand `~`, so `~/foo` would resolve relative to cwd instead.
+ *
+ * Only the leading `~` (alone or followed by `/`) is treated specially.
+ * `~user/foo` is left alone — we don't resolve other users' homes.
+ */
+export function untildePath(p: string): string {
+  if (p === "~") return HOME;
+  if (p.startsWith("~/")) return `${HOME}/${p.slice(2)}`;
+  return p;
+}
+
+/**
  * Single import point for interactive TUI in the CLI. Wraps consola (prompts)
  * and provides progress helpers so a future swap (to `@clack/prompts`,
  * `@inquirer/prompts`, etc.) is a one-file change.
