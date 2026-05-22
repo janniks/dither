@@ -34,7 +34,7 @@ describe("pipeline (install → run → search → get)", () => {
 
     await installPlugin({ source: FIXTURE_PATH });
     const runResult = await runPlugin({ name: "import-folder" });
-    expect(runResult.promoted.length).toBeGreaterThan(0);
+    expect(runResult.added.length).toBeGreaterThan(0);
 
     // No manual updateIndex() — runPlugin must hook it.
     const hits = await search({ query: "fixture", mode: "lex" });

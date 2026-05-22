@@ -72,7 +72,7 @@ describe("dither runs tail (single _result line)", () => {
     await new Promise((r) => setTimeout(r, 150));
     await writeFile(
       join(runDir, "result.json"),
-      JSON.stringify({ status: "ok", finishedAt: new Date().toISOString(), promoted: [] }),
+      JSON.stringify({ status: "ok", finishedAt: new Date().toISOString(), added: [] }),
     );
 
     await cmdPromise;

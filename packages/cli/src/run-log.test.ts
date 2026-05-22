@@ -152,11 +152,11 @@ describe("run-log", () => {
       const { openRun, readRun, listRuns } = await import("./run-log");
       const handle = await openRun("myplugin", "manual");
       await handle.append({ kind: "progress", message: "halfway" });
-      await handle.append({ kind: "promoted", path: "/x.md" });
-      await handle.close({ status: "ok", finishedAt: new Date().toISOString(), promoted: ["/x.md"] });
+      await handle.append({ kind: "added", path: "/x.md" });
+      await handle.close({ status: "ok", finishedAt: new Date().toISOString(), added: ["/x.md"] });
 
       const events = await readRun(handle.runId);
-      expect(events.map((e) => e.kind)).toEqual(["progress", "promoted"]);
+      expect(events.map((e) => e.kind)).toEqual(["progress", "added"]);
       expect(events[0]!.scope).toBe("run");
       expect(events[0]!.runId).toBe(handle.runId);
 

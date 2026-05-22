@@ -55,7 +55,7 @@ export interface RunOptions {
 
 export interface RunResult {
   runId: string;
-  promoted: string[];
+  added: string[];
 }
 
 /** Error code stamped on errors that signal a known, clean failure path. */
@@ -200,14 +200,14 @@ async function planPromotion(
   return out;
 }
 
-async function copyPromoted(candidates: PromoteCandidate[]): Promise<string[]> {
-  const promoted: string[] = [];
+async function copyAdded(candidates: PromoteCandidate[]): Promise<string[]> {
+  const added: string[] = [];
   for (const c of candidates) {
     await mkdir(join(c.dest, ".."), { recursive: true });
     await copyFile(c.src, c.dest);
-    promoted.push(c.dest);
+    added.push(c.dest);
   }
-  return promoted;
+  return added;
 }
 
 export async function runPlugin(opts: RunOptions): Promise<RunResult> {
@@ -233,7 +233,7 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
   const runId = journal.runId;
 
   try {
-    const { promoted, reschedule } = await runPluginLocked(
+    const { added, reschedule } = await runPluginLocked(
       opts,
       home,
       pluginDir,
@@ -262,9 +262,9 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
     await journal.close({
       status: "ok",
       finishedAt: new Date().toISOString(),
-      promoted,
+      added,
     });
-    return { runId, promoted };
+    return { runId, added };
   } catch (err) {
     // At-least-once: any non-clean path returns inflight rows to the
     // inbox so a future fire picks them up. Includes thrown errors,
@@ -305,7 +305,7 @@ async function runPluginLocked(
   journal: RunHandle,
   runId: string,
   trigger: string,
-): Promise<{ promoted: string[]; reschedule: { afterMs: number; reason?: string } | null }> {
+): Promise<{ added: string[]; reschedule: { afterMs: number; reason?: string } | null }> {
   const pkgRaw = JSON.parse(await readFile(join(pluginDir, "package.json"), "utf-8")) as unknown;
   const parsed = parsePackage(pkgRaw);
 
@@ -514,12 +514,12 @@ async function runPluginLocked(
     // resolution can branch on external-collection mounts.
     const cfg = await assertInitialized();
     const candidates = await planPromotion(runDir, opts.name, cfg, grantCollections);
-    const promoted = await copyPromoted(candidates);
-    for (const path of promoted) {
-      await journal.append({ kind: "promoted", path });
+    const added = await copyAdded(candidates);
+    for (const path of added) {
+      await journal.append({ kind: "added", path });
     }
 
-    if (promoted.length > 0) {
+    if (added.length > 0) {
       // qmd collections are top-level library subdirs (see store.ts), so a
       // multi-segment frontmatter `collection: "messages/inbox"` must be
       // narrowed to `"messages"` before being passed to updateIndex —
@@ -531,7 +531,7 @@ async function runPluginLocked(
       // qmd-index.lock coordinates with the daemon's job runner; if
       // it's busy (daemon is mid-indexing), defer by touching
       // needs-reindex so the daemon coalesces this into its next
-      // post-job reconciliation. Promoted files are already on disk —
+      // post-job reconciliation. Added files are already on disk —
       // only the rescan is deferred.
       const indexLock = await acquireTheme("index");
       if (indexLock === null) {
@@ -550,7 +550,7 @@ async function runPluginLocked(
       }
     }
 
-    return { promoted, reschedule: lastReschedule };
+    return { added, reschedule: lastReschedule };
   } finally {
     // Always clean up the run dir — failed runs would otherwise leave
     // input.json (containing plaintext env values, possibly secrets) on disk.

@@ -32,7 +32,7 @@ describe("library resolver (Phase 2)", () => {
 
     await installPlugin({ source: FIXTURE_PATH });
     const result = await runPlugin({ name: "import-folder" });
-    expect(result.promoted.length).toBeGreaterThan(0);
+    expect(result.added.length).toBeGreaterThan(0);
 
     // Files land under the external library, not dither home.
     const libraryCollectionDir = join(library, "imported");

@@ -30,8 +30,8 @@ by intent, then open the result by id.
 ## A few other commands
 
 - \`dither status\` — what is dither currently doing?
-- \`dither plugin install <path>\` — add a plugin that promotes content
-  into your library (think feeds, scrapers, sync jobs).
+- \`dither plugin install <path>\` — add a plugin that adds documents
+  to your library (think feeds, scrapers, sync jobs).
 - \`dither index update\` — rebuild the index after manual file changes.
 
 ## Removing this collection

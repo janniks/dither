@@ -424,7 +424,7 @@ const runSubcommand = defineCommand({
         console.log(
           `backfill: ${pluginName} watch.collections matched 0 .md files — nothing to do.`,
         );
-        return { runId: null, promoted: [] };
+        return { runId: null, added: [] };
       }
       console.log(`backfill: seeded inbox with ${seeded} entries`);
     }
@@ -468,8 +468,8 @@ const runSubcommand = defineCommand({
     }
     if (tty) process.stderr.write("\r\x1b[K");
 
-    console.log(`run ${result.runId} promoted ${result.promoted.length} entries:`);
-    for (const path of result.promoted) {
+    console.log(`run ${result.runId} added ${result.added.length} documents:`);
+    for (const path of result.added) {
       console.log(`  ${path}`);
     }
     return result;

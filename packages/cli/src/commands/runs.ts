@@ -34,10 +34,10 @@ const listSubcommand = defineCommand({
       return;
     }
     for (const r of runs) {
-      const promoted = r.promotedCount ?? 0;
+      const added = r.addedCount ?? 0;
       console.log(
         `${r.runId}  ${r.status.padEnd(7)} ${r.plugin.padEnd(20)} ` +
-          `${r.startedAt}  ${formatDuration(r.durationMs).padStart(7)}  ${promoted} promoted`,
+          `${r.startedAt}  ${formatDuration(r.durationMs).padStart(7)}  ${added} added`,
       );
     }
   },

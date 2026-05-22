@@ -47,7 +47,7 @@ describe("plugin host", () => {
     expect(existsSync(join(home, "grants", "import-folder.json"))).toBe(true);
 
     const result = await runPlugin({ name: "import-folder" });
-    expect(result.promoted.length).toBeGreaterThan(0);
+    expect(result.added.length).toBeGreaterThan(0);
 
     const importedDir = join(home, "entries", "imported");
     const files = readdirSync(importedDir).filter((f) => f.endsWith(".md"));
@@ -161,7 +161,7 @@ await writeEntry({ collection: "messages/tom", body: "hi tom" });
 
     await installPlugin({ source: dir });
     const result = await runPlugin({ name: "nested-ok" });
-    expect(result.promoted.length).toBe(1);
+    expect(result.added.length).toBe(1);
 
     const tomDir = join(home, "entries", "messages", "tom");
     expect(existsSync(tomDir)).toBe(true);
@@ -283,7 +283,7 @@ await writeEntry({ collection: "messages", body: "bare parent" });
 
     await installPlugin({ source: dir });
     const result = await runPlugin({ name: "nested-bare" });
-    expect(result.promoted.length).toBe(1);
+    expect(result.added.length).toBe(1);
 
     rmSync(dir, { recursive: true, force: true });
   }, 60000);
@@ -398,7 +398,7 @@ await writeEntry({ collection: "work-notes", body: "in external" });
     const { runPlugin } = await import("./plugin-run");
     await installPlugin({ source: dir });
     const result = await runPlugin({ name: "extwriter" });
-    expect(result.promoted.length).toBe(1);
+    expect(result.added.length).toBe(1);
 
     // File landed in the external mount, NOT under the library.
     const files = readdirSync(ext).filter((f) => f.endsWith(".md"));
@@ -437,7 +437,7 @@ await writeEntry({ collection: "work-notes/sub/2026", body: "deep" });
     const { runPlugin } = await import("./plugin-run");
     await installPlugin({ source: dir });
     const result = await runPlugin({ name: "extnest" });
-    expect(result.promoted.length).toBe(1);
+    expect(result.added.length).toBe(1);
 
     const target = join(ext, "sub", "2026");
     expect(existsSync(target)).toBe(true);
@@ -469,7 +469,7 @@ await writeEntry({ collection: "fresh", body: "library auto" });
     const { runPlugin } = await import("./plugin-run");
     await installPlugin({ source: dir });
     const result = await runPlugin({ name: "autocreator" });
-    expect(result.promoted.length).toBe(1);
+    expect(result.added.length).toBe(1);
 
     const freshDir = join(home, "entries", "fresh");
     expect(existsSync(freshDir)).toBe(true);
@@ -601,7 +601,7 @@ await writeEntry({ collection: "notes/personal", body: "ok" });
 
     await installPlugin({ source: dir, collections: ["notes/**"] });
     const result = await runPlugin({ name: "widener" });
-    expect(result.promoted.length).toBe(1);
+    expect(result.added.length).toBe(1);
 
     const personalDir = join(home, "entries", "notes", "personal");
     expect(existsSync(personalDir)).toBe(true);
@@ -639,7 +639,7 @@ progress({ message: "done", done: 2, total: 2 });
       onProgress: (m) => seen.push(m),
     });
 
-    expect(result.promoted.length).toBe(1);
+    expect(result.added.length).toBe(1);
     expect(seen).toEqual([
       { message: "starting", done: undefined, total: undefined },
       { message: "halfway", done: 1, total: 2 },
@@ -773,11 +773,11 @@ await writeEntry({
     expect(ours).toBeDefined();
     expect(ours!.status).toBe("ok");
     expect(ours!.plugin).toBe("import-folder");
-    expect(ours!.promotedCount).toBeGreaterThan(0);
+    expect(ours!.addedCount).toBeGreaterThan(0);
 
     const events = await readRun(result.runId);
-    const promoted = events.filter((e) => e.kind === "promoted");
-    expect(promoted.length).toBeGreaterThan(0);
+    const added = events.filter((e) => e.kind === "added");
+    expect(added.length).toBeGreaterThan(0);
   }, 60000);
 
   it("releases the lock after a failed run", async () => {

@@ -113,7 +113,7 @@ async function fireWithSuppress(
 
   try {
     const result = await runPlugin({ name, trigger });
-    for (const path of result.promoted) watcher.suppressOnce(path);
+    for (const path of result.added) watcher.suppressOnce(path);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[daemon] ${trigger} fire of '${name}' failed: ${message}`);

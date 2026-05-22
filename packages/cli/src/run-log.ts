@@ -49,7 +49,7 @@ export type EventKind =
   // run-scope (plugin execution)
   | "progress"
   | "stderr"
-  | "promoted"
+  | "added"
   | "error"
   | "reschedule"
   | "reindex-deferred";
@@ -80,7 +80,7 @@ export interface RunResultRecord {
   finishedAt: string;
   exitCode?: number;
   error?: string;
-  promoted?: string[];
+  added?: string[];
   stderrTail?: string;
 }
 
@@ -88,7 +88,7 @@ export interface RunSummary extends RunManifest {
   status: "ok" | "fail" | "running";
   finishedAt?: string;
   durationMs?: number;
-  promotedCount?: number;
+  addedCount?: number;
 }
 
 /** Append one event to the global scope. */
@@ -466,6 +466,6 @@ async function readSummary(runId: string): Promise<RunSummary | null> {
     finishedAt: result?.finishedAt,
     durationMs:
       Number.isFinite(startedMs) && Number.isFinite(finishedMs) ? finishedMs - startedMs : undefined,
-    promotedCount: result?.promoted?.length,
+    addedCount: result?.added?.length,
   };
 }
