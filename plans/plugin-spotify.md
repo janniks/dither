@@ -78,13 +78,13 @@ When the song is on LRCLIB, the entry body is the lyrics instead of the placehol
 On LRCLIB miss, plugin queries AZLyrics search → fetches the first matching lyrics page → extracts lyrics via the known comment-marker pattern. 1500ms self-throttle between requests. Cloudflare 403 / no-match treated as miss.
 
 **Acceptance:**
-- [ ] `lyrics.ts` adds the AZLyrics fallback path after LRCLIB 404
-- [ ] Search endpoint hit, first matching `azlyrics.com/lyrics/...` URL chosen
-- [ ] HTML parser extracts the lyrics div after the comment marker
-- [ ] 1500ms throttle between AZLyrics requests within one run
-- [ ] 403 / parse failure ⇒ falls through cleanly to `source: 'none'`
-- [ ] `lyrics.test.ts` covers AZLyrics success (with committed HTML fixture), search-miss, parse-failure
-- [ ] `lyrics_source: azlyrics` recorded in frontmatter on success
+- [x] `lyrics.ts` adds the AZLyrics fallback path after LRCLIB 404
+- [x] Search endpoint hit, first matching `azlyrics.com/lyrics/...` URL chosen
+- [x] HTML parser extracts the lyrics div after the comment marker
+- [x] 1500ms throttle between AZLyrics requests within one run (parameterized for tests)
+- [x] 403 / parse failure ⇒ returns `null` (caller uses placeholder)
+- [x] `lyrics.test.ts` covers AZLyrics success (inline HTML fixture), search-miss, parse-failure, Cloudflare 403
+- [x] `lyrics_source: azlyrics` recorded in frontmatter on success
 
 ---
 
@@ -96,3 +96,5 @@ When starting implementation, this file is named `./plans/plugin-spotify-RUNNING
 |--------|---------|
 | 72b58a7 | Phase 1 — manifest, deno.json, auth + recently-played modules with tests (9/9 pass), plugin orchestrator skeleton. Test.local is gitignored so the plugin code itself doesn't appear in the commit (matches existing plugin convention). |
 | 369d9e2 | Phase 2 — process.ts (MODES + seen filter), entry.ts (song/episode shaping), wired into plugin.ts. 23/23 tests pass. Placeholder body for songs until phase 3. |
+| 75b3273 | Phase 3 — lyrics.ts with LRCLIB fetch. Song body now uses real lyrics when LRCLIB hits, falls back to placeholder otherwise. 28/28 tests pass. |
+| (next) | Phase 4 — AZLyrics fallback: search → page → parse comment-marker div. 1.5s throttle (parameterized for tests). Pure-function parsers covered by inline fixtures. 34/34 tests pass. |
