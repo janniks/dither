@@ -74,7 +74,23 @@ become dynamic.
 
 ---
 
-## Phase 4: `d search`
+## Phase 4: `d plugin list`
+
+**User stories**: columns line up; `-` schedule reads as "none".
+
+`d plugin list` today prints `name<TAB>version<TAB>collections<TAB>schedule`
+which collapses on most terminals into a ragged mess. Port to `printTable`;
+right-align nothing (all left). Trailing `-` for "no schedule" stays.
+
+**Acceptance:**
+- [ ] `d plugin list` columns align regardless of name/version width
+- [ ] Long collection lists (e.g. `spotify/songs,spotify/podcasts`) don't
+      push the schedule column off-screen — middle-truncate via `max`
+- [ ] `d plugin list | cat` emits TSV
+
+---
+
+## Phase 5: `d search`
 
 **User stories**: same output, less code.
 

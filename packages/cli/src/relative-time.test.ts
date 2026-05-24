@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatRelTime } from "./relative-time";
+import { formatRelTime, formatRelPast } from "./relative-time";
 
 describe("formatRelTime", () => {
   const now = Date.parse("2026-05-13T12:00:00.000Z");
@@ -20,6 +20,32 @@ describe("formatRelTime", () => {
   for (const [label, deltaMs, expected] of cases) {
     it(label, () => {
       expect(formatRelTime(now + deltaMs, now)).toBe(expected);
+    });
+  }
+});
+
+describe("formatRelPast", () => {
+  const now = Date.parse("2026-05-13T12:00:00.000Z");
+
+  const cases: Array<[string, number, string]> = [
+    ["sub-second → now", 500, "now"],
+    ["1 second", 1_000, "1s ago"],
+    ["45 seconds", 45_000, "45s ago"],
+    ["1 minute exact", 60_000, "1m ago"],
+    ["1 minute 30 seconds", 60_000 + 30_000, "1m 30s ago"],
+    ["4 minutes 59 seconds", 4 * 60_000 + 59_000, "4m 59s ago"],
+    ["5 minutes exact (boundary, single unit)", 5 * 60_000, "5m ago"],
+    ["7 minutes", 7 * 60_000, "7m ago"],
+    ["1 hour", 60 * 60_000, "1h ago"],
+    ["3 hours 45 minutes (single unit past 5m)", 3 * 60 * 60_000 + 45 * 60_000, "3h ago"],
+    ["1 day", 24 * 60 * 60_000, "1d ago"],
+    ["3 days 4 hours (single unit)", 3 * 24 * 60 * 60_000 + 4 * 60 * 60_000, "3d ago"],
+    ["future → now", -10_000, "now"],
+  ];
+
+  for (const [label, deltaMs, expected] of cases) {
+    it(label, () => {
+      expect(formatRelPast(now - deltaMs, now)).toBe(expected);
     });
   }
 });

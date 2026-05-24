@@ -47,6 +47,9 @@ export function untildePath(p: string): string {
  *     `✓ Label: value` line so the answer reads as "locked in".
  *   - `stepStart` / `stepDone` bracket slow work with `→` / `✓` lines so the
  *     user never wonders whether the CLI is hung.
+ *   - `printTable` lays out rows of cells with dynamic widths, alignment,
+ *     color callbacks, and a TTY/TSV split. Lives in `./table` and is
+ *     re-exported below so commands can import everything from `./prompt`.
  *
  * Ctrl-C propagates from consola as a rejection; the caller decides whether
  * to translate to a clean exit.
@@ -339,3 +342,8 @@ export function stepDone(message: string): void {
 export function stepFail(message: string): void {
   process.stdout.write(`${pc.yellow("⚠")} ${message}\n`);
 }
+
+// Tabular output. Lives in its own deep-module file (`./table`) so it
+// can be imported and tested in isolation; re-exported here so command
+// files keep a single TUI import surface.
+export { printTable, type ColOpt } from "./table";

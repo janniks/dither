@@ -14,6 +14,7 @@ import { getGlobalEnv } from "./global-env";
 import { resolveHome } from "./home";
 import { parseSchedule } from "./schedule-parser";
 import { Cron } from "croner";
+import pc from "picocolors";
 
 /**
  * Normalize a path string typed at a prompt. Handles three muscle-memory
@@ -387,7 +388,7 @@ async function promptScheduleConsent(
     options: [
       { label: `Enable as declared (${cadence})`, value: "declared" },
       { label: `Manual only — fire with 'dither plugin run ${parsed.name}'`, value: "manual" },
-      { label: "Custom cron…", value: "custom" },
+      { label: "Custom schedule…", value: "custom" },
     ],
     initial,
   });
@@ -399,8 +400,13 @@ async function promptScheduleConsent(
     confirm("schedule", "manual only");
     return null;
   }
+  process.stdout.write(
+    `${pc.dim(
+      "formats: 'every 15m', 'every 2h', 'daily at 9am', 'daily at 14:30', or a cron expression (e.g. '0 9 * * 1-5')",
+    )}\n`,
+  );
   const custom = await promptText({
-    message: "custom cron",
+    message: "custom schedule",
     ...(current && current !== declared ? { default: current } : {}),
     validate: (v) => {
       const trimmed = v.trim();

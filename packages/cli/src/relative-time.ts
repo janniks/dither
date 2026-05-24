@@ -33,3 +33,34 @@ export function formatRelTime(targetMs: number, nowMs: number = Date.now()): str
   }
   return `in ${s}s`;
 }
+
+/**
+ * Past-tense compact formatter. Single-unit by default; under 5 minutes
+ * the two largest non-zero units are shown so "1m 30s ago" reads more
+ * precisely than "1m ago" when the user just kicked off a run.
+ *
+ *   500ms ago → "now"
+ *   30s ago   → "30s ago"
+ *   4m 30s    → "4m 30s ago"
+ *   5m        → "5m ago"
+ *   2h        → "2h ago"
+ *   3d        → "3d ago"
+ */
+export function formatRelPast(targetMs: number, nowMs: number = Date.now()): string {
+  const diff = Math.max(0, nowMs - targetMs);
+  if (diff < 1_000) return "now";
+
+  const s = Math.floor(diff / 1_000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  const d = Math.floor(h / 24);
+
+  if (diff < 5 * 60_000) {
+    if (m === 0) return `${s}s ago`;
+    const remS = s - m * 60;
+    return remS > 0 ? `${m}m ${remS}s ago` : `${m}m ago`;
+  }
+  if (d > 0) return `${d}d ago`;
+  if (h > 0) return `${h}h ago`;
+  return `${m}m ago`;
+}
