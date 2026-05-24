@@ -31,12 +31,12 @@ End-to-end behavior this slice delivers:
 - Existing PKCE call sites are unchanged on the wire (default behavior identical).
 
 **Acceptance:**
-- [ ] `buildAuthUrl` without a challenge argument produces a URL with no `code_challenge`.
-- [ ] `exchangeCode` with `clientSecret` posts `client_secret` and no `code_verifier`.
-- [ ] `exchangeCode` parses a form-urlencoded token response into the same `TokenResponse` shape.
-- [ ] `exchangeCode` normalizes a response field named `expires` into `expires_in`.
-- [ ] Existing tests still pass (PKCE happy-path + non-2xx error path).
-- [ ] No call-site changes in the orchestrator yet.
+- [x] `buildAuthUrl` without a challenge argument produces a URL with no `code_challenge`.
+- [x] `exchangeCode` with `clientSecret` posts `client_secret` and no `code_verifier`.
+- [x] `exchangeCode` parses a form-urlencoded token response into the same `TokenResponse` shape.
+- [x] `exchangeCode` normalizes a response field named `expires` into `expires_in`.
+- [x] Existing tests still pass (PKCE happy-path + non-2xx error path).
+- [x] No call-site changes in the orchestrator yet.
 
 ---
 
@@ -52,12 +52,12 @@ End-to-end behavior this slice delivers:
 - After this phase, the full Stack Exchange recipe in the spec works end-to-end.
 
 **Acceptance:**
-- [ ] `--client-secret` flag exists, optional, documented in the subcommand help text.
-- [ ] When `--client-secret` is set, the authorize URL printed to stderr contains no `code_challenge`.
-- [ ] When `--client-secret` is set, the token POST body contains `client_secret` and no `code_verifier`. (Verified by orchestrator's call shape, not a new test — covered by phase 1 unit tests.)
-- [ ] Missing `refresh_token` → human output prints "(none …)" instead of "✓ refresh_token:\nundefined".
-- [ ] Missing `refresh_token` + `--json` → output is valid JSON with `refresh_token: null`.
-- [ ] Behavior with no `--client-secret` is byte-identical to today's PKCE flow.
+- [x] `--client-secret` flag exists, optional, documented in the subcommand help text.
+- [x] When `--client-secret` is set, the authorize URL printed to stderr contains no `code_challenge`.
+- [x] When `--client-secret` is set, the token POST body contains `client_secret` and no `code_verifier`. (Verified by orchestrator's call shape, not a new test — covered by phase 1 unit tests.)
+- [x] Missing `refresh_token` → human output prints "(none …)" instead of "✓ refresh_token:\nundefined".
+- [x] Missing `refresh_token` + `--json` → output is valid JSON with `refresh_token: null`.
+- [x] Behavior with no `--client-secret` is byte-identical to today's PKCE flow.
 
 ---
 
@@ -67,4 +67,6 @@ When starting implementation, rename this file to `./plans/plugin-oauth-secret-R
 
 | commit | summary |
 |--------|---------|
-|        |         |
+| 812c2c1 | spec+plan: confidential auth-code mode for `dither plugin oauth` |
+| 4a15eca | Phase 1: pkce.ts gains confidential mode + flexible response parsing + `expires` normalization |
+| 86a374d | Phase 2: orchestrator wires `--client-secret`; missing refresh_token gracefully handled |
