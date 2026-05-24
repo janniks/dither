@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import { pidFilePath, daemonLogPath, resolveHome } from "./home";
 import { readStatusSnapshot, type StatusSnapshot } from "./daemon";
-import { acquire, release } from "./locks";
+import { acquire, isPidAlive, release } from "./locks";
 
 /**
  * Cross-process control over the long-lived daemon. The CLI talks to a running
@@ -41,19 +41,6 @@ export interface DaemonProbe {
   snapshot: StatusSnapshot | null;
   /** Age of the snapshot in ms when `reason === "snapshot-stale"`. */
   staleMs?: number;
-}
-
-function isAlive(pid: number): boolean {
-  if (!Number.isFinite(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ESRCH") return false;
-    if (code === "EPERM") return true;
-    throw err;
-  }
 }
 
 function parsePidFile(raw: string): DaemonPidFile | null {
@@ -99,7 +86,7 @@ export async function probeDaemon(): Promise<DaemonProbe> {
   }
   const file = parsePidFile(raw);
   if (!file) return { pid: null, reason: "bad-pidfile", snapshot: null };
-  if (!isAlive(file.pid)) {
+  if (!isPidAlive(file.pid)) {
     return { pid: file.pid, reason: "dead-process", snapshot: null };
   }
   const snap = await readVerifiedSnapshot();
@@ -237,7 +224,7 @@ export async function stopDaemon(timeoutMs = 35_000): Promise<StopResult> {
 
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (!isAlive(pid)) return { stopped: true, pid };
+    if (!isPidAlive(pid)) return { stopped: true, pid };
     await new Promise((r) => setTimeout(r, 100));
   }
   return { stopped: false, pid };

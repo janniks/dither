@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import matter from "gray-matter";
-import { resolveHome } from "./home";
+import { pluginDir as pluginDirOf, resolveHome } from "./home";
 import { assertInitialized, libraryRoot as resolveLibraryRoot, type DitherConfig } from "./config";
 import { parsePackage } from "./manifest";
 import { updateIndex } from "./update-index";
@@ -212,7 +212,7 @@ async function copyAdded(candidates: PromoteCandidate[]): Promise<string[]> {
 
 export async function runPlugin(opts: RunOptions): Promise<RunResult> {
   const home = resolveHome();
-  const pluginDir = join(home, "plugins", opts.name);
+  const pluginDir = pluginDirOf(opts.name);
   if (!existsSync(pluginDir)) {
     const err = new Error(`plugin not installed: '${opts.name}'`) as Error & { code: string };
     err.code = PLUGIN_NOT_INSTALLED;

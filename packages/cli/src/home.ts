@@ -71,6 +71,16 @@ export function runEventsPath(runId: string): string {
   return join(resolveHome(), "history", runId, "events.jsonl");
 }
 
+/** Terminal state of a Run, written by `openRun.close`. */
+export function runResultPath(runId: string): string {
+  return join(resolveHome(), "history", runId, "result.json");
+}
+
+/** Install root of an installed plugin. */
+export function pluginDir(name: string): string {
+  return join(resolveHome(), "plugins", name);
+}
+
 export function locksDirPath(): string {
   return join(resolveHome(), "locks");
 }

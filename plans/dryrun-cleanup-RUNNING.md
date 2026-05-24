@@ -43,10 +43,9 @@ End-to-end: 1 Hz `writeStatusSnapshot` stops doing N+1 reads of every run dir; S
 End-to-end: One `isPidAlive` exported from `locks.ts`; `daemon-control.ts` and `daemon-client.ts` import it. Plugin dir + run result path live in `home.ts`; three callers stop rebuilding joins.
 
 **Acceptance:**
-- [ ] `locks.ts` exports `isPidAlive(pid): boolean`. `daemon-control.ts:24` and `daemon-client.ts:88` deleted; both import the shared one.
-- [ ] `home.ts` exports `pluginDir(name)` and `runResultPath(id)`. `plugin-run.ts:215`, `plugin-remove.ts:12`, `plugin-install.ts:142`, and `commands/plugin.ts:577` use them.
-- [ ] All tests touching these modules pass.
-- [ ] Commit: `refactor: one isPidAlive + pluginDir/runResultPath in home.ts`.
+- [x] `locks.ts` exports `isPidAlive(pid): boolean` (strict-throw on unknown errno). `daemon-control.ts` + `daemon-client.ts` import it; both local copies deleted.
+- [x] `home.ts` exports `pluginDir(name)` and `runResultPath(id)`. `plugin-run.ts`, `plugin-remove.ts`, `plugin-install.ts`, and `commands/plugin.ts` use them.
+- [x] All tests covering these modules pass (53/53 across run-log, locks, daemon-client, home, plugin-runs).
 
 ---
 
@@ -86,3 +85,4 @@ Worked phase-by-phase. Each commit stages only files touched in that phase by ex
 | commit | summary |
 |--|--|
 | 58a5353 | Phase 1: appendGlobal in-memory size; one stat/tick in follower; drop existsSync in tailRun |
+| c0ed56d | Phase 2: one listPlugins per reconcile; parallel grants reads; listRuns Promise.all; readGlobal tail-from-EOF |

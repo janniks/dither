@@ -1,4 +1,5 @@
 import { readDaemonPid, startDaemon } from "./daemon-control";
+import { isPidAlive } from "./locks";
 import { followGlobal, globalLogSize, type LogEvent } from "./run-log";
 
 /**
@@ -85,19 +86,6 @@ export interface DaemonTransport {
   snapshotOffset?(): Promise<number>;
 }
 
-function defaultIsAlive(pid: number): boolean {
-  if (!Number.isFinite(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ESRCH") return false;
-    if (code === "EPERM") return true;
-    return false;
-  }
-}
-
 const defaultTransport: DaemonTransport = {
   readDaemonPid,
   startDaemon: async () => {
@@ -105,7 +93,7 @@ const defaultTransport: DaemonTransport = {
     return { pid: r.pid };
   },
   follow: (signal, fromOffset) => followGlobal(signal, fromOffset),
-  isAlive: defaultIsAlive,
+  isAlive: isPidAlive,
   signal: (pid, sig) => process.kill(pid, sig),
   snapshotOffset: globalLogSize,
 };

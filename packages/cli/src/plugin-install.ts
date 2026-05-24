@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { resolveHome } from "./home";
+import { pluginDir, resolveHome } from "./home";
 import { validateGrantPattern } from "./grants";
 import { detectProtectedInstall, type ProtectedInstall } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
@@ -143,7 +143,7 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
   for (const pattern of collections) validateGrantPattern(pattern);
 
   const home = resolveHome();
-  const destDir = join(home, "plugins", parsed.name);
+  const destDir = pluginDir(parsed.name);
   const parentDir = dirname(destDir);
   const stageDir = join(parentDir, `.${parsed.name}.${process.pid}.${randomUUID()}.tmp`);
   const grantsDir = join(home, "grants");

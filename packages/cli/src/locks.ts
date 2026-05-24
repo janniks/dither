@@ -53,7 +53,13 @@ export function themeLockPath(theme: LockTheme): string {
   return lockPath(themeName(theme));
 }
 
-function isPidAlive(pid: number): boolean {
+/**
+ * Liveness probe via signal 0. Returns false for finite-but-dead pids
+ * (ESRCH), true for live pids and EPERM (process exists but we can't
+ * signal it). Unexpected errno codes throw — they shouldn't happen on
+ * any platform we run on, and silent return-false would mask them.
+ */
+export function isPidAlive(pid: number): boolean {
   if (!Number.isFinite(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
@@ -61,7 +67,6 @@ function isPidAlive(pid: number): boolean {
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ESRCH") return false;
-    // EPERM means the process exists but we can't signal it — treat as alive.
     if (code === "EPERM") return true;
     throw err;
   }

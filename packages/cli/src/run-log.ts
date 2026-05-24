@@ -265,17 +265,19 @@ async function* followAt(
 
   // Box `fh` inside a holder so TS can't narrow it away through closure
   // analysis after reopen() mutates it.
-  const holder: { fh: FileHandle | null } = { fh: null };
+  const holder: {
+    fh: FileHandle | null;
+    inode: { dev: number; ino: number } | null;
+  } = { fh: null, inode: null };
   let offset = 0;
   let lineBuffer = "";
-  let inode: { dev: number; ino: number } | null = null;
 
   const reopen = async (fromStart = false): Promise<void> => {
     if (holder.fh) {
       await holder.fh.close().catch(() => undefined);
       holder.fh = null;
     }
-    inode = null;
+    holder.inode = null;
     if (!existsSync(path)) {
       offset = 0;
       lineBuffer = "";
@@ -283,7 +285,7 @@ async function* followAt(
     }
     holder.fh = await open(path, "r");
     const st = await holder.fh.stat();
-    inode = { dev: st.dev, ino: st.ino };
+    holder.inode = { dev: st.dev, ino: st.ino };
     if (fromStart) {
       offset = 0;
       lineBuffer = "";
@@ -312,7 +314,8 @@ async function* followAt(
       // there?" (dev/ino vs snapshot from reopen) and "how big is it
       // now?" (size).
       const st = await stat(path).catch(() => null);
-      if (!st || !inode || st.dev !== inode.dev || st.ino !== inode.ino) {
+      const snap = holder.inode;
+      if (!st || snap === null || st.dev !== snap.dev || st.ino !== snap.ino) {
         await reopen(true);
         continue;
       }
