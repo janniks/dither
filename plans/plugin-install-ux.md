@@ -65,3 +65,4 @@ When starting implementation, rename this file to `./plans/<feature>-RUNNING.md`
 |--|--|
 | 032f94d | phase 1: ENTER-for-default auto-hint, drop default_hint, dedupe top-level description box |
 | 18574e2 | phase 2: schedule + watch consent prompts; grants gain top-level schedule/watch; daemon honors choice |
+| a09487d | phase 3: dither-voice FDA note + interactive open-Settings prompt; tcc-hint returns structured info |
