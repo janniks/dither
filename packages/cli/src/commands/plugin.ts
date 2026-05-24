@@ -149,30 +149,43 @@ function printInstallHint(name: string, fromRunPath: boolean): void {
  * `open` is injectable so tests don't actually spawn a Settings window.
  */
 /**
- * Smoke-test whether a TCC-protected path is actually readable from
- * this process. On macOS, FDA propagates from the responsible parent
- * (terminal / IDE) to spawned children, so a successful `readdir` /
- * `access` from node is a good proxy for "the managed deno will also
- * succeed." Returns true when access works (so the advisory is silent),
- * false on EPERM / EACCES (so we surface it).
+ * Smoke-test whether the *managed deno binary* can read a TCC-protected
+ * path. Node's own FDA grant doesn't transfer — plugins run under the
+ * managed deno, which has its own per-binary entry in System Settings.
+ * So we spawn `deno eval` with `--allow-read=<path>` and a `statSync`.
+ * Exit 0 → access works (silent advisory); anything else → surface it.
+ *
+ * Times out at 3s as a safety net (deno cold start is usually <500ms,
+ * but FDA prompts on first hit can hang briefly).
  */
-async function protectedPathReadable(path: string): Promise<boolean> {
-  try {
-    const s = await stat(path);
-    if (s.isDirectory()) await readdir(path);
-    return true;
-  } catch {
-    return false;
-  }
+async function denoCanRead(denoPath: string, path: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const code = `Deno.statSync(${JSON.stringify(path)});`;
+    const child = spawn(denoPath, ["eval", `--allow-read=${path}`, code], {
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      resolve(false);
+    }, 3_000);
+    child.on("exit", (c) => {
+      clearTimeout(timer);
+      resolve(c === 0);
+    });
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+  });
 }
 
 export async function handleProtectedInstall(
   info: ProtectedInstall,
   open: (url: string) => void = openBrowser,
 ): Promise<void> {
-  // Skip the advisory when FDA already works — we only want to surface
-  // it when something is actually blocked.
-  if (await protectedPathReadable(info.path)) return;
+  // Skip the advisory when the managed deno already has FDA for this
+  // path — the user already granted it. Only surface when actually blocked.
+  if (await denoCanRead(info.callerBinary, info.path)) return;
   ditherText(
     [
       `'${info.path}' is a macOS-protected location.`,
@@ -180,6 +193,9 @@ export async function handleProtectedInstall(
       "The plugin will only read it after Full Disk Access has been",
       "granted to the dither-managed Deno:",
       `  ${info.callerBinary}`,
+      "",
+      "Drag the highlighted binary from Finder into the Full Disk",
+      "Access list, or click '+' and pick it.",
       "",
       `Open Settings: ${info.settingsUri}`,
     ].join("\n"),
@@ -192,7 +208,13 @@ export async function handleProtectedInstall(
     // Cancelled (Ctrl-C). Leave the URL in the note for later.
     return;
   }
-  if (yes) open(info.settingsUri);
+  if (!yes) return;
+  open(info.settingsUri);
+  if (process.platform === "darwin") {
+    spawn("open", ["-R", info.callerBinary], { detached: true, stdio: "ignore" })
+      .on("error", () => {})
+      .unref();
+  }
 }
 
 async function ensureDaemonForPlugin(name: string): Promise<void> {
