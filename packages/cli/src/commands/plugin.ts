@@ -54,7 +54,7 @@ async function installPluginOrExit(opts: InstallOptions): Promise<InstalledPlugi
       const base = existing ? mergeInputs(existing, opts) : opts;
       const plan = await planInstall(parsed, base);
       const missing = plan.ok ? [] : plan.missing;
-      const extra = await promptInteractive(parsed, base, missing);
+      const extra = await promptInteractive(parsed, opts, existing, missing);
       // Spread opts first so non-grant fields (source, symlink) ride
       // through; the prompt-merged grant fields overwrite opts's.
       merged = { ...opts, ...mergeInputs(base, extra) };

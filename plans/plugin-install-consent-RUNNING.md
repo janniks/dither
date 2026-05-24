@@ -38,21 +38,20 @@ per the architectural rule above. Skip prompt entirely when a flag
 supplied the value. Empty selection allowed (no install-time gate).
 
 **Acceptance:**
-- [ ] `net` and `collections` go through `promptMultiSelect` on TTY
-- [ ] Fresh install: every manifest entry pre-checked, no hints
-- [ ] Reinstall, unchanged manifest: prior entries pre-checked, no hints
-- [ ] Reinstall + manifest added a host: new entry unchecked, `(new)` hint
-- [ ] Reinstall + manifest removed a host: prior entry pre-checked,
+- [x] `net` and `collections` go through `promptMultiSelect` on TTY
+- [x] Fresh install: every manifest entry pre-checked, no hints
+- [x] Reinstall, unchanged manifest: prior entries pre-checked, no hints
+- [x] Reinstall + manifest added a host: new entry unchecked, `(new)` hint
+- [x] Reinstall + manifest removed a host: prior entry pre-checked,
       `(plugin no longer requests)` hint
-- [ ] `--allow-net api.x.com` writes `["api.x.com"]` with no prompt
-- [ ] `--allow-collection slack/**` writes `["slack/**"]` with no prompt
-- [ ] Empty selection accepted; grants file gets `net: []` /
+- [x] `--allow-net api.x.com` writes `["api.x.com"]` with no prompt
+- [x] `--allow-collection slack/**` writes `["slack/**"]` with no prompt
+- [x] Empty selection accepted; grants file gets `net: []` /
       `collections: []`
-- [ ] `validateGrantPattern` still rejects bad collection patterns
-      before the install proceeds
-- [ ] `accept()` helper deleted from `plugin-install-interactive.ts`
-- [ ] Inline option-builder helper has unit tests (table-driven, like
-      `relative-time.test.ts`)
+- [x] `validateGrantPattern` still rejects bad collection patterns
+      before the install proceeds (unchanged — happens inside `installPlugin`)
+- [x] `accept()` helper deleted from `plugin-install-interactive.ts`
+- [x] Inline option-builder helper has unit tests (table-driven)
 
 ---
 

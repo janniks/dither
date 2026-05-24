@@ -3,9 +3,9 @@ import { lstat, readFile, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parsePackage, type Manifest, type ParsedPackage } from "./manifest";
 import {
-  accepted,
   confirm,
   pluginText,
+  promptMultiSelect,
   promptSelect,
   promptText,
   untildePath,
@@ -281,9 +281,11 @@ export async function readPackage(source: string): Promise<ParsedPackage> {
  */
 export async function promptInteractive(
   parsed: ParsedPackage,
-  current: InstallInputs,
+  opts: InstallInputs,
+  existing: InstallInputs | null,
   missing: MissingField[],
 ): Promise<InstallInputs> {
+  const current: InstallInputs = existing ? mergeInputs(existing, opts) : opts;
   printHeader(parsed);
   // Skip the top-level package description when at least one per-field
   // prompt below will render its own `from plugin` box — back-to-back
@@ -344,14 +346,16 @@ export async function promptInteractive(
     confirm(field.name, final);
   }
 
-  // Manifest is the source of truth for net + collections. The user
-  // overrides via --allow-net / --allow-collection flags; otherwise we
-  // grant exactly what the manifest declares. No picker, no add-loop —
-  // both add friction without saving anything most installs need.
-  const net = accept("net", current.net, parsed.manifest.net);
-  const collections = accept(
+  // Consent for list-shaped grants: flag-supplied values skip the prompt
+  // entirely; otherwise the multi-select shows `prior ∪ manifest`, pre-checked
+  // per `buildListOptions`. Manifest-only entries (new since last install)
+  // start unchecked with a `(new)` hint — silent-widen across plugin updates
+  // becomes impossible. See specs/plugin-install-consent.md.
+  const net = await consentList("net", opts.net, existing?.net, parsed.manifest.net);
+  const collections = await consentList(
     "collections",
-    current.collections,
+    opts.collections,
+    existing?.collections,
     parsed.manifest.collections,
   );
 
@@ -386,7 +390,7 @@ async function promptScheduleConsent(
   const choice = await promptSelect<"declared" | "manual" | "custom">({
     message: `schedule — runs ${cadence}. enable?`,
     options: [
-      { label: `Enable as declared (${cadence})`, value: "declared" },
+      { label: `Enable as declared (recommended by plugin)`, value: "declared" },
       { label: `Manual only — fire with 'dither plugin run ${parsed.name}'`, value: "manual" },
       { label: "Custom schedule…", value: "custom" },
     ],
@@ -490,23 +494,82 @@ export function humanizeSchedule(pattern: string): string {
 }
 
 /**
- * Resolve a grant list from a flag override or manifest declaration. Prints
- * a single `✓ label: a, b, c` line so the user sees what was granted.
- * Returns undefined when both are empty (so `mergeInputs` no-ops).
+ * One option in the consent multi-select for a list-shaped grant.
+ * Exported for unit-testing `buildListOptions` in isolation.
  */
-function accept(
+export interface ListOption {
+  value: string;
+  /** Whether the multi-select starts with this entry checked. */
+  initial: boolean;
+  /** `(new)` for manifest-new-since-last-install,
+   *  `(plugin no longer requests)` for prior-only entries. */
+  hint?: string;
+}
+
+/**
+ * Pure: compute the multi-select option list for a list-shaped grant
+ * (`net`, `collections`) from the prior grants and the manifest's
+ * current declaration.
+ *
+ *   Fresh install (prior=undefined): every manifest entry pre-checked.
+ *   Reinstall + unchanged:           every manifest entry pre-checked.
+ *   Reinstall + manifest added:      new entry unchecked, `(new)` hint —
+ *                                    the silent-widen guard.
+ *   Reinstall + manifest dropped:    prior entry pre-checked,
+ *                                    `(plugin no longer requests)` hint.
+ *
+ * Order: manifest first (manifest order preserved), then prior-only entries.
+ */
+export function buildListOptions(
+  prior: string[] | undefined,
+  manifest: string[] | undefined,
+): ListOption[] {
+  const priorSet = new Set(prior ?? []);
+  const manifestArr = manifest ?? [];
+  const manifestSet = new Set(manifestArr);
+  const hasPrior = prior !== undefined;
+  const out: ListOption[] = manifestArr.map((value) => {
+    if (!hasPrior || priorSet.has(value)) return { value, initial: true };
+    return { value, initial: false, hint: "(new)" };
+  });
+  for (const value of prior ?? []) {
+    if (manifestSet.has(value)) continue;
+    out.push({ value, initial: true, hint: "(plugin no longer requests)" });
+  }
+  return out;
+}
+
+/**
+ * Consent prompt for a list-shaped grant. Flag-supplied value bypasses
+ * the prompt (the flag IS the user's input); otherwise drives a
+ * multi-select over `prior ∪ manifest` per `buildListOptions`. Returns
+ * `undefined` when there's nothing to consent to (no flag, no prior, no
+ * manifest entry) so `mergeInputs` doesn't clobber.
+ */
+async function consentList(
   label: string,
   flag: string[] | undefined,
-  declared: string[] | undefined,
-): string[] | undefined {
-  const chosen = flag !== undefined && flag.length > 0
-    ? Array.from(new Set(flag))
-    : declared && declared.length > 0
-    ? Array.from(new Set(declared))
-    : [];
-  if (chosen.length === 0) return undefined;
-  accepted(label, chosen.join(", "));
-  return chosen;
+  prior: string[] | undefined,
+  manifest: string[] | undefined,
+): Promise<string[] | undefined> {
+  if (flag !== undefined && flag.length > 0) {
+    const list = Array.from(new Set(flag));
+    confirm(label, list.join(", "));
+    return list;
+  }
+  const options = buildListOptions(prior, manifest);
+  if (options.length === 0) return undefined;
+  const selected = await promptMultiSelect({
+    message: label,
+    options: options.map((o) => ({
+      value: o.value,
+      label: o.value,
+      ...(o.hint ? { hint: o.hint } : {}),
+    })),
+    initial: options.filter((o) => o.initial).map((o) => o.value),
+  });
+  confirm(label, selected.length > 0 ? selected.join(", ") : "(none)");
+  return selected;
 }
 
 /**

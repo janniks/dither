@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  buildListOptions,
   formatMissing,
   hasFieldDescription,
   humanizeSchedule,
@@ -376,5 +377,55 @@ describe("planInstall with pre-fill (existing grants merged under flags)", () =>
     );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.missing).toEqual([{ kind: "env", name: "NEW_FIELD" }]);
+  });
+});
+
+describe("buildListOptions", () => {
+  it("fresh install: every manifest entry pre-checked, no hints", () => {
+    expect(buildListOptions(undefined, ["a", "b"])).toEqual([
+      { value: "a", initial: true },
+      { value: "b", initial: true },
+    ]);
+  });
+
+  it("reinstall unchanged: every entry pre-checked, no hints", () => {
+    expect(buildListOptions(["a", "b"], ["a", "b"])).toEqual([
+      { value: "a", initial: true },
+      { value: "b", initial: true },
+    ]);
+  });
+
+  it("reinstall + manifest widened: new entry unchecked with (new)", () => {
+    expect(buildListOptions(["a"], ["a", "b"])).toEqual([
+      { value: "a", initial: true },
+      { value: "b", initial: false, hint: "(new)" },
+    ]);
+  });
+
+  it("reinstall + manifest narrowed: dropped entry pre-checked with hint", () => {
+    expect(buildListOptions(["a", "b"], ["a"])).toEqual([
+      { value: "a", initial: true },
+      { value: "b", initial: true, hint: "(plugin no longer requests)" },
+    ]);
+  });
+
+  it("manifest order preserved, prior-only entries appended", () => {
+    expect(buildListOptions(["x", "a"], ["a", "b"])).toEqual([
+      { value: "a", initial: true },
+      { value: "b", initial: false, hint: "(new)" },
+      { value: "x", initial: true, hint: "(plugin no longer requests)" },
+    ]);
+  });
+
+  it("empty prior + empty manifest: empty list", () => {
+    expect(buildListOptions([], [])).toEqual([]);
+    expect(buildListOptions(undefined, undefined)).toEqual([]);
+  });
+
+  it("prior empty array (reinstall with nothing granted) treats every manifest entry as (new)", () => {
+    // hasPrior=true (empty array IS a prior decision), so new entries get (new).
+    expect(buildListOptions([], ["a"])).toEqual([
+      { value: "a", initial: false, hint: "(new)" },
+    ]);
   });
 });
