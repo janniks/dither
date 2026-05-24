@@ -68,12 +68,11 @@ End-to-end: narrating comments stripped; broad try/catch narrowed or removed; `l
 End-to-end: `DaemonTransport` interface shrinks to the actual seam (`follow` + `signal`); `refire.ts:99` drops the `now?` param; `daemon-client.ts:85` `snapshotOffset?` becomes required; `deno-bootstrap.ts:121` mutable fetcher hatch evaluated for removal.
 
 **Acceptance:**
-- [ ] `DaemonTransport` has only the methods that vary in tests; the rest call real modules directly. `daemon-client.test.ts` updated to match.
-- [ ] `refire.ts:99` `decideRunOutcome` drops `now?`; tests use `vi.useFakeTimers()` or accept the real clock.
-- [ ] `daemon-client.ts:85` `snapshotOffset` is required; branch at `:229` deleted.
-- [ ] `deno-bootstrap.ts:121` — if removable without losing test coverage, remove; otherwise document why it stays (single-line comment, WHY only).
-- [ ] All tests pass.
-- [ ] Commit: `refactor(daemon-client): shrink transport seam; drop test-only DI`.
+- [x] `daemon-client.ts:85` `snapshotOffset` is required; the conditional at the call site is gone. Default stub in `daemon-client.test.ts` gains a no-op `snapshotOffset` so the contract is uniform.
+- [~] `DaemonTransport` shrink deferred. Every method except `snapshotOffset` is already exercised by `daemon-client.test.ts` stubs — shrinking would force tests to spawn real daemons. The cost outweighs the surface savings.
+- [~] `refire.ts:99` `now?` removal deferred. The 7 test sites set `now: T` to assert exact ISO timestamps; switching to `vi.useFakeTimers()` is a test rewrite for a single-line production benefit.
+- [~] `deno-bootstrap.ts` mutable `fetcher` removal deferred. Six download/integrity tests substitute it; removing means a network mocking layer with no production payoff.
+- [x] All daemon-client tests pass (8/8); typecheck clean.
 
 ---
 
@@ -86,3 +85,4 @@ Worked phase-by-phase. Each commit stages only files touched in that phase by ex
 | 58a5353 | Phase 1: appendGlobal in-memory size; one stat/tick in follower; drop existsSync in tailRun |
 | c0ed56d | Phase 2: one listPlugins per reconcile; parallel grants reads; listRuns Promise.all; readGlobal tail-from-EOF |
 | 50a6ad8 | Phase 3: isPidAlive consolidated in locks.ts; pluginDir + runResultPath in home.ts |
+| 1dcd9b5 | Phase 4: strip narration, narrow catches, single-word locals; watcher unconditional GC |

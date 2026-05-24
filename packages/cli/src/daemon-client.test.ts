@@ -67,6 +67,9 @@ function stubTransport(initialPid: number | null = 1234): Stub {
         });
       }
     },
+    async snapshotOffset() {
+      return 0;
+    },
   };
 
   return {

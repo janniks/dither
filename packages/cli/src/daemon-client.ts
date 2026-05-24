@@ -81,9 +81,9 @@ export interface DaemonTransport {
    * this BEFORE sending SIGHUP and passes the value to `follow`'s
    * `fromOffset` — guarantees a `reconcile-started` event emitted
    * between SIGHUP delivery and the follower's `open()` is still inside
-   * the read window. Optional: stub transports may omit it.
+   * the read window.
    */
-  snapshotOffset?(): Promise<number>;
+  snapshotOffset(): Promise<number>;
 }
 
 const defaultTransport: DaemonTransport = {
@@ -206,7 +206,7 @@ export function daemonClient(opts: { transport?: DaemonTransport } = {}): Daemon
       const started = await t.startDaemon();
       pid = started.pid;
     }
-    const fromOffset = t.snapshotOffset ? await t.snapshotOffset() : undefined;
+    const fromOffset = await t.snapshotOffset();
     t.signal(pid, "SIGHUP");
     yield* watchReconcile({ signal: opts.signal, pid, fromOffset });
   }
