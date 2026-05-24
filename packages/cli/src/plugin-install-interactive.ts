@@ -253,7 +253,12 @@ export async function promptInteractive(
   missing: MissingField[],
 ): Promise<InstallInputs> {
   printHeader(parsed);
-  if (parsed.description) pluginText(parsed.description);
+  // Skip the top-level package description when at least one per-field
+  // prompt below will render its own `from plugin` box — back-to-back
+  // identical chrome reads as a rendering bug.
+  if (parsed.description && !hasFieldDescription(parsed)) {
+    pluginText(parsed.description);
+  }
 
   const env: Record<string, string> = {};
   const envRefs: string[] = [];
@@ -289,10 +294,9 @@ export async function promptInteractive(
     // kind === "file"
     const def = (parsed.manifest.files ?? []).find((f) => f.id === field.name);
     if (def?.description) pluginText(def.description);
-    const hint = def?.default_hint ? ` (${def.default_hint})` : "";
     const dflt = def?.default;
     const value = await promptText({
-      message: `${field.name}${hint}`,
+      message: field.name,
       default: dflt,
       placeholder: dflt,
       validate: (v) => {
@@ -348,6 +352,19 @@ function accept(
  * use a flashy header to mislead about what's about to be installed.
  * Capped at ~60 chars so it fits on one line in a narrow terminal.
  */
+/**
+ * True when any env / file declaration has a non-empty description — those
+ * render their own `from plugin` box, so the package-level description box
+ * directly above them would just stack identical chrome.
+ */
+export function hasFieldDescription(parsed: ParsedPackage): boolean {
+  const fields = [
+    ...(parsed.manifest.env ?? []),
+    ...(parsed.manifest.files ?? []),
+  ];
+  return fields.some((f) => f.description && f.description.trim() !== "");
+}
+
 function printHeader(parsed: ParsedPackage): void {
   const title = parsed.manifest.display_name ?? parsed.name;
   const full = `${title}@${parsed.version}`;

@@ -140,9 +140,21 @@ export async function promptConfirm(message: string, defaultValue = true): Promi
   return Boolean(raw);
 }
 
+/**
+ * Compose the prompt line for `promptText`. When `default` is provided and
+ * the caller hasn't already baked an "ENTER" hint into `message`, append
+ * `(ENTER for <default>)` so the user sees what Enter accepts. Pure — exposed
+ * for tests.
+ */
+export function composePromptMessage(message: string, dflt: string | undefined): string {
+  if (!dflt || /ENTER/i.test(message)) return message;
+  return `${message} (ENTER for ${tildePath(dflt)})`;
+}
+
 export async function promptText(opts: PromptTextOptions): Promise<string> {
+  const msg = composePromptMessage(opts.message, opts.default);
   for (;;) {
-    const raw = (await consola.prompt(opts.message, {
+    const raw = (await consola.prompt(msg, {
       type: "text",
       placeholder: opts.placeholder,
       default: opts.default,

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   formatMissing,
+  hasFieldDescription,
   mergeInputs,
   planInstall,
   readExistingGrants,
@@ -139,6 +140,39 @@ describe("planInstall", () => {
     const r = await planInstall(pkg({ files: [{ id: "opt", kind: "file" }] }), {});
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.resolved.files).toEqual({});
+  });
+});
+
+describe("hasFieldDescription", () => {
+  it("false when no env or file declarations", () => {
+    expect(hasFieldDescription(pkg({}))).toBe(false);
+  });
+
+  it("false when fields have no description", () => {
+    expect(hasFieldDescription(pkg({ env: [{ name: "A" }] }))).toBe(false);
+    expect(
+      hasFieldDescription(pkg({ files: [{ id: "cfg", kind: "file" }] })),
+    ).toBe(false);
+  });
+
+  it("true when an env field has a non-empty description", () => {
+    expect(
+      hasFieldDescription(pkg({ env: [{ name: "A", description: "the A" }] })),
+    ).toBe(true);
+  });
+
+  it("true when a file field has a non-empty description", () => {
+    expect(
+      hasFieldDescription(
+        pkg({ files: [{ id: "cfg", kind: "file", description: "the config" }] }),
+      ),
+    ).toBe(true);
+  });
+
+  it("false when descriptions are whitespace-only", () => {
+    expect(
+      hasFieldDescription(pkg({ env: [{ name: "A", description: "   " }] })),
+    ).toBe(false);
   });
 });
 

@@ -16,10 +16,9 @@ const FileDef = z.object({
   /** Optional default path. `~` expands to the user's home. Plugin authors
    *  set this when there's a canonical location (e.g. macOS Slack desktop's
    *  `~/Library/Application Support/Slack/Local Storage/leveldb`). Surfaced
-   *  to the user as the prompt default — Enter accepts it. */
+   *  to the user as the prompt default and as an `(ENTER for <path>)`
+   *  hint baked into the prompt line. */
   default: z.string().optional(),
-  /** Short hint text shown alongside the prompt (e.g. "(macOS)"). */
-  default_hint: z.string().optional(),
 });
 
 const ManifestSchema = z.object({
