@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { assertInitialized, saveConfig } from "../config";
 import { addExternal, loadRegistry, removeExternal } from "../collection-registry";
 import { updateIndex } from "../update-index";
+import { printTable } from "../prompt";
 
 const addSubcommand = defineCommand({
   meta: {
@@ -63,15 +64,15 @@ const listSubcommand = defineCommand({
       console.log("(no collections)");
       return;
     }
-    for (const c of collections) {
-      const count = c.status === "ok" ? countMd(c.path) : "?";
-      const cell = count.toString().padStart(5);
-      const tag = c.status === "missing" ? " (missing)" : "";
-      const tail = args.verbose
-        ? ` ${c.source.padEnd(8)}  ${c.path}`
-        : ` ${c.source}`;
-      console.log(`${c.name.padEnd(20)} ${cell} md ${tail}${tag}`);
-    }
+    const rows = collections.map((c) => {
+      const count = c.status === "ok" ? `${countMd(c.path)} md` : "? md";
+      const src = c.status === "missing" ? `${c.source} (missing)` : c.source;
+      return args.verbose ? [c.name, count, src, c.path] : [c.name, count, src];
+    });
+    const cols = args.verbose
+      ? [{}, { align: "right" as const }, {}, {}]
+      : [{}, { align: "right" as const }, {}];
+    printTable(rows, cols);
   },
 });
 

@@ -67,10 +67,10 @@ count + source layout from the recent commit stays the same; widths
 become dynamic.
 
 **Acceptance:**
-- [ ] `d collection list` and `d collection list -v` use `printTable`
-- [ ] Collections with names >20 chars no longer overflow
-- [ ] Count column right-aligned (matches current `padStart(5)` look)
-- [ ] `d collection list | cat` emits TSV
+- [x] `d collection list` and `d collection list -v` use `printTable`
+- [x] Collections with names >20 chars no longer overflow
+- [x] Count column right-aligned (matches current `padStart(5)` look)
+- [x] `d collection list | cat` emits TSV
 
 ---
 
@@ -83,27 +83,28 @@ which collapses on most terminals into a ragged mess. Port to `printTable`;
 right-align nothing (all left). Trailing `-` for "no schedule" stays.
 
 **Acceptance:**
-- [ ] `d plugin list` columns align regardless of name/version width
-- [ ] Long collection lists (e.g. `spotify/songs,spotify/podcasts`) don't
+- [x] `d plugin list` columns align regardless of name/version width
+- [x] Long collection lists (e.g. `spotify/songs,spotify/podcasts`) don't
       push the schedule column off-screen — middle-truncate via `max`
-- [ ] `d plugin list | cat` emits TSV
+- [x] `d plugin list | cat` emits TSV
 
 ---
 
-## Phase 5: `d search`
+## Phase 5: `d search` — **deferred**
 
-**User stories**: same output, less code.
+The `--preview` snippet row must align under the *title* column, which
+means the caller needs to know `printTable`'s computed column widths to
+build `previewIndent`. The helper computes widths internally and
+deliberately doesn't expose them (deep-module contract). Migrating
+would either:
 
-Replace the inline width computation in `commands/search.ts:82-121` with
-a `printTable` call. Snippet preview row stays as a separate `console.log`
-(it's not a table column).
+  - duplicate the width computation in search.ts (more code, not less), or
+  - leak widths back through `printTable`'s API (breaks the deep-module
+    boundary for one caller).
 
-**Acceptance:**
-- [ ] `d search foo` visual output identical to pre-migration
-- [ ] `d search foo --preview` snippet still aligns under the title column
-- [ ] `d search foo | cat` still emits TSV (now via helper)
-- [ ] `commands/search.ts` no longer computes `scoreW / docidW / collW`
-      manually
+`commands/search.ts` already uses the same dynamic-width / TTY-vs-TSV
+pattern `printTable` codifies. Re-visit if a third caller ever needs
+continuation rows under a specific column — then it's a real abstraction.
 
 ---
 
