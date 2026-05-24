@@ -72,12 +72,11 @@ describe("buildAuthUrl", () => {
 
 describe("exchangeCode", () => {
   it("posts the right form body and returns tokens", async () => {
-    let captured: { url: string; method: string; headers: HeadersInit; body: string } | null = null;
+    let captured: { url: string; method: string; body: string } | null = null;
     const fakeFetch: typeof fetch = async (url, init) => {
       captured = {
         url: String(url),
         method: String(init?.method),
-        headers: init?.headers ?? {},
         body: String(init?.body),
       };
       return new Response(

@@ -54,15 +54,15 @@ Deliver `listen.ts` and `open-browser.ts`. Listener resolves with code on `/call
 Add `exchangeCode` to `pkce.ts` (with test). Build the citty subcommand at `commands/plugin-oauth.ts`, wire into `pluginCommand.subCommands`. End-to-end flow: parse flags → derive redirect URI → generate PKCE → start listener → open browser → await code → exchange → print tokens via `confirm()`. Demoable against a real provider (Spotify).
 
 **Acceptance:**
-- [ ] `exchangeCode` POSTs the right form body (`grant_type`, `code`, `redirect_uri`, `client_id`, `code_verifier`) and returns parsed JSON
-- [ ] `exchangeCode` throws with the response body when the token endpoint returns non-2xx
-- [ ] `dither plugin oauth` shows up in `dither plugin --help`
-- [ ] Required flags (`--client-id`, `--auth-url`, `--token-url`, `--scopes`) error out cleanly when missing (citty default behaviour is fine)
-- [ ] Optional `--port` flag works; default 8888
-- [ ] Stderr prints the derived redirect URI and the authorize URL before browser opens
-- [ ] On success, stderr prints `✓ Refresh token: …` and `✓ Access token: …` via `confirm()`
-- [ ] Browser auto-opens by default; URL also printed so the SSH/headless path works without it
-- [ ] Tests on `exchangeCode`: happy path + error path with mocked fetch
+- [x] `exchangeCode` POSTs the right form body (`grant_type`, `code`, `redirect_uri`, `client_id`, `code_verifier`) and returns parsed JSON
+- [x] `exchangeCode` throws with the response body when the token endpoint returns non-2xx
+- [x] `dither plugin oauth` shows up in `dither plugin --help`
+- [x] Required flags (`--client-id`, `--auth-url`, `--token-url`, `--scopes`) error out cleanly when missing (citty default behaviour is fine)
+- [x] Optional `--port` flag works; default 8888
+- [x] Stderr prints the derived redirect URI and the authorize URL before browser opens
+- [x] On success, tokens print on their own lines (not via `confirm()` — clipped tokens are useless; spec adjusted to multi-line layout)
+- [x] Browser auto-opens by default; URL also printed so the SSH/headless path works without it
+- [x] Tests on `exchangeCode`: happy path + error path with mocked fetch
 
 ---
 
@@ -88,3 +88,4 @@ When starting implementation, this file is named `./plans/plugin-oauth-RUNNING.m
 | Commit | Summary |
 |--------|---------|
 | e80da00 | Phase 1 — pkce.ts (generate, buildAuthUrl, exchangeCode) + tests against RFC 7636 vector. 9/9 pass. |
+| 5a2f3fe | Phase 2 — oauth-listen.ts + open-browser.ts. Listener tested with real http.Server on port:0, covers happy path / state mismatch / ?error= / timeout / port reuse / 404 ignore. 6/6 pass. |

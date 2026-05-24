@@ -34,6 +34,7 @@ import {
   readRun,
   type RunResultRecord,
 } from "../run-log";
+import { oauthSubcommand } from "./plugin-oauth";
 
 // Install a plugin. On a TTY, drop into the interactive flow when the
 // manifest declares required env/files the caller didn't satisfy. On a
@@ -704,5 +705,6 @@ export const pluginCommand = defineCommand({
     runs: runsSubcommand,
     list: listSubcommand,
     remove: removeSubcommand,
+    oauth: oauthSubcommand,
   },
 });
