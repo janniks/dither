@@ -272,7 +272,8 @@ export function pluginText(raw: string): void {
   const lines = wrapPluginText(safe.text, inner);
   if (safe.truncated) lines.push("", "(description truncated)");
   const label = " from plugin ";
-  const topFill = "─".repeat(Math.max(0, cols - 2 - label.length));
+  // Top line is `┌` + `─` + label + topFill + `┐` = 3 + label.length + topFill.
+  const topFill = "─".repeat(Math.max(0, cols - 3 - label.length));
   const bot = "─".repeat(cols - 2);
   const out: string[] = [];
   out.push(pc.dim(`┌─${label}${topFill}┐`));
@@ -314,7 +315,8 @@ export function ditherText(message: string): void {
     lines.push(rest);
   }
   const label = " note ";
-  const topFill = "─".repeat(Math.max(0, cols - 2 - label.length));
+  // Top line is `┌` + `─` + label + topFill + `┐` = 3 + label.length + topFill.
+  const topFill = "─".repeat(Math.max(0, cols - 3 - label.length));
   const bot = "─".repeat(cols - 2);
   const out: string[] = [];
   out.push(pc.yellow(`┌─${label}${topFill}┐`));
