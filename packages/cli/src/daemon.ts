@@ -136,13 +136,15 @@ async function readRunningPlugins(): Promise<RunningPlugin[]> {
   for (const filename of entries) {
     if (!filename.endsWith(".lock")) continue;
     const name = filename.slice(0, -".lock".length);
+    let raw: string;
     try {
-      const raw = await readFile(join(locksDirPath(), filename), "utf-8");
-      const pid = Number.parseInt(raw.trim(), 10);
-      if (Number.isFinite(pid) && pid > 0) out.push({ name, pid });
-    } catch {
-      // skip transient read failures
+      raw = await readFile(join(locksDirPath(), filename), "utf-8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw err;
     }
+    const pid = Number.parseInt(raw.trim(), 10);
+    if (Number.isFinite(pid) && pid > 0) out.push({ name, pid });
   }
   return out;
 }
@@ -272,44 +274,34 @@ export async function runDaemon(): Promise<void> {
   // events log is the watcher's hand-off point. Multiple concurrent
   // calls are safe because the per-theme locks serialize the actual
   // work — and `qmdReconcile` itself is short on no-work paths.
-  let qmdReconcileInFlight: Promise<void> | null = null;
-  let qmdReconcileQueued = false;
-  // Backoff for level-triggered re-fires: a plugin that re-creates
-  // `needs-reindex` faster than reconcile can consume it would otherwise
-  // spin the CPU. 500ms is well below human-perceivable latency for
-  // catch-up indexing yet bounds wasted work.
-  const LEVEL_TRIGGER_MIN_INTERVAL_MS = 500;
-  let lastQmdReconcileStart = 0;
+  let inflight: Promise<void> | null = null;
+  let queued = false;
+  // 500ms is well below human-perceivable latency for catch-up
+  // indexing yet bounds wasted work if a plugin re-creates the
+  // `needs-reindex` marker faster than reconcile can consume it.
+  const REFIRE_MIN_MS = 500;
+  let lastStart = 0;
   const fireQmdReconcile = (): void => {
-    if (qmdReconcileInFlight) {
-      // A reconcile is running. Mark a follow-up cycle so a SIGHUP /
-      // init handoff that arrives mid-cycle doesn't get dropped — it
-      // will pick up any marker (incl. a fresh `needs-reindex`) the
-      // in-flight cycle didn't see.
-      qmdReconcileQueued = true;
+    if (inflight) {
+      // Mark a follow-up cycle so a SIGHUP / init handoff that arrives
+      // mid-cycle isn't dropped.
+      queued = true;
       return;
     }
-    lastQmdReconcileStart = Date.now();
-    qmdReconcileInFlight = qmdReconcile()
+    lastStart = Date.now();
+    inflight = qmdReconcile()
       .catch((err) => {
         console.error(
           `[daemon] qmd reconcile failed: ${err instanceof Error ? err.message : String(err)}`,
         );
       })
       .then(() => {
-        qmdReconcileInFlight = null;
-        // Level-triggered check: if a `needs-reindex` marker landed
-        // during this cycle (e.g. plugin-run wrote it after promoting
-        // files), pick it up without waiting for an external SIGHUP.
-        if (!qmdReconcileQueued && !existsSync(needsReindexPath())) return;
-        qmdReconcileQueued = false;
-        const elapsed = Date.now() - lastQmdReconcileStart;
-        const wait = Math.max(0, LEVEL_TRIGGER_MIN_INTERVAL_MS - elapsed);
-        if (wait > 0) {
-          setTimeout(fireQmdReconcile, wait).unref();
-        } else {
-          fireQmdReconcile();
-        }
+        inflight = null;
+        if (!queued && !existsSync(needsReindexPath())) return;
+        queued = false;
+        const wait = Math.max(0, REFIRE_MIN_MS - (Date.now() - lastStart));
+        if (wait > 0) setTimeout(fireQmdReconcile, wait).unref();
+        else fireQmdReconcile();
       });
   };
   fireQmdReconcile();

@@ -374,9 +374,9 @@ async function runEmbedJob(
     await appendGlobal({ kind: "job-started", jobId, type: "embedding" });
     const summary = await embedLoop(
       store,
-      (cumEmbedded, totalEstimate) => {
+      (embedded, total) => {
         void closeDownload();
-        emitProgress({ current: cumEmbedded, total: totalEstimate });
+        emitProgress({ current: embedded, total });
       },
       // Cancellation hand-off: `dither index cancel` writes the
       // embed-disabled marker. Between iterations the loop checks it

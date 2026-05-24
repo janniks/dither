@@ -138,43 +138,38 @@ export function daemonClient(opts: { transport?: DaemonTransport } = {}): Daemon
     const pid = watchOpts.pid ?? (await t.readDaemonPid());
     if (pid === null) throw new DaemonDiedError();
 
-    // Internal abort controller. Chains:
-    //   - caller's external signal → abort
-    //   - dead-PID probe → abort + flag
-    //   - normal completion (reconcile-done) → not aborted, just return
-    const innerAc = new AbortController();
-    const onCallerAbort = (): void => innerAc.abort();
-    watchOpts.signal?.addEventListener("abort", onCallerAbort, { once: true });
+    const ac = new AbortController();
+    const onAbort = (): void => ac.abort();
+    watchOpts.signal?.addEventListener("abort", onAbort, { once: true });
 
-    // Liveness probe — piggybacked timer; ~100 ms matches the Run-log
-    // poll cadence so dead-PID detection is no slower than event
-    // delivery. Cheap (one process.kill(pid, 0) syscall).
-    let daemonDied = false;
-    const livenessTimer = setInterval(() => {
+    // 100ms probe matches the Run-log poll cadence so dead-PID
+    // detection is no slower than event delivery.
+    let dead = false;
+    const timer = setInterval(() => {
       if (!t.isAlive(pid)) {
-        daemonDied = true;
-        innerAc.abort();
+        dead = true;
+        ac.abort();
       }
     }, 100);
 
-    let cycleStarted = false;
-    let stoppedMidReconcile = false;
-    let reconcileFailureReason: string | null = null;
-    let abortedByCaller = false;
+    let started = false;
+    let stopped = false;
+    let failure: string | null = null;
+    let aborted = false;
 
     try {
-      for await (const event of t.follow(innerAc.signal, watchOpts.fromOffset)) {
+      for await (const event of t.follow(ac.signal, watchOpts.fromOffset)) {
         if (event.kind === "reconcile-started") {
-          cycleStarted = true;
+          started = true;
           continue;
         }
-        if (!cycleStarted) continue;
+        if (!started) continue;
         if (event.kind === "daemon-stopped") {
-          stoppedMidReconcile = true;
+          stopped = true;
           break;
         }
         if (event.kind === "reconcile-failed") {
-          reconcileFailureReason = typeof event.error === "string" ? event.error : "unknown";
+          failure = typeof event.error === "string" ? event.error : "unknown";
           break;
         }
         if (event.kind === "reconcile-done") {
@@ -184,19 +179,16 @@ export function daemonClient(opts: { transport?: DaemonTransport } = {}): Daemon
         if (RENDERABLE.has(event.kind)) yield event as DaemonEvent;
       }
     } finally {
-      clearInterval(livenessTimer);
-      watchOpts.signal?.removeEventListener("abort", onCallerAbort);
-      if (watchOpts.signal?.aborted && !daemonDied) abortedByCaller = true;
-      innerAc.abort();
+      clearInterval(timer);
+      watchOpts.signal?.removeEventListener("abort", onAbort);
+      if (watchOpts.signal?.aborted && !dead) aborted = true;
+      ac.abort();
     }
 
-    if (daemonDied) throw new DaemonDiedError();
-    if (stoppedMidReconcile) throw new DaemonStoppedDuringReconcileError();
-    if (reconcileFailureReason !== null) {
-      throw new DaemonReconcileFailedError(reconcileFailureReason);
-    }
-    // abortedByCaller — clean detach, no throw (caller controls abort intent).
-    if (abortedByCaller) return;
+    if (dead) throw new DaemonDiedError();
+    if (stopped) throw new DaemonStoppedDuringReconcileError();
+    if (failure !== null) throw new DaemonReconcileFailedError(failure);
+    if (aborted) return;
     // Iterator ended without reconcile-done and without a known reason;
     // treat as silent drop and surface as died.
     throw new DaemonDiedError();

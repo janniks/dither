@@ -116,13 +116,13 @@ const EMBED_LOOP_MAX_ITERATIONS = 20;
 
 export async function embedLoop(
   store: EmbedCallable,
-  onProgress?: (cumEmbedded: number, totalEstimate: number) => void,
+  onProgress?: (embedded: number, total: number) => void,
   shouldCancel?: () => boolean,
 ): Promise<EmbedLoopResult> {
-  let cumEmbedded = 0;
-  let cumDuration = 0;
-  let cumTruncated = 0;
-  let initialTotal: number | null = null;
+  let embedded = 0;
+  let duration = 0;
+  let truncated = 0;
+  let total: number | null = null;
   let iterations = 0;
 
   while (iterations < EMBED_LOOP_MAX_ITERATIONS) {
@@ -131,24 +131,19 @@ export async function embedLoop(
     const { result, truncatedCount } = await withTruncationFilter(async () =>
       store.embed({
         onProgress: ({ chunksEmbedded, totalChunks }) => {
-          if (initialTotal === null && totalChunks > 0) initialTotal = totalChunks;
-          const denom = Math.max(initialTotal ?? totalChunks, cumEmbedded + totalChunks);
-          onProgress?.(Math.min(cumEmbedded + chunksEmbedded, denom), denom);
+          if (total === null && totalChunks > 0) total = totalChunks;
+          const denom = Math.max(total ?? totalChunks, embedded + totalChunks);
+          onProgress?.(Math.min(embedded + chunksEmbedded, denom), denom);
         },
       }),
     );
-    cumEmbedded += result.chunksEmbedded;
-    cumDuration += result.durationMs;
-    cumTruncated += truncatedCount;
+    embedded += result.chunksEmbedded;
+    duration += result.durationMs;
+    truncated += truncatedCount;
     if (result.chunksEmbedded === 0) break;
   }
 
-  return {
-    chunks: cumEmbedded,
-    durationMs: cumDuration,
-    truncated: cumTruncated,
-    iterations,
-  };
+  return { chunks: embedded, durationMs: duration, truncated, iterations };
 }
 
 /**

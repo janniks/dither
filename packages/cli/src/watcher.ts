@@ -144,11 +144,9 @@ export class Watcher {
       }
       this.suppress.delete(path);
     }
-    if (this.suppress.size > 64) {
-      const now = Date.now();
-      for (const [k, v] of this.suppress) {
-        if (v <= now) this.suppress.delete(k);
-      }
+    const now = Date.now();
+    for (const [k, v] of this.suppress) {
+      if (v <= now) this.suppress.delete(k);
     }
 
     // chokidar's `alwaysStat: true` usually provides Stats; fall back to a

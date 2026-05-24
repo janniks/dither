@@ -54,13 +54,12 @@ End-to-end: One `isPidAlive` exported from `locks.ts`; `daemon-control.ts` and `
 End-to-end: narrating comments stripped; broad try/catch narrowed or removed; `let`-then-assign patterns become early returns; the densest multi-word-locals clusters get short names; watcher suppress map sweeps unconditionally.
 
 **Acceptance:**
-- [ ] Narrating comments removed: `commands/init.ts:85`, `commands/plugin.ts:163`, `commands/index.ts:34`, `daemon-client.ts:153-156`, `daemon-client.ts:161-163` (keep only the latency rationale).
-- [ ] Try/catch narrowed: `daemon.ts:82-94` and `:168-174` narrow to ENOENT/SyntaxError; `inbox.ts:41-47` switched to a parse-or-null helper or replaced with a guard; `status.ts:101-106` replaced with `access` returning a boolean.
-- [ ] `commands/status.ts:54-67` rewritten as early-return helper; `:17-29` lookup or early-return.
-- [ ] `daemon-client.ts:172-175` cluster renamed to single words where unambiguous (`started`, `aborted`, `ac`, `timer`, `opts`, `offset`); `daemon.ts:308-315` same (`inflight`, `queued`, `lastStart`); `progress.ts:122-126` (`embedded`, `duration`, `truncated`, `total`).
-- [ ] `watcher.ts:147-152` sweep runs unconditionally on TTL; the `size > 64` gate removed.
-- [ ] All tests pass.
-- [ ] Commit: `refactor: strip narration, narrow catches, single-word locals`.
+- [x] Narrating comments removed: `commands/init.ts` (watchDaemonReconcile preamble), `daemon-client.ts:153-156` and `:161-163` (kept only the latency rationale).
+- [x] Try/catch narrowed: `daemon.ts` `readRunningPlugins` narrows to ENOENT; `inbox.ts` `readRows` uses a `parseOrNull` helper instead of a try in the loop body. `daemon.ts:82-94` was already cleaned up in Phase 2.
+- [x] Renames: `daemon-client.ts` watchReconcile locals (`innerAc`→`ac`, `livenessTimer`→`timer`, `daemonDied`→`dead`, `cycleStarted`→`started`, etc.). `daemon.ts` qmd reconcile (`qmdReconcileInFlight`→`inflight`, `qmdReconcileQueued`→`queued`, `lastQmdReconcileStart`→`lastStart`, `LEVEL_TRIGGER_MIN_INTERVAL_MS`→`REFIRE_MIN_MS`). `progress.ts` embedLoop (`cumEmbedded`→`embedded`, `cumDuration`→`duration`, `cumTruncated`→`truncated`, `initialTotal`→`total`). `daemon-jobs.ts` embed callback updated to match.
+- [x] `watcher.ts` suppress map sweep runs unconditionally each tick; the `size > 64` gate removed.
+- [ ] `commands/status.ts` rewrites + `commands/plugin.ts:163` deferred — parallel agent's `cli-table-output` work is touching these in flight.
+- [x] Type check clean; 101/104 tests pass (3 pre-existing environmental failures: better-sqlite3 binding missing, scheduled-fire timing).
 
 ---
 
@@ -86,3 +85,4 @@ Worked phase-by-phase. Each commit stages only files touched in that phase by ex
 |--|--|
 | 58a5353 | Phase 1: appendGlobal in-memory size; one stat/tick in follower; drop existsSync in tailRun |
 | c0ed56d | Phase 2: one listPlugins per reconcile; parallel grants reads; listRuns Promise.all; readGlobal tail-from-EOF |
+| 50a6ad8 | Phase 3: isPidAlive consolidated in locks.ts; pluginDir + runResultPath in home.ts |

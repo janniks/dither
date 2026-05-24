@@ -35,18 +35,24 @@ async function readRows(file: string): Promise<WatchTarget[]> {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
   }
-  const out: WatchTarget[] = [];
-  for (const line of raw.split("\n")) {
-    if (!line) continue;
-    try {
-      const row = JSON.parse(line) as WatchTarget;
-      if (typeof row?.path === "string" && typeof row?.mtime === "string") out.push(row);
-    } catch {
-      // skip malformed rows — at-least-once delivery means we tolerate a
-      // partial-write tail. Plugins re-discover via the next chokidar event.
-    }
+  // At-least-once delivery: a partial-write tail row gets dropped here
+  // (parseOrNull → null) and the watcher re-discovers it on the next event.
+  return raw
+    .split("\n")
+    .flatMap((line) => {
+      if (!line) return [];
+      const row = parseOrNull(line);
+      if (!row || typeof row.path !== "string" || typeof row.mtime !== "string") return [];
+      return [row as unknown as WatchTarget];
+    });
+}
+
+function parseOrNull(line: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(line) as Record<string, unknown>;
+  } catch {
+    return null;
   }
-  return out;
 }
 
 async function readInbox(plugin: string): Promise<WatchTarget[]> {

@@ -80,13 +80,8 @@ export function defaultLibraryPath(): string {
 }
 
 /**
- * Foreground watch of the daemon's reconcile cycle. Delegates the
- * orchestration (SIGHUP trigger, Run-log follow, dead-PID probe,
- * reconcile-done/failed/stopped handling) to `daemonClient`; this
- * function is now a pure renderer over the yielded events.
- *
- * Detach via single AbortController wired to SIGINT/SIGHUP. The daemon
- * keeps running; only the foreground watcher disengages.
+ * Foreground renderer over the daemon's reconcile cycle. Detach via
+ * SIGINT/SIGHUP — the daemon keeps running; only this watcher disengages.
  */
 async function watchDaemonReconcile(): Promise<{
   ok: boolean;
