@@ -400,7 +400,7 @@ async function promptScheduleConsent(
     message: `schedule — enable?`,
     options: [
       { label: `Enable ${cadence} (recommended by plugin)`, value: "declared" },
-      { label: `Manual only — fire with 'dither plugin run ${parsed.name}'`, value: "manual" },
+      { label: `Manual only (trigger with 'dither plugin run ${parsed.name}')`, value: "manual" },
       { label: "Custom schedule…", value: "custom" },
     ],
     initial,
