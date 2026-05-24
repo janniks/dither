@@ -91,11 +91,13 @@ declaration as today. Delete `accepted()` from `prompt.ts`. Leave
 `clip()` in place (still used by `confirm()`).
 
 **Acceptance:**
-- [ ] Schedule prompt initial highlight = prior schedule on reinstall
-- [ ] Watch prompt initial highlight = prior watch on reinstall
-- [ ] `accepted()` deleted from `prompt.ts`
-- [ ] No remaining importers of `accepted` (grep clean)
-- [ ] All existing `plugin-install.test.ts` cases pass
+- [x] Schedule prompt initial highlight = prior schedule on reinstall
+      (no code change — Phase 1's signature already feeds `current`
+      computed from `existing` + `opts`)
+- [x] Watch prompt initial highlight = prior watch on reinstall (same)
+- [x] `accepted()` deleted from `prompt.ts`
+- [x] No remaining importers of `accepted` (grep clean)
+- [x] All existing `plugin-install.test.ts` cases pass (72/72)
 
 ---
 
@@ -105,4 +107,6 @@ When starting implementation, rename this file to `./plans/<feature>-RUNNING.md`
 
 | commit | summary |
 |--|--|
-|  |  |
+| 22412c1 | phase 1: net + collections consent multi-select with diff-aware pre-check + (new) / (no longer requests) hints; `accept()` deleted |
+| 31d9a76 | phase 2: env + file prompt every declaration with `prior ?? manifest` defaults; flags skip; planInstall dropped from interactive path |
+| 800f106 | phase 3: schedule + watch already pre-fill from `current` via Phase 1's signature; `accepted()` deleted from prompt.ts |
