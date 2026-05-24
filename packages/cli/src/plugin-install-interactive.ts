@@ -12,6 +12,8 @@ import {
 } from "./prompt";
 import { getGlobalEnv } from "./global-env";
 import { resolveHome } from "./home";
+import { parseSchedule } from "./schedule-parser";
+import { Cron } from "croner";
 
 /**
  * Normalize a path string typed at a prompt. Handles three muscle-memory
@@ -34,8 +36,22 @@ function normalizePath(raw: string): string {
 }
 
 /**
+ * The user's effective watch declaration. Same shape as the manifest's
+ * `watch` block — copied through to grants when the user opts in.
+ */
+export interface WatchChoice {
+  collections: string[];
+  glob?: string;
+}
+
+/**
  * Inputs the user supplied (via flags or, later, interactive prompts).
  * Mirrors `InstallOptions` minus the `source` path.
+ *
+ * `schedule` / `watch` carry the user's consented choice:
+ *   - `undefined` — not yet decided (planInstall fills from the manifest)
+ *   - `null`      — explicitly disabled (manual-only)
+ *   - value       — effective schedule string / watch declaration
  */
 export interface InstallInputs {
   env?: Record<string, string>;
@@ -43,6 +59,8 @@ export interface InstallInputs {
   files?: Record<string, string>;
   net?: string[];
   collections?: string[];
+  schedule?: string | null;
+  watch?: WatchChoice | null;
 }
 
 /**
@@ -54,6 +72,8 @@ export interface ResolvedInputs {
   files: Record<string, string>;
   net: string[];
   collections: string[];
+  schedule: string | null;
+  watch: WatchChoice | null;
 }
 
 /**
@@ -179,10 +199,21 @@ export async function planInstall(
   const files = await resolveFilesCollect(parsed.manifest.files, inputs.files, missing);
   const net = resolveAllowList(parsed.manifest.net, inputs.net);
   const collections = resolveAllowList(parsed.manifest.collections, inputs.collections);
+  // Schedule / watch default to the manifest declaration when the user
+  // hasn't decided — preserves the legacy non-TTY install path. The TTY
+  // prompt layer sets these explicitly (string or null) before planning.
+  const schedule = inputs.schedule === undefined
+    ? parsed.manifest.schedule ?? null
+    : inputs.schedule;
+  const watch = inputs.watch === undefined
+    ? parsed.manifest.watch
+      ? { collections: [...parsed.manifest.watch.collections], ...(parsed.manifest.watch.glob ? { glob: parsed.manifest.watch.glob } : {}) }
+      : null
+    : inputs.watch;
   if (missing.length > 0) {
-    return { ok: false, missing, partial: { env, envRefs, files, net, collections } };
+    return { ok: false, missing, partial: { env, envRefs, files, net, collections, schedule, watch } };
   }
-  return { ok: true, resolved: { env, envRefs, files, net, collections } };
+  return { ok: true, resolved: { env, envRefs, files, net, collections, schedule, watch } };
 }
 
 /**
@@ -323,7 +354,133 @@ export async function promptInteractive(
     parsed.manifest.collections,
   );
 
-  return { env, envRefs, files, net, collections };
+  const schedule = await promptScheduleConsent(parsed, current.schedule);
+  const watch = await promptWatchConsent(parsed, current.watch);
+
+  return { env, envRefs, files, net, collections, schedule, watch };
+}
+
+/**
+ * Schedule consent. Returns the user's effective cron (string), `null`
+ * for manual-only, or `undefined` if the plugin doesn't declare a
+ * schedule (so no consent step ran).
+ *
+ * Pre-fills the highlighted option from `current` when reinstalling.
+ */
+async function promptScheduleConsent(
+  parsed: ParsedPackage,
+  current: string | null | undefined,
+): Promise<string | null | undefined> {
+  const declared = parsed.manifest.schedule;
+  if (!declared) return undefined;
+  const cadence = humanizeSchedule(declared);
+  const initial: "declared" | "manual" | "custom" =
+    current === undefined
+      ? "declared"
+      : current === null
+      ? "manual"
+      : current === declared
+      ? "declared"
+      : "custom";
+  const choice = await promptSelect<"declared" | "manual" | "custom">({
+    message: `schedule — runs ${cadence}. enable?`,
+    options: [
+      { label: `Enable as declared (${cadence})`, value: "declared" },
+      { label: `Manual only — fire with 'dither plugin run ${parsed.name}'`, value: "manual" },
+      { label: "Custom cron…", value: "custom" },
+    ],
+    initial,
+  });
+  if (choice === "declared") {
+    confirm("schedule", `${cadence} (${declared})`);
+    return declared;
+  }
+  if (choice === "manual") {
+    confirm("schedule", "manual only");
+    return null;
+  }
+  const custom = await promptText({
+    message: "custom cron",
+    ...(current && current !== declared ? { default: current } : {}),
+    validate: (v) => {
+      const trimmed = v.trim();
+      if (!trimmed) return "schedule cannot be empty";
+      try {
+        parseSchedule(trimmed);
+        return null;
+      } catch (err) {
+        return err instanceof Error ? err.message : String(err);
+      }
+    },
+  });
+  const final = custom.trim();
+  confirm("schedule", `${humanizeSchedule(final)} (${final})`);
+  return final;
+}
+
+/**
+ * Watch consent. Y/n confirm for plugins that declare `watch.collections`.
+ * Returns the declared watch block on yes, `null` on no, `undefined` if
+ * the plugin doesn't declare a watch step.
+ */
+async function promptWatchConsent(
+  parsed: ParsedPackage,
+  current: WatchChoice | null | undefined,
+): Promise<WatchChoice | null | undefined> {
+  const declared = parsed.manifest.watch;
+  if (!declared || declared.collections.length === 0) return undefined;
+  const initial: "enable" | "disable" = current === null ? "disable" : "enable";
+  const summary = declared.collections.join(", ");
+  const choice = await promptSelect<"enable" | "disable">({
+    message: `watch — runs automatically when files in ${summary} change. enable?`,
+    options: [
+      { label: "Enable", value: "enable" },
+      { label: "Disable — run manually only", value: "disable" },
+    ],
+    initial,
+  });
+  if (choice === "disable") {
+    confirm("watch", "disabled");
+    return null;
+  }
+  confirm("watch", summary);
+  return {
+    collections: [...declared.collections],
+    ...(declared.glob ? { glob: declared.glob } : {}),
+  };
+}
+
+/**
+ * Render a cron pattern as a short human cadence string for the consent
+ * prompt. Best-effort: returns the raw pattern when nothing matches. Uses
+ * croner indirectly via two `nextRun` calls so it handles 5- and 6-field
+ * crons plus the shorthand syntaxes that `parseSchedule` accepts.
+ */
+export function humanizeSchedule(pattern: string): string {
+  try {
+    const cron = parseSchedule(pattern);
+    const job = new Cron(cron);
+    const a = job.nextRun();
+    const b = a ? job.nextRun(a) : null;
+    if (!a || !b) return pattern;
+    const sec = Math.round((b.getTime() - a.getTime()) / 1000);
+    if (sec < 60) return `every ${sec} seconds`;
+    const min = sec / 60;
+    if (min < 60 && Number.isInteger(min)) {
+      return min === 1 ? "every minute" : `every ${min} minutes`;
+    }
+    const hr = min / 60;
+    if (hr < 24 && Number.isInteger(hr)) {
+      return hr === 1 ? "every hour" : `every ${hr} hours`;
+    }
+    const day = hr / 24;
+    if (Number.isInteger(day)) {
+      return day === 1 ? "daily" : `every ${day} days`;
+    }
+    return pattern;
+  } catch {
+    return pattern;
+  }
 }
 
 /**
@@ -383,6 +540,8 @@ export function mergeInputs(base: InstallInputs, extra: InstallInputs): InstallI
     files: { ...base.files, ...extra.files },
     net: extra.net ?? base.net,
     collections: extra.collections ?? base.collections,
+    schedule: extra.schedule !== undefined ? extra.schedule : base.schedule,
+    watch: extra.watch !== undefined ? extra.watch : base.watch,
   };
 }
 

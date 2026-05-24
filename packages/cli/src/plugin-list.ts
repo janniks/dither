@@ -17,9 +17,9 @@ interface GrantsFile {
   installedAt?: string;
   net?: string[];
   collections?: string[];
-  manifest?: {
-    schedule?: string;
-  };
+  /** User's effective schedule. `null` = manual-only, absent = legacy
+   *  grants file (treated as manual-only). */
+  schedule?: string | null;
 }
 
 export async function listPlugins(): Promise<InstalledPluginInfo[]> {
@@ -38,7 +38,7 @@ export async function listPlugins(): Promise<InstalledPluginInfo[]> {
       name,
       version: grants.version ?? "?",
       ...(grants.installedAt ? { installedAt: grants.installedAt } : {}),
-      ...(grants.manifest?.schedule ? { schedule: grants.manifest.schedule } : {}),
+      ...(grants.schedule ? { schedule: grants.schedule } : {}),
       collections: grants.collections ?? [],
       net: grants.net ?? [],
     });

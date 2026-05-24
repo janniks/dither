@@ -135,7 +135,7 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
   // rolls back cleanly with no half-installed state.
   const plan = await planInstall(parsed, opts);
   if (!plan.ok) throw new MissingInputsError(plan.missing);
-  const { env, envRefs, files, net, collections } = plan.resolved;
+  const { env, envRefs, files, net, collections, schedule, watch } = plan.resolved;
   for (const pattern of collections) validateGrantPattern(pattern);
 
   const home = resolveHome();
@@ -149,6 +149,12 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
     version: parsed.version,
     installedAt: new Date().toISOString(),
     manifest: parsed.manifest,
+    // Top-level `schedule` / `watch` are the user's consented choices —
+    // the daemon reads these (never `manifest.schedule` / `manifest.watch`).
+    // `null` = explicitly disabled. The manifest block stays untouched for
+    // debug / `dither plugin list` reporting of the declared value.
+    schedule,
+    watch,
     env,
     envRefs,
     files,

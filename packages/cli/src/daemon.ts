@@ -56,13 +56,10 @@ interface DaemonState {
   watchCount: number;
 }
 
-interface GrantsManifest {
-  schedule?: string;
-  watch?: { collections: string[]; glob?: string };
-}
-
 interface GrantsBlob {
-  manifest?: GrantsManifest;
+  /** User's effective watch declaration. `null` = explicitly disabled,
+   *  absent = legacy grants file (treated as disabled). */
+  watch?: { collections: string[]; glob?: string } | null;
 }
 
 async function loadScheduleEntries(): Promise<ScheduleEntry[]> {
@@ -81,7 +78,7 @@ async function loadWatchEntries(): Promise<WatchEntry[]> {
     const grantsPath = join(resolveHome(), "grants", `${p.name}.json`);
     try {
       const blob = JSON.parse(await readFileAsync(grantsPath, "utf-8")) as GrantsBlob;
-      const watch = blob.manifest?.watch;
+      const watch = blob.watch;
       if (watch && Array.isArray(watch.collections) && watch.collections.length > 0) {
         out.push({
           name: p.name,

@@ -94,22 +94,32 @@ function isCancel(err: unknown): boolean {
  * When called from `plugin run <path>`, the focus shifts to "future runs"
  * — the install just happened, the run is happening right now.
  */
-function printInstallHint(name: string, fromRunPath: boolean): void {
+interface ConsentedGrants {
+  schedule?: string | null;
+  watch?: { collections?: string[] } | null;
+}
+
+function readConsentedGrants(name: string): ConsentedGrants | null {
   const grantsPath = join(resolveHome(), "grants", `${name}.json`);
-  let manifest: { schedule?: string; watch?: { collections?: string[] } } = {};
   try {
-    const blob = JSON.parse(readFileSync(grantsPath, "utf-8")) as { manifest?: typeof manifest };
-    manifest = blob.manifest ?? {};
+    return JSON.parse(readFileSync(grantsPath, "utf-8")) as ConsentedGrants;
   } catch {
-    return;
+    return null;
   }
+}
+
+function printInstallHint(name: string, fromRunPath: boolean): void {
+  const grants = readConsentedGrants(name);
+  if (!grants) return;
   if (fromRunPath) {
     process.stdout.write(`\nnote: grants persisted. future runs: 'dither plugin run ${name}'.\n`);
     return;
   }
-  if (manifest.schedule) {
+  // `next run:` prints only when the user actually consented to scheduling.
+  // Manual-only (null) and legacy grants (absent) both suppress it.
+  if (grants.schedule) {
     try {
-      const next = new Cron(parseSchedule(manifest.schedule)).nextRun();
+      const next = new Cron(parseSchedule(grants.schedule)).nextRun();
       if (next) {
         process.stdout.write(`\nnext run: ${formatRelTime(next.getTime())} (${next.toISOString()})\n`);
       }
@@ -119,7 +129,7 @@ function printInstallHint(name: string, fromRunPath: boolean): void {
     process.stdout.write(`next: dither plugin run ${name} (manual one-shot fire)\n`);
     return;
   }
-  const watch = manifest.watch?.collections ?? [];
+  const watch = grants.watch?.collections ?? [];
   if (watch.length > 0) {
     process.stdout.write(
       `\nnote: runs automatically when files change in: ${watch.join(", ")}\n` +
@@ -132,19 +142,11 @@ function printInstallHint(name: string, fromRunPath: boolean): void {
 
 
 async function ensureDaemonForPlugin(name: string): Promise<void> {
-  // Read the just-written grants file to see if the plugin has schedule or watch.
-  const grantsPath = join(resolveHome(), "grants", `${name}.json`);
-  let needsDaemon = false;
-  try {
-    const blob = JSON.parse(readFileSync(grantsPath, "utf-8")) as {
-      manifest?: { schedule?: string; watch?: { collections?: string[] } };
-    };
-    needsDaemon =
-      Boolean(blob.manifest?.schedule) ||
-      Boolean(blob.manifest?.watch?.collections && blob.manifest.watch.collections.length > 0);
-  } catch {
-    return;
-  }
+  const grants = readConsentedGrants(name);
+  if (!grants) return;
+  const needsDaemon =
+    Boolean(grants.schedule) ||
+    Boolean(grants.watch?.collections && grants.watch.collections.length > 0);
   if (!needsDaemon) return;
 
   // Lazy spawn if not already running.

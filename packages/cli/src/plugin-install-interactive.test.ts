@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   formatMissing,
   hasFieldDescription,
+  humanizeSchedule,
   mergeInputs,
   planInstall,
   readExistingGrants,
@@ -19,7 +20,17 @@ describe("planInstall", () => {
   it("ok when no manifest declarations", async () => {
     const r = await planInstall(pkg({}), {});
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.resolved).toEqual({ env: {}, envRefs: [], files: {}, net: [], collections: [] });
+    if (r.ok) {
+      expect(r.resolved).toEqual({
+        env: {},
+        envRefs: [],
+        files: {},
+        net: [],
+        collections: [],
+        schedule: null,
+        watch: null,
+      });
+    }
   });
 
   it("collects every missing required env in one pass", async () => {
@@ -140,6 +151,85 @@ describe("planInstall", () => {
     const r = await planInstall(pkg({ files: [{ id: "opt", kind: "file" }] }), {});
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.resolved.files).toEqual({});
+  });
+});
+
+describe("planInstall — schedule + watch resolution", () => {
+  it("defaults schedule to manifest declared when input is undefined", async () => {
+    const r = await planInstall(pkg({ schedule: "*/15 * * * *" }), {});
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.resolved.schedule).toBe("*/15 * * * *");
+  });
+
+  it("null in inputs overrides manifest declared (manual-only)", async () => {
+    const r = await planInstall(pkg({ schedule: "*/15 * * * *" }), { schedule: null });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.resolved.schedule).toBeNull();
+  });
+
+  it("string in inputs overrides manifest (custom cron)", async () => {
+    const r = await planInstall(pkg({ schedule: "*/15 * * * *" }), { schedule: "*/30 * * * *" });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.resolved.schedule).toBe("*/30 * * * *");
+  });
+
+  it("schedule null when manifest has no schedule and inputs undefined", async () => {
+    const r = await planInstall(pkg({}), {});
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.resolved.schedule).toBeNull();
+  });
+
+  it("defaults watch to manifest declared when input is undefined", async () => {
+    const r = await planInstall(pkg({ watch: { collections: ["a/**"] } }), {});
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.resolved.watch).toEqual({ collections: ["a/**"] });
+  });
+
+  it("null in inputs overrides manifest watch (disabled)", async () => {
+    const r = await planInstall(pkg({ watch: { collections: ["a/**"] } }), { watch: null });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.resolved.watch).toBeNull();
+  });
+});
+
+describe("humanizeSchedule", () => {
+  it("formats minute intervals", () => {
+    expect(humanizeSchedule("*/15 * * * *")).toBe("every 15 minutes");
+    expect(humanizeSchedule("*/5 * * * *")).toBe("every 5 minutes");
+  });
+
+  it("formats hourly", () => {
+    expect(humanizeSchedule("0 * * * *")).toBe("every hour");
+  });
+
+  it("formats daily", () => {
+    expect(humanizeSchedule("0 0 * * *")).toBe("daily");
+  });
+
+  it("accepts the shorthand syntaxes parseSchedule understands", () => {
+    expect(humanizeSchedule("every 15m")).toBe("every 15 minutes");
+  });
+
+  it("falls back to the raw pattern when nothing matches", () => {
+    expect(humanizeSchedule("not a cron at all")).toBe("not a cron at all");
+  });
+});
+
+describe("mergeInputs — schedule + watch", () => {
+  it("extra schedule wins over base when defined", () => {
+    expect(mergeInputs({ schedule: "*/15 * * * *" }, { schedule: null }).schedule).toBeNull();
+    expect(mergeInputs({ schedule: null }, { schedule: "*/5 * * * *" }).schedule).toBe(
+      "*/5 * * * *",
+    );
+  });
+
+  it("base schedule preserved when extra is undefined", () => {
+    expect(mergeInputs({ schedule: "*/15 * * * *" }, {}).schedule).toBe("*/15 * * * *");
+  });
+
+  it("extra watch wins over base when defined; undefined preserves base", () => {
+    expect(mergeInputs({ watch: { collections: ["a/**"] } }, { watch: null }).watch).toBeNull();
+    expect(mergeInputs({ watch: null }, {}).watch).toBeNull();
   });
 });
 

@@ -132,4 +132,81 @@ describe("installPlugin", () => {
       rmSync(newSource, { recursive: true, force: true });
     }
   });
+
+  it("persists user-consented schedule + watch at the top level; manifest block preserved", async () => {
+    const spawn = vi.fn(() => {
+      const child = new EventEmitter();
+      process.nextTick(() => child.emit("exit", 0));
+      return child;
+    });
+    vi.doMock("node:child_process", () => ({ spawn }));
+    vi.doMock("./deno-bootstrap", () => ({
+      ensureDeno: vi.fn(async () => "/bin/deno"),
+    }));
+
+    const src = mkdtempSync(join(tmpdir(), "dither-consent-plugin-"));
+    writeFileSync(
+      join(src, "package.json"),
+      JSON.stringify({
+        name: "consent",
+        version: "1.0.0",
+        dither: {
+          schedule: "*/15 * * * *",
+          watch: { collections: ["msg/**"] },
+          collections: ["msg/**"],
+        },
+      }),
+    );
+    writeFileSync(join(src, "plugin.ts"), "// x\n");
+
+    try {
+      const { installPlugin } = await import("./plugin-install");
+      // User picked Manual + disabled watch.
+      await installPlugin({ source: src, schedule: null, watch: null });
+
+      const grants = JSON.parse(readFileSync(join(home, "grants", "consent.json"), "utf-8"));
+      expect(grants.schedule).toBeNull();
+      expect(grants.watch).toBeNull();
+      // Manifest block stays as declared so debug / `plugin list` can show
+      // the original schedule.
+      expect(grants.manifest.schedule).toBe("*/15 * * * *");
+      expect(grants.manifest.watch).toEqual({ collections: ["msg/**"] });
+    } finally {
+      rmSync(src, { recursive: true, force: true });
+    }
+  });
+
+  it("persists a custom-cron consent string at grants.schedule", async () => {
+    const spawn = vi.fn(() => {
+      const child = new EventEmitter();
+      process.nextTick(() => child.emit("exit", 0));
+      return child;
+    });
+    vi.doMock("node:child_process", () => ({ spawn }));
+    vi.doMock("./deno-bootstrap", () => ({
+      ensureDeno: vi.fn(async () => "/bin/deno"),
+    }));
+
+    const src = mkdtempSync(join(tmpdir(), "dither-custom-cron-"));
+    writeFileSync(
+      join(src, "package.json"),
+      JSON.stringify({
+        name: "custom",
+        version: "1.0.0",
+        dither: { schedule: "*/15 * * * *", collections: ["c/**"] },
+      }),
+    );
+    writeFileSync(join(src, "plugin.ts"), "// x\n");
+
+    try {
+      const { installPlugin } = await import("./plugin-install");
+      await installPlugin({ source: src, schedule: "*/30 * * * *" });
+
+      const grants = JSON.parse(readFileSync(join(home, "grants", "custom.json"), "utf-8"));
+      expect(grants.schedule).toBe("*/30 * * * *");
+      expect(grants.manifest.schedule).toBe("*/15 * * * *");
+    } finally {
+      rmSync(src, { recursive: true, force: true });
+    }
+  });
 });
