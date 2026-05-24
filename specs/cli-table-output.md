@@ -49,8 +49,15 @@ applied before padding).
   needs something fancier we revisit. Reasons: keeps install size flat,
   no `min-release-age` waits, and `search.ts` already proved the
   approach works.
-- **Helper lives in `packages/cli/src/table.ts`.** Imported by command
-  files, not by `prompt.ts` (which is the prompt/progress surface).
+- **Helper lives in `packages/cli/src/table.ts`** as a self-contained,
+  deep-importable module. `prompt.ts` re-exports it so callers can keep
+  using `prompt.ts` as the single TUI surface — the file's existing
+  docstring ("Single import point for interactive TUI in the CLI")
+  extends naturally to include tabular output. Deep-module shape:
+  small interface (`printTable` + `ColOpt`), broad capability
+  (alignment, color, truncation, TTY/TSV switch) hidden behind it.
+  Commands import from `./prompt`; tests import directly from
+  `./table` to keep the unit under test isolated.
 - **Input shape: `string[][]`.** Color is applied by the helper through
   an optional per-column callback (`color?: (s: string) => string`).
   Caller passes raw text; padding happens before coloring so widths are
@@ -63,19 +70,28 @@ applied before padding).
 - **Gap is two spaces** by default (matches existing aesthetic).
 - **Terminal width awareness.** Helper reads `process.stdout.columns`.
   Last column gets the remaining width and middle-truncates with `…`
-  via `fitOneLine` (already in `prompt.ts`) so a narrow terminal never
-  wraps. If no TTY, no truncation — pipes deserve full data.
+  so a narrow terminal never wraps. The middle-truncate is inlined in
+  `table.ts` rather than imported from `prompt.ts`'s `fitOneLine`, so
+  `table.ts` has no dependency on `prompt.ts` (deep-import friendly).
+  If no TTY, no truncation — pipes deserve full data.
 - **Non-TTY mode: TSV.** When `!process.stdout.isTTY` the helper emits
   raw values joined by `\t`, one row per line, no color, no padding,
   no truncation. Matches `d search` piped behavior. Same call site, two
   outputs.
-- **No headers row.** `d plugin runs` doesn't have one today; `d search`
-  doesn't either. Out of scope; can add a `header?: string[]` later if
-  a command needs it.
-- **Times.** Add `formatRelPast(ms)` to `relative-time.ts` (mirror of
-  `formatRelTime`). Default time column is relative ("3m ago"); `-v`
-  flag adds the exact ISO. Applies to `plugin runs` first; other
-  commands as they migrate.
+- **No headers row.** Scrollback density wins over labelling; the
+  rightmost column (path / message) already implies what the prior
+  columns are. No `header?: string[]` option on the helper.
+- **Times.** Add `formatRelPast(ms)` to `relative-time.ts`. Granularity
+  is **single-unit** except under 5 minutes, where the two largest
+  non-zero units are shown:
+  - `<1s` → `now`
+  - `<60s` → `Ns ago`
+  - `<5m` → `Nm Ns ago` (drop `Ns` when zero)
+  - `<1h` → `Nm ago`
+  - `<1d` → `Nh ago`
+  - `>=1d` → `Nd ago`
+  Default time column is the relative form; `-v` adds the exact ISO.
+  Applies to `plugin runs` first; other commands as they migrate.
 
 ## migration order
 
@@ -86,8 +102,8 @@ applied before padding).
    by the helper instead of `padEnd(20)`.
 4. `d search` — replace the inline layout with the helper to delete
    duplicated code.
-5. `d daemon status` — the `startedAt:` / `lastTick:` block is a small
-   table; nice to fold in but lowest priority.
+5. `d daemon status` — *deferred.* It's labelled rows, not a table;
+   folding it in doesn't pay back.
 
 ## out of scope
 
@@ -110,3 +126,4 @@ applied before padding).
 - [ ] `d collection list` migrated; long names no longer spill
 - [ ] `d search` migrated; no behavior change observable from CLI
 - [ ] No new runtime dependency added to `packages/cli`
+- [ ] No header row anywhere; layout still readable
