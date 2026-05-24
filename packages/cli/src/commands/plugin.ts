@@ -511,6 +511,17 @@ const runSubcommand = defineCommand({
         process.stderr.write(`hint: run 'dither plugin list' to see installed plugins.\n`);
         process.exit(1);
       }
+      // Plugin process exited non-zero. Without --verbose the ChildProcess
+      // stack trace citty would print is noise — replay via `plugin runs`
+      // shows the actual plugin output. With --verbose, plugin stderr
+      // already streamed live; keep the throw so the stack lands too.
+      if (e?.exitCode !== undefined && !args.verbose) {
+        process.stderr.write(`error: ${e.message}\n`);
+        process.stderr.write(
+          `hint: run 'dither plugin runs ${pluginName}' to replay this run's output.\n`,
+        );
+        process.exit(e.exitCode ?? 1);
+      }
       throw err;
     }
     if (tty) process.stderr.write("\r\x1b[K");
@@ -660,11 +671,12 @@ async function tailRun(runId: string): Promise<void> {
   // Poll for result.json in parallel with the event stream. `inFlight`
   // guards against a slow read letting a second tick re-launch readResult.
   // `emitted` is only set AFTER readResult succeeds, so a partial-write
-  // read failure leaves the loop free to retry.
+  // read failure leaves the loop free to retry. `readResult` returns null
+  // on ENOENT, so no pre-existence check is needed.
   let inFlight = false;
   let emitted = false;
   const resultPoll = setInterval(() => {
-    if (emitted || inFlight || !existsSync(resultPath(runId))) return;
+    if (emitted || inFlight) return;
     inFlight = true;
     void readResult(runId)
       .then((r) => {

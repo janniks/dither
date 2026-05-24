@@ -1,4 +1,4 @@
-import { existsSync, statSync, type Stats } from "node:fs";
+import { existsSync } from "node:fs";
 import { mkdir, open, readFile, readdir, rename, stat, truncate, unlink, writeFile } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -108,6 +108,11 @@ async function appendRun(runId: string, event: RunEventInput): Promise<void> {
 // rotate, open, write, close) completes before the next caller starts.
 const queues = new Map<string, Promise<void>>();
 
+// Tracked-size cache. Filled lazily on first write per path (one async
+// stat, ENOENT-tolerant). Kept in sync after each write and reset on
+// rotate. Invalidated by `truncateGlobal`.
+const sizes = new Map<string, number>();
+
 async function appendAt(path: string, event: Partial<LogEvent>): Promise<void> {
   const tail = queues.get(path) ?? Promise.resolve();
   const next = tail.catch(() => undefined).then(() => writeOne(path, event));
@@ -124,9 +129,14 @@ async function writeOne(path: string, event: Partial<LogEvent>): Promise<void> {
   const line = `${JSON.stringify({ ...event, ts })}\n`;
   await mkdir(dirname(path), { recursive: true });
 
-  const currentSize = existsSync(path) ? statSync(path).size : 0;
-  if (currentSize + Buffer.byteLength(line, "utf-8") > ROTATION_THRESHOLD_BYTES) {
+  let size = sizes.get(path);
+  if (size === undefined) {
+    size = await statSize(path);
+  }
+  const bytes = Buffer.byteLength(line, "utf-8");
+  if (size + bytes > ROTATION_THRESHOLD_BYTES) {
     await rotate(path);
+    size = 0;
   }
 
   const fh = await open(path, "a");
@@ -134,6 +144,16 @@ async function writeOne(path: string, event: Partial<LogEvent>): Promise<void> {
     await fh.write(line, null, "utf-8");
   } finally {
     await fh.close();
+  }
+  sizes.set(path, size + bytes);
+}
+
+async function statSize(path: string): Promise<number> {
+  try {
+    return (await stat(path)).size;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return 0;
+    throw err;
   }
 }
 
@@ -148,6 +168,7 @@ export async function truncateGlobal(): Promise<void> {
   if (existsSync(path)) await truncate(path, 0);
   const oldPath = `${path}.old`;
   if (existsSync(oldPath)) await unlink(oldPath);
+  sizes.delete(path);
 }
 
 /** Read the entire global Run-log. `tailLines` caps the tail. */
@@ -220,28 +241,31 @@ async function* followAt(
   const holder: { fh: FileHandle | null } = { fh: null };
   let offset = 0;
   let lineBuffer = "";
+  let inode: { dev: number; ino: number } | null = null;
 
   const reopen = async (fromStart = false): Promise<void> => {
     if (holder.fh) {
       await holder.fh.close().catch(() => undefined);
       holder.fh = null;
     }
+    inode = null;
     if (!existsSync(path)) {
       offset = 0;
       lineBuffer = "";
       return;
     }
     holder.fh = await open(path, "r");
+    const st = await holder.fh.stat();
+    inode = { dev: st.dev, ino: st.ino };
     if (fromStart) {
       offset = 0;
       lineBuffer = "";
-    } else {
-      const st = await holder.fh.stat();
-      // If caller pinned a start offset (triggerAndWatch snapshot
-      // before SIGHUP), honor it — but cap to current size in case
-      // rotation shrank the file.
-      offset = fromOffset !== undefined ? Math.min(fromOffset, st.size) : st.size;
+      return;
     }
+    // If caller pinned a start offset (triggerAndWatch snapshot
+    // before SIGHUP), honor it — but cap to current size in case
+    // rotation shrank the file.
+    offset = fromOffset !== undefined ? Math.min(fromOffset, st.size) : st.size;
   };
 
   await reopen();
@@ -257,10 +281,11 @@ async function* followAt(
         await reopen(true);
         continue;
       }
-      let st: Pick<Stats, "dev" | "ino" | "size">;
-      try {
-        st = await current.stat();
-      } catch {
+      // One stat per tick: same call answers "is the fd's file still
+      // there?" (dev/ino vs snapshot from reopen) and "how big is it
+      // now?" (size).
+      const st = await stat(path).catch(() => null);
+      if (!st || !inode || st.dev !== inode.dev || st.ino !== inode.ino) {
         await reopen(true);
         continue;
       }
@@ -281,11 +306,6 @@ async function* followAt(
           const parsed = parseLine(line);
           if (parsed) yield parsed;
         }
-      }
-      const fresh = await stat(path).catch(() => null);
-      if (!fresh || fresh.dev !== st.dev || fresh.ino !== st.ino) {
-        await reopen(true);
-        continue;
       }
       await sleep(FOLLOW_POLL_MS, signal);
     }
