@@ -23,7 +23,7 @@ import { removePlugin } from "../plugin-remove";
 import { ditherText, fitOneLine, printTable, promptConfirm } from "../prompt";
 import { formatRelPast } from "../relative-time";
 import { openBrowser } from "../open-browser";
-import { resolveHome } from "../home";
+import { resolveHome, runResultPath } from "../home";
 import { assertInitialized, libraryRoot } from "../config";
 import { reloadDaemon, startDaemon, readDaemonPid } from "../daemon-control";
 import { installAutostart } from "../persistence";
@@ -627,13 +627,9 @@ function formatRunDuration(ms: number | undefined): string {
   return `${m}m${s}s`;
 }
 
-function resultPath(runId: string): string {
-  return join(resolveHome(), "history", runId, "result.json");
-}
-
 async function readResult(runId: string): Promise<RunResultRecord | null> {
   try {
-    const raw = await readFile(resultPath(runId), "utf-8");
+    const raw = await readFile(runResultPath(runId), "utf-8");
     return JSON.parse(raw) as RunResultRecord;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
