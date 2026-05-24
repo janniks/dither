@@ -573,21 +573,23 @@ const listSubcommand = defineCommand({
       console.log("(no plugins installed)");
       return plugins;
     }
-    for (const p of plugins) {
+    const rows = plugins.map((p) => {
       const cols = p.collections.length ? p.collections.join(",") : "-";
       const sched = p.schedule ?? "-";
       let next = "";
       if (p.schedule) {
         try {
-          const job = new Cron(p.schedule);
-          const at = job.nextRun();
-          if (at) next = `\t${formatRelTime(at.getTime())}`;
+          const at = new Cron(p.schedule).nextRun();
+          if (at) next = formatRelTime(at.getTime());
         } catch {
           // malformed cron — leave next blank rather than crash the list.
         }
       }
-      console.log(`${p.name}\t${p.version}\t${cols}\t${sched}${next}`);
-    }
+      return [p.name, p.version, cols, sched, next];
+    });
+    // Clamp the collections column so a plugin with many collections
+    // doesn't push schedule + next off-screen.
+    printTable(rows, [{}, {}, { max: 40 }, {}, {}]);
     return plugins;
   },
 });
