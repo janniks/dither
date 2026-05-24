@@ -90,21 +90,34 @@ export function formatFdaError(failingPath: string, callerBinary = managedDenoPa
   ].join("\n");
 }
 
-/** Proactive install-time warning when a granted file path is TCC-protected. */
-export function maybeWarnInstall(files: Record<string, string>): boolean {
-  if (!isMacOS()) return false;
+/**
+ * Information about a TCC-protected install grant. Returned by
+ * `detectProtectedInstall` so the command layer can render the FDA note
+ * and offer to open System Settings — `tcc-hint.ts` is voice-free.
+ */
+export interface ProtectedInstall {
+  /** The granted path that fell inside a TCC-protected subtree. */
+  path: string;
+  /** The binary that needs Full Disk Access (Dither's managed Deno). */
+  callerBinary: string;
+  /** Deep link to the FDA pane in System Settings. */
+  settingsUri: string;
+}
+
+/**
+ * Inspect the install's granted file paths and return structured info
+ * when at least one falls inside a TCC-protected subtree. Returns null
+ * off macOS, or when no granted path needs FDA. Pure — no output.
+ */
+export function detectProtectedInstall(
+  files: Record<string, string>,
+): ProtectedInstall | null {
+  if (!isMacOS()) return null;
   const matched = Object.values(files).find((p) => tccPrefixFor(p) !== null);
-  if (!matched) return false;
-  console.error(
-    [
-      "",
-      `note: '${matched}' is a macOS-protected location.`,
-      `      The plugin will only be able to read it if Full Disk Access`,
-      `      has been granted to the dither-managed Deno:`,
-      `        ${managedDenoPath()}`,
-      `      Open Settings: ${FDA_SETTINGS_URI}`,
-      "",
-    ].join("\n"),
-  );
-  return true;
+  if (!matched) return null;
+  return {
+    path: matched,
+    callerBinary: managedDenoPath(),
+    settingsUri: FDA_SETTINGS_URI,
+  };
 }

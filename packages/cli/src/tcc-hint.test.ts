@@ -3,10 +3,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   FDA_SETTINGS_URI,
+  detectProtectedInstall,
   findProtectedPathInError,
   formatFdaError,
   isMacOS,
-  maybeWarnInstall,
   tccPrefixFor,
 } from "./tcc-hint";
 
@@ -63,33 +63,22 @@ runOnMac("TCC hint (macOS)", () => {
     expect(msg).not.toMatch(/\.ts:\d+:\d+|\.mjs:\d+:\d+|\.js:\d+:\d+|node:fs/);
   });
 
-  it("maybeWarnInstall prints when a granted path is protected", () => {
-    const errs: string[] = [];
-    const orig = console.error;
-    console.error = (s: string) => errs.push(s);
-    try {
-      const fired = maybeWarnInstall({
-        chat: join(home, "Library", "Messages", "chat.db"),
-      });
-      expect(fired).toBe(true);
-      expect(errs.join("\n")).toContain("Full Disk Access");
-      expect(errs.join("\n")).toContain(FDA_SETTINGS_URI);
-    } finally {
-      console.error = orig;
-    }
+  it("detectProtectedInstall returns structured info for a protected path", () => {
+    const info = detectProtectedInstall({
+      chat: join(home, "Library", "Messages", "chat.db"),
+    });
+    expect(info).not.toBeNull();
+    expect(info?.path).toBe(join(home, "Library", "Messages", "chat.db"));
+    expect(info?.settingsUri).toBe(FDA_SETTINGS_URI);
+    expect(info?.callerBinary).toMatch(/deno/);
   });
 
-  it("maybeWarnInstall is silent for unprotected paths", () => {
-    const errs: string[] = [];
-    const orig = console.error;
-    console.error = (s: string) => errs.push(s);
-    try {
-      const fired = maybeWarnInstall({ doc: join(home, "Documents", "x.txt") });
-      expect(fired).toBe(false);
-      expect(errs).toHaveLength(0);
-    } finally {
-      console.error = orig;
-    }
+  it("detectProtectedInstall returns null for unprotected paths", () => {
+    expect(detectProtectedInstall({ doc: join(home, "Documents", "x.txt") })).toBeNull();
+  });
+
+  it("detectProtectedInstall returns null for an empty grants set", () => {
+    expect(detectProtectedInstall({})).toBeNull();
   });
 });
 
@@ -98,7 +87,7 @@ runOffMac("TCC hint (non-macOS)", () => {
     expect(tccPrefixFor("/anything")).toBeNull();
   });
 
-  it("maybeWarnInstall is a no-op", () => {
-    expect(maybeWarnInstall({ x: "/Library/Messages/chat.db" })).toBe(false);
+  it("detectProtectedInstall is a no-op off macOS", () => {
+    expect(detectProtectedInstall({ x: "/Library/Messages/chat.db" })).toBeNull();
   });
 });

@@ -282,6 +282,48 @@ export function pluginText(raw: string): void {
 }
 
 /**
+ * Render advisory prose in Dither's own voice — visually distinct from
+ * `pluginText` (different border color + `note` label) so the user can
+ * tell who's talking. Used for install-time messages that aren't a
+ * single-line `→`/`✓` step (e.g. the macOS Full Disk Access handoff).
+ *
+ * Newlines in `message` split into lines; each is wrapped to the box's
+ * inner width.
+ */
+export function ditherText(message: string): void {
+  const trimmed = message.trim();
+  if (trimmed === "") return;
+  const cols = Math.max(40, Math.min(100, process.stdout.columns ?? 80));
+  const inner = cols - 4;
+  const lines: string[] = [];
+  for (const para of trimmed.split("\n")) {
+    if (para === "") {
+      lines.push("");
+      continue;
+    }
+    let rest = para;
+    while (rest.length > inner) {
+      let cut = rest.lastIndexOf(" ", inner);
+      if (cut <= 0) cut = inner;
+      lines.push(rest.slice(0, cut));
+      rest = rest.slice(cut).trimStart();
+    }
+    lines.push(rest);
+  }
+  const label = " note ";
+  const topFill = "─".repeat(Math.max(0, cols - 2 - label.length));
+  const bot = "─".repeat(cols - 2);
+  const out: string[] = [];
+  out.push(pc.yellow(`┌─${label}${topFill}┐`));
+  for (const line of lines) {
+    const pad = " ".repeat(Math.max(0, inner - line.length));
+    out.push(`${pc.yellow("│")} ${line}${pad} ${pc.yellow("│")}`);
+  }
+  out.push(pc.yellow(`└${bot}┘`));
+  process.stdout.write(`${out.join("\n")}\n`);
+}
+
+/**
  * Bracket a slow step. Print `→ message...` before the work starts so the
  * user always knows what the CLI is doing; pair with `stepDone` (or
  * `stepFail`) once it returns. Both lines remain in scrollback as a log.

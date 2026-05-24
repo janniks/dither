@@ -20,13 +20,14 @@ import { parseSchedule } from "../schedule-parser";
 import { runPlugin, PLUGIN_NOT_INSTALLED } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
 import { removePlugin } from "../plugin-remove";
-import { fitOneLine } from "../prompt";
+import { ditherText, fitOneLine, promptConfirm } from "../prompt";
+import { openBrowser } from "../open-browser";
 import { resolveHome } from "../home";
 import { assertInitialized, libraryRoot } from "../config";
 import { reloadDaemon, startDaemon, readDaemonPid } from "../daemon-control";
 import { installAutostart } from "../persistence";
 import { readFileSync } from "node:fs";
-import { FDA_SETTINGS_URI, FDA_REQUIRED } from "../tcc-hint";
+import { FDA_SETTINGS_URI, FDA_REQUIRED, type ProtectedInstall } from "../tcc-hint";
 import {
   findLastRunForPlugin,
   followRun,
@@ -140,6 +141,40 @@ function printInstallHint(name: string, fromRunPath: boolean): void {
   process.stdout.write(`\nnext: dither plugin run ${name}\n`);
 }
 
+
+/**
+ * Render the macOS Full Disk Access advisory in Dither's voice and, on a
+ * TTY, offer to open System Settings now. On Yes spawn the deep link via
+ * `openBrowser`; on No leave the URL in the note for later. Non-TTY just
+ * prints the note (no prompt).
+ *
+ * `open` is injectable so tests don't actually spawn a Settings window.
+ */
+export async function handleProtectedInstall(
+  info: ProtectedInstall,
+  open: (url: string) => void = openBrowser,
+): Promise<void> {
+  ditherText(
+    [
+      `'${info.path}' is a macOS-protected location.`,
+      "",
+      "The plugin will only read it after Full Disk Access has been",
+      "granted to the dither-managed Deno:",
+      `  ${info.callerBinary}`,
+      "",
+      `Open Settings: ${info.settingsUri}`,
+    ].join("\n"),
+  );
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return;
+  let yes: boolean;
+  try {
+    yes = await promptConfirm("Open System Settings now to grant Full Disk Access?", true);
+  } catch {
+    // Cancelled (Ctrl-C). Leave the URL in the note for later.
+    return;
+  }
+  if (yes) open(info.settingsUri);
+}
 
 async function ensureDaemonForPlugin(name: string): Promise<void> {
   const grants = readConsentedGrants(name);
@@ -325,6 +360,7 @@ const installSubcommand = defineCommand({
     });
     console.log(`installed ${result.name}@${result.version}${args.symlink ? " (symlinked)" : ""}`);
     console.log(`  → ${result.dest}`);
+    if (result.protectedInstall) await handleProtectedInstall(result.protectedInstall);
     await ensureDaemonForPlugin(result.name).catch(() => {});
     printInstallHint(result.name, false);
     return result;
@@ -397,6 +433,7 @@ const runSubcommand = defineCommand({
       pluginName = installed.name;
       runOverrides = null;
       console.log(`installed ${installed.name}@${installed.version}${args.symlink ? " (symlinked)" : ""}`);
+      if (installed.protectedInstall) await handleProtectedInstall(installed.protectedInstall);
       await ensureDaemonForPlugin(installed.name).catch(() => {});
       printInstallHint(installed.name, true);
     }

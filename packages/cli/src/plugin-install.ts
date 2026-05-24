@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { resolveHome } from "./home";
 import { validateGrantPattern } from "./grants";
-import { maybeWarnInstall } from "./tcc-hint";
+import { detectProtectedInstall, type ProtectedInstall } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
 import { writePrivateJson } from "./secure-json";
 import {
@@ -75,6 +75,10 @@ export interface InstalledPlugin {
   name: string;
   version: string;
   dest: string;
+  /** Set when at least one granted file path falls inside a macOS
+   *  TCC-protected subtree; null otherwise. The command layer uses
+   *  this to render the FDA note + open-Settings prompt. */
+  protectedInstall: ProtectedInstall | null;
 }
 
 export { MissingInputsError } from "./plugin-install-interactive";
@@ -196,7 +200,10 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
     throw err;
   }
 
-  maybeWarnInstall(files);
-
-  return { name: parsed.name, version: parsed.version, dest: destDir };
+  return {
+    name: parsed.name,
+    version: parsed.version,
+    dest: destDir,
+    protectedInstall: detectProtectedInstall(files),
+  };
 }

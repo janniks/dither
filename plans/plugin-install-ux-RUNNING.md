@@ -64,3 +64,4 @@ When starting implementation, rename this file to `./plans/<feature>-RUNNING.md`
 | commit | summary |
 |--|--|
 | 032f94d | phase 1: ENTER-for-default auto-hint, drop default_hint, dedupe top-level description box |
+| 18574e2 | phase 2: schedule + watch consent prompts; grants gain top-level schedule/watch; daemon honors choice |
