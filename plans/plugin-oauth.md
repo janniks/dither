@@ -90,3 +90,4 @@ When starting implementation, this file is named `./plans/plugin-oauth-RUNNING.m
 | e80da00 | Phase 1 — pkce.ts (generate, buildAuthUrl, exchangeCode) + tests against RFC 7636 vector. 9/9 pass. |
 | 5a2f3fe | Phase 2 — oauth-listen.ts + open-browser.ts. Listener tested with real http.Server on port:0, covers happy path / state mismatch / ?error= / timeout / port reuse / 404 ignore. 6/6 pass. |
 | 6dce22b | Phase 3 — wired `dither plugin oauth` subcommand under pluginCommand. Full PKCE flow against any provider via --client-id/--auth-url/--token-url/--scopes/--port. 15/15 tests pass, typecheck green, help shows the subcommand. |
+| 845d5bc | Phase 4 — added --json (one-line stdout), --no-open, --timeout flags; plan renamed back to plugin-oauth.md (no -RUNNING). 15/15 tests still pass. |
