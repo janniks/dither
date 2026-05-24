@@ -397,9 +397,9 @@ async function promptScheduleConsent(
       ? "declared"
       : "custom";
   const choice = await promptSelect<"declared" | "manual" | "custom">({
-    message: `schedule — runs ${cadence}. enable?`,
+    message: `schedule — enable?`,
     options: [
-      { label: `Enable as declared (recommended by plugin)`, value: "declared" },
+      { label: `Enable ${cadence} (recommended by plugin)`, value: "declared" },
       { label: `Manual only — fire with 'dither plugin run ${parsed.name}'`, value: "manual" },
       { label: "Custom schedule…", value: "custom" },
     ],
