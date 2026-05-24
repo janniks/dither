@@ -187,14 +187,41 @@ async function readFromPath(path: string, tailLines: number): Promise<LogEvent[]
   try {
     const { size } = await fh.stat();
     if (size === 0) return [];
-    const buf = Buffer.alloc(size);
-    await fh.read(buf, 0, size, 0);
-    const lines = buf.toString("utf-8").split("\n").filter((l) => l.length > 0);
-    const slice = lines.slice(-Math.max(0, tailLines));
-    return slice.map(parseLine).filter((e): e is LogEvent => e !== null);
+    if (!Number.isFinite(tailLines)) {
+      const buf = Buffer.alloc(size);
+      await fh.read(buf, 0, size, 0);
+      return decodeLines(buf);
+    }
+    // Bounded tail — walk backwards from EOF in 16 KiB chunks until we
+    // have one more newline than requested (so the partial top line gets
+    // dropped) or hit BOF.
+    const target = Math.max(0, tailLines);
+    const CHUNK = 16 * 1024;
+    let acc = Buffer.alloc(0);
+    let pos = size;
+    let lines = 0;
+    while (pos > 0 && lines <= target) {
+      const read = Math.min(CHUNK, pos);
+      const buf = Buffer.alloc(read);
+      await fh.read(buf, 0, read, pos - read);
+      acc = Buffer.concat([buf, acc]);
+      pos -= read;
+      lines = 0;
+      for (let i = 0; i < acc.length; i++) if (acc[i] === 0x0a) lines++;
+    }
+    return decodeLines(acc).slice(-target);
   } finally {
     await fh.close();
   }
+}
+
+function decodeLines(buf: Buffer): LogEvent[] {
+  return buf
+    .toString("utf-8")
+    .split("\n")
+    .filter((l) => l.length > 0)
+    .map(parseLine)
+    .filter((e): e is LogEvent => e !== null);
 }
 
 /**
@@ -451,14 +478,12 @@ export async function listRuns(limit = 20): Promise<RunSummary[]> {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
   }
-  const sorted = dirents.toSorted().toReversed();
-  const out: RunSummary[] = [];
-  for (const id of sorted) {
-    if (out.length >= limit) break;
-    const summary = await readSummary(id);
-    if (summary) out.push(summary);
-  }
-  return out;
+  // Run-id format sorts lexicographically by start time, so the newest
+  // `limit` candidates are the last `limit` entries after sort. Cap
+  // before reading to keep this O(limit) rather than O(history-size).
+  const head = dirents.toSorted().toReversed().slice(0, limit);
+  const summaries = await Promise.all(head.map(readSummary));
+  return summaries.filter((s): s is RunSummary => s !== null);
 }
 
 /**

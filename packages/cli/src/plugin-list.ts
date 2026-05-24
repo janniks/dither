@@ -10,6 +10,9 @@ export interface InstalledPluginInfo {
   schedule?: string;
   collections: string[];
   net: string[];
+  /** Parsed watch declaration. `null` = explicitly disabled,
+   *  `undefined` = absent (legacy grants — treated as disabled). */
+  watch?: { collections: string[]; glob?: string } | null;
 }
 
 interface GrantsFile {
@@ -20,6 +23,7 @@ interface GrantsFile {
   /** User's effective schedule. `null` = manual-only, absent = legacy
    *  grants file (treated as manual-only). */
   schedule?: string | null;
+  watch?: { collections: string[]; glob?: string } | null;
 }
 
 export async function listPlugins(): Promise<InstalledPluginInfo[]> {
@@ -27,23 +31,22 @@ export async function listPlugins(): Promise<InstalledPluginInfo[]> {
   const grantsDir = join(home, "grants");
   if (!existsSync(grantsDir)) return [];
 
-  const files = await readdir(grantsDir);
-  const out: InstalledPluginInfo[] = [];
-
-  for (const file of files) {
-    if (!file.endsWith(".json")) continue;
-    const name = file.slice(0, -".json".length);
-    const grants = JSON.parse(await readFile(join(grantsDir, file), "utf-8")) as GrantsFile;
-    out.push({
-      name,
-      version: grants.version ?? "?",
-      ...(grants.installedAt ? { installedAt: grants.installedAt } : {}),
-      ...(grants.schedule ? { schedule: grants.schedule } : {}),
-      collections: grants.collections ?? [],
-      net: grants.net ?? [],
-    });
-  }
-
+  const files = (await readdir(grantsDir)).filter((f) => f.endsWith(".json"));
+  const out = await Promise.all(
+    files.map(async (file) => {
+      const name = file.slice(0, -".json".length);
+      const grants = JSON.parse(await readFile(join(grantsDir, file), "utf-8")) as GrantsFile;
+      return {
+        name,
+        version: grants.version ?? "?",
+        ...(grants.installedAt ? { installedAt: grants.installedAt } : {}),
+        ...(grants.schedule ? { schedule: grants.schedule } : {}),
+        collections: grants.collections ?? [],
+        net: grants.net ?? [],
+        ...(grants.watch !== undefined ? { watch: grants.watch } : {}),
+      };
+    }),
+  );
   out.sort((a, b) => a.name.localeCompare(b.name));
   return out;
 }

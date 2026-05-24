@@ -5,11 +5,10 @@ import { join } from "node:path";
 import { pidFilePath, statusSnapshotPath, locksDirPath, resolveHome } from "./home";
 import { libraryRoot as resolveLibraryRoot } from "./config";
 import { appendGlobal, listRuns, truncateGlobal, type RunSummary } from "./run-log";
-import { listPlugins } from "./plugin-list";
+import { listPlugins, type InstalledPluginInfo } from "./plugin-list";
 import { Scheduler, type ScheduleEntry } from "./scheduler";
 import { Watcher, type WatchEntry } from "./watcher";
 import { runPlugin } from "./plugin-run";
-import { readFile as readFileAsync } from "node:fs/promises";
 import { LoopDetector, type HaltRecord } from "./loop-detector";
 import { inboxHasItems, recoverOrphanInflight } from "./inbox";
 import { Refirer } from "./refirer";
@@ -56,41 +55,16 @@ interface DaemonState {
   watchCount: number;
 }
 
-interface GrantsBlob {
-  /** User's effective watch declaration. `null` = explicitly disabled,
-   *  absent = legacy grants file (treated as disabled). */
-  watch?: { collections: string[]; glob?: string } | null;
+function scheduleEntriesOf(plugins: InstalledPluginInfo[]): ScheduleEntry[] {
+  return plugins.flatMap((p) => (p.schedule ? [{ name: p.name, schedule: p.schedule }] : []));
 }
 
-async function loadScheduleEntries(): Promise<ScheduleEntry[]> {
-  const plugins = await listPlugins();
-  const entries: ScheduleEntry[] = [];
-  for (const p of plugins) {
-    if (p.schedule) entries.push({ name: p.name, schedule: p.schedule });
-  }
-  return entries;
-}
-
-async function loadWatchEntries(): Promise<WatchEntry[]> {
-  const plugins = await listPlugins();
-  const out: WatchEntry[] = [];
-  for (const p of plugins) {
-    const grantsPath = join(resolveHome(), "grants", `${p.name}.json`);
-    try {
-      const blob = JSON.parse(await readFileAsync(grantsPath, "utf-8")) as GrantsBlob;
-      const watch = blob.watch;
-      if (watch && Array.isArray(watch.collections) && watch.collections.length > 0) {
-        out.push({
-          name: p.name,
-          collections: watch.collections,
-          ...(watch.glob ? { glob: watch.glob } : {}),
-        });
-      }
-    } catch {
-      // skip unreadable grants files
-    }
-  }
-  return out;
+function watchEntriesOf(plugins: InstalledPluginInfo[]): WatchEntry[] {
+  return plugins.flatMap((p) => {
+    const w = p.watch;
+    if (!w || !Array.isArray(w.collections) || w.collections.length === 0) return [];
+    return [{ name: p.name, collections: w.collections, ...(w.glob ? { glob: w.glob } : {}) }];
+  });
 }
 
 async function fireWithSuppress(
@@ -247,13 +221,9 @@ export async function runDaemon(): Promise<void> {
   // change after `dither init --force`. We do NOT auto-reload on config
   // file change — see notes/qmd-library-edge-cases.md (#5).
   async function reconcile(): Promise<void> {
-    const [scheduleEntries, watchEntries, libRoot] = await Promise.all([
-      loadScheduleEntries(),
-      loadWatchEntries(),
-      resolveLibraryRoot(),
-    ]);
-    scheduler.set(scheduleEntries);
-    watcher.set(libRoot, watchEntries);
+    const [plugins, libRoot] = await Promise.all([listPlugins(), resolveLibraryRoot()]);
+    scheduler.set(scheduleEntriesOf(plugins));
+    watcher.set(libRoot, watchEntriesOf(plugins));
     state.scheduleCount = scheduler.stats().count;
     state.watchCount = watcher.stats().count;
   }
