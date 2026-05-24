@@ -37,13 +37,13 @@ Deliver `pkce.ts` with PKCE-primitive generation and authorize-URL assembly. Pur
 Deliver `listen.ts` and `open-browser.ts`. Listener resolves with code on `/callback?code=…&state=…`, rejects on state mismatch / `?error=…` / timeout. Server cleans itself up. Browser-open is platform-dispatched `spawn` with no tests. No orchestrator yet.
 
 **Acceptance:**
-- [ ] `listenForCode` resolves with `code` when a valid request hits `/callback`
-- [ ] Rejects when `state` query param mismatches `expectedState`
-- [ ] Rejects when `?error=...` is present, with the error string in the message
-- [ ] Rejects after `timeoutMs` with a clear "no callback in <N>s" message; server closed
-- [ ] Server bound to `127.0.0.1` only (not `0.0.0.0`)
-- [ ] Tests use `port: 0` to grab a free port; no flaky fixed-port collisions
-- [ ] `open-browser.ts` dispatches `open`/`xdg-open`/`start` based on `process.platform`
+- [x] `listenForCode` resolves with `code` when a valid request hits `/callback`
+- [x] Rejects when `state` query param mismatches `expectedState`
+- [x] Rejects when `?error=...` is present, with the error string in the message
+- [x] Rejects after `timeoutMs` with a clear "no callback in <N>s" message; server closed
+- [x] Server bound to `127.0.0.1` only (not `0.0.0.0`)
+- [x] Tests use `port: 0` to grab a free port; no flaky fixed-port collisions
+- [x] `open-browser.ts` dispatches `open`/`xdg-open`/`start` based on `process.platform`
 
 ---
 
@@ -87,4 +87,4 @@ When starting implementation, this file is named `./plans/plugin-oauth-RUNNING.m
 
 | Commit | Summary |
 |--------|---------|
-|        |         |
+| e80da00 | Phase 1 — pkce.ts (generate, buildAuthUrl, exchangeCode) + tests against RFC 7636 vector. 9/9 pass. |
