@@ -20,7 +20,8 @@ import { parseSchedule } from "../schedule-parser";
 import { runPlugin, PLUGIN_NOT_INSTALLED } from "../plugin-run";
 import { listPlugins } from "../plugin-list";
 import { removePlugin } from "../plugin-remove";
-import { ditherText, fitOneLine, promptConfirm } from "../prompt";
+import { ditherText, fitOneLine, printTable, promptConfirm } from "../prompt";
+import { formatRelPast } from "../relative-time";
 import { openBrowser } from "../open-browser";
 import { resolveHome } from "../home";
 import { assertInitialized, libraryRoot } from "../config";
@@ -638,19 +639,26 @@ async function readResult(runId: string): Promise<RunResultRecord | null> {
   }
 }
 
-async function listRecentRuns(limit: number): Promise<void> {
+async function listRecentRuns(limit: number, verbose: boolean): Promise<void> {
   const runs = await listRuns(limit);
   if (runs.length === 0) {
     console.log("No runs yet. Try `dither plugin run <name>`.");
     return;
   }
-  for (const r of runs) {
-    const added = r.addedCount ?? 0;
-    console.log(
-      `${r.runId}  ${r.status.padEnd(7)} ${r.plugin.padEnd(20)} ` +
-        `${r.startedAt}  ${formatRunDuration(r.durationMs).padStart(7)}  ${added} added`,
-    );
-  }
+  const now = Date.now();
+  const rows = runs.map((r) => {
+    const rel = formatRelPast(Date.parse(r.startedAt), now);
+    const dur = formatRunDuration(r.durationMs);
+    const added = `${r.addedCount ?? 0} added`;
+    return verbose
+      ? [r.runId, r.status, r.plugin, rel, r.startedAt, dur, added]
+      : [r.runId, r.status, r.plugin, rel, dur, added];
+  });
+  // Right-align duration so 1m5s lines up with 234ms.
+  const cols = verbose
+    ? [{}, {}, {}, {}, {}, { align: "right" as const }, {}]
+    : [{}, {}, {}, {}, { align: "right" as const }, {}];
+  printTable(rows, cols);
 }
 
 async function tailRun(runId: string): Promise<void> {
@@ -719,11 +727,17 @@ const runsSubcommand = defineCommand({
       description: "When listing: how many runs to show (default 20).",
       default: "20",
     },
+    verbose: {
+      type: "boolean",
+      alias: "v",
+      description: "When listing: also show the exact ISO start timestamp.",
+      default: false,
+    },
   },
   async run({ args }) {
     const target = args.target;
     if (target === undefined) {
-      await listRecentRuns(Number.parseInt(args.limit, 10) || 20);
+      await listRecentRuns(Number.parseInt(args.limit, 10) || 20, args.verbose);
       return;
     }
     if (RUN_ID_PATTERN.test(target)) {

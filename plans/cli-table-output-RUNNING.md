@@ -50,11 +50,11 @@ Replace the inline `padEnd(7) / padEnd(20)` row with `printTable`. Default
 time column is `formatRelPast(startedAt)`; add `-v` to also show the ISO.
 
 **Acceptance:**
-- [ ] `d plugin runs` columns line up regardless of run-id suffix length
-- [ ] Default rows show e.g. `3m ago`, `2h ago`, `1d ago`
-- [ ] `d plugin runs -v` adds the exact ISO timestamp column
-- [ ] `d plugin runs | cat` emits TSV (no ANSI, no padding)
-- [ ] Existing test `plugin-runs.test.ts` still passes (adjust assertions)
+- [x] `d plugin runs` columns line up regardless of run-id suffix length
+- [x] Default rows show e.g. `3m ago`, `2h ago`, `1d ago`
+- [x] `d plugin runs -v` adds the exact ISO timestamp column
+- [x] `d plugin runs | cat` emits TSV (no ANSI, no padding)
+- [x] Existing test `plugin-runs.test.ts` still passes (no adjustment needed)
 
 ---
 
@@ -113,4 +113,4 @@ When starting implementation, rename this file to `./plans/<feature>-RUNNING.md`
 
 | commit | summary |
 |--|--|
-|  |  |
+| 00a862a | phase 1: table.ts + formatRelPast + tests + prompt.ts re-export (bundled into a parallel agent's commit due to a staging race; code is correct) |
