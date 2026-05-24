@@ -240,17 +240,6 @@ export function confirm(label: string, value: string): void {
 }
 
 /**
- * Like `confirm` but for cases where no consola prompt rendered above
- * (auto-accepts from manifest defaults). Never moves the cursor —
- * unconditional safe append.
- */
-export function accepted(label: string, value: string): void {
-  const cols = process.stdout.columns ?? 80;
-  const room = Math.max(20, cols - label.length - 5);
-  process.stdout.write(`${pc.green("✓")} ${label}: ${clip(value, room)}\n`);
-}
-
-/**
  * Render manifest-supplied prose (a plugin's `description`, env / file
  * `description`) inside a labelled `from plugin` box. The chrome is
  * Dither's voice (dim); the contents are the plugin's voice, sanitized
