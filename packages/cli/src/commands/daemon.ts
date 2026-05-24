@@ -3,7 +3,13 @@ import { createReadStream, watch as fsWatch, existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { daemonLogPath } from "../home";
 import { assertInitialized } from "../config";
-import { startDaemon, stopDaemon, getDaemonStatus, reloadDaemon } from "../daemon-control";
+import {
+  startDaemon,
+  stopDaemon,
+  getDaemonStatus,
+  reloadDaemon,
+  formatProbeReason,
+} from "../daemon-control";
 import { runDaemon } from "../daemon";
 import { formatRelTime } from "../relative-time";
 
@@ -71,7 +77,13 @@ const statusSubcommand = defineCommand({
       return;
     }
     if (!s.running) {
-      console.log("daemon: not running");
+      const why = formatProbeReason(s.reason, s.staleMs);
+      console.log(`daemon: not running${why ? ` (${why})` : ""}`);
+      if (s.pid) console.log(`pid:    ${s.pid}`);
+      if (s.snapshot) {
+        console.log(`startedAt: ${s.snapshot.startedAt}`);
+        console.log(`lastTick:  ${s.snapshot.lastTick}`);
+      }
       return;
     }
     console.log(`daemon:      running (pid ${s.pid})`);

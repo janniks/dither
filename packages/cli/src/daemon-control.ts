@@ -21,6 +21,28 @@ interface DaemonPidFile {
   startedAt: string;
 }
 
+/**
+ * Why the daemon is considered not-running. Surfaced by `d daemon status` and
+ * `d status` so the user can distinguish a genuinely-dead daemon from one that
+ * is alive but quiet (e.g. macOS just woke from sleep; the heartbeat hasn't
+ * caught up yet and the snapshot looks stale).
+ */
+export type DaemonProbeReason =
+  | "no-pidfile"
+  | "bad-pidfile"
+  | "dead-process"
+  | "no-snapshot"
+  | "snapshot-mismatch"
+  | "snapshot-stale";
+
+export interface DaemonProbe {
+  pid: number | null;
+  reason: DaemonProbeReason | null;
+  snapshot: StatusSnapshot | null;
+  /** Age of the snapshot in ms when `reason === "snapshot-stale"`. */
+  staleMs?: number;
+}
+
 function isAlive(pid: number): boolean {
   if (!Number.isFinite(pid) || pid <= 0) return false;
   try {
@@ -49,14 +71,6 @@ function parsePidFile(raw: string): DaemonPidFile | null {
   return { pid: obj.pid, token: obj.token, startedAt: obj.startedAt };
 }
 
-function matchesPidFile(snapshot: StatusSnapshot | null, pid: DaemonPidFile): boolean {
-  if (!snapshot) return false;
-  if (snapshot.pid !== pid.pid || snapshot.token !== pid.token) return false;
-  if (snapshot.startedAt !== pid.startedAt) return false;
-  const lastTick = Date.parse(snapshot.lastTick);
-  return Number.isFinite(lastTick) && Date.now() - lastTick <= STATUS_FRESH_MS;
-}
-
 async function readVerifiedSnapshot(): Promise<StatusSnapshot | null> {
   try {
     return await readStatusSnapshot();
@@ -66,17 +80,67 @@ async function readVerifiedSnapshot(): Promise<StatusSnapshot | null> {
   }
 }
 
-export async function readDaemonPid(): Promise<number | null> {
-  if (!existsSync(pidFilePath())) return null;
+/**
+ * One-shot diagnostic: walks the same checks as `readDaemonPid` but reports
+ * why the daemon was rejected (if it was). The first failing gate wins.
+ */
+export async function probeDaemon(): Promise<DaemonProbe> {
+  if (!existsSync(pidFilePath())) {
+    return { pid: null, reason: "no-pidfile", snapshot: null };
+  }
+  let raw: string;
   try {
-    const raw = await readFile(pidFilePath(), "utf-8");
-    const pid = parsePidFile(raw);
-    if (!pid || !isAlive(pid.pid)) return null;
-    return matchesPidFile(await readVerifiedSnapshot(), pid) ? pid.pid : null;
+    raw = await readFile(pidFilePath(), "utf-8");
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return { pid: null, reason: "no-pidfile", snapshot: null };
+    }
     throw err;
   }
+  const file = parsePidFile(raw);
+  if (!file) return { pid: null, reason: "bad-pidfile", snapshot: null };
+  if (!isAlive(file.pid)) {
+    return { pid: file.pid, reason: "dead-process", snapshot: null };
+  }
+  const snap = await readVerifiedSnapshot();
+  if (!snap) return { pid: file.pid, reason: "no-snapshot", snapshot: null };
+  if (snap.pid !== file.pid || snap.token !== file.token || snap.startedAt !== file.startedAt) {
+    return { pid: file.pid, reason: "snapshot-mismatch", snapshot: snap };
+  }
+  const tick = Date.parse(snap.lastTick);
+  if (!Number.isFinite(tick)) {
+    return { pid: file.pid, reason: "snapshot-mismatch", snapshot: snap };
+  }
+  const age = Date.now() - tick;
+  if (age > STATUS_FRESH_MS) {
+    return { pid: file.pid, reason: "snapshot-stale", snapshot: snap, staleMs: age };
+  }
+  return { pid: file.pid, reason: null, snapshot: snap };
+}
+
+/**
+ * Human-readable explanation for a probe reason. Empty string when the
+ * daemon is running normally. The `snapshot-stale` line is the one that
+ * unmasks the macOS-sleep false-negative — process is alive, status.json
+ * just hasn't been updated recently.
+ */
+export function formatProbeReason(
+  reason: DaemonProbeReason | null,
+  staleMs?: number,
+): string {
+  if (!reason) return "";
+  if (reason === "no-pidfile") return "no pid file";
+  if (reason === "bad-pidfile") return "corrupt pid file";
+  if (reason === "dead-process") return "process not running";
+  if (reason === "no-snapshot") return "no status snapshot yet";
+  if (reason === "snapshot-mismatch") return "snapshot pid mismatch (stale state on disk)";
+  const s = Math.round((staleMs ?? 0) / 1000);
+  return `snapshot stale by ${s}s (process may be sleeping or hung)`;
+}
+
+export async function readDaemonPid(): Promise<number | null> {
+  const p = await probeDaemon();
+  return p.reason === null ? p.pid : null;
 }
 
 export interface StartResult {
@@ -196,15 +260,20 @@ export interface DaemonStatus {
   pid: number | null;
   home: string;
   snapshot: StatusSnapshot | null;
+  /** Null when running; otherwise why we think it isn't. */
+  reason: DaemonProbeReason | null;
+  /** Set when `reason === "snapshot-stale"`. */
+  staleMs?: number;
 }
 
 export async function getDaemonStatus(): Promise<DaemonStatus> {
-  const pid = await readDaemonPid();
-  const snapshot = await readStatusSnapshot();
+  const p = await probeDaemon();
   return {
-    running: pid !== null,
-    pid,
+    running: p.reason === null,
+    pid: p.pid,
     home: resolveHome(),
-    snapshot,
+    snapshot: p.snapshot ?? (await readVerifiedSnapshot()),
+    reason: p.reason,
+    staleMs: p.staleMs,
   };
 }

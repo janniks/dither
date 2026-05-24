@@ -1,6 +1,7 @@
 import { defineCommand } from "citty";
 import pc from "picocolors";
 import { getStatus, type DitherStatus } from "../status";
+import { formatProbeReason } from "../daemon-control";
 import { tildePath } from "../prompt";
 
 const fmt = (n: number): string => new Intl.NumberFormat(undefined).format(n);
@@ -63,7 +64,9 @@ function printHumanStatus(s: DitherStatus): void {
     }
     console.log(`daemon:      ${pc.green(label)}`);
   } else {
-    console.log(`daemon:      ${pc.dim("not running")}`);
+    const why = formatProbeReason(s.daemon.reason, s.daemon.staleMs);
+    const tail = why ? pc.dim(` (${why})`) : "";
+    console.log(`daemon:      ${pc.dim("not running")}${tail}`);
   }
 
   // qmd job state. Quiet when idle + no recent activity; shows current
