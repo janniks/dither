@@ -148,10 +148,31 @@ function printInstallHint(name: string, fromRunPath: boolean): void {
  *
  * `open` is injectable so tests don't actually spawn a Settings window.
  */
+/**
+ * Smoke-test whether a TCC-protected path is actually readable from
+ * this process. On macOS, FDA propagates from the responsible parent
+ * (terminal / IDE) to spawned children, so a successful `readdir` /
+ * `access` from node is a good proxy for "the managed deno will also
+ * succeed." Returns true when access works (so the advisory is silent),
+ * false on EPERM / EACCES (so we surface it).
+ */
+async function protectedPathReadable(path: string): Promise<boolean> {
+  try {
+    const s = await stat(path);
+    if (s.isDirectory()) await readdir(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function handleProtectedInstall(
   info: ProtectedInstall,
   open: (url: string) => void = openBrowser,
 ): Promise<void> {
+  // Skip the advisory when FDA already works — we only want to surface
+  // it when something is actually blocked.
+  if (await protectedPathReadable(info.path)) return;
   ditherText(
     [
       `'${info.path}' is a macOS-protected location.`,
