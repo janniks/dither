@@ -66,16 +66,18 @@ default to *always* prompt (unless flag-supplied), with the default
 pre-filled.
 
 **Acceptance:**
-- [ ] Env with manifest default now prompts; default = `prior ??
-      manifest.default`
-- [ ] Env with prior value uses prior as the prompt default
-- [ ] File grants use `prior ?? manifest.default` as prompt default
-      (today they only use `manifest.default`)
-- [ ] `--env KEY=value` skips the env prompt for that key
-- [ ] `--file id=path` skips the file prompt for that id
-- [ ] Required env without default still prompts as today (no
-      regression)
-- [ ] `plugin-install.test.ts` non-interactive paths still pass
+- [x] Env with manifest default now prompts; default = `prior ?? manifest.default`
+- [x] Env with prior value uses prior as the prompt default
+- [x] File grants use `prior ?? manifest.default` as prompt default
+- [x] `--env KEY=value` skips the env prompt for that key
+- [x] `--file id=path` skips the file prompt for that id
+- [x] Required env without default still prompts as today (no regression)
+- [x] `plugin-install.test.ts` non-interactive paths still pass (72/72)
+
+Bonus: `promptInteractive` no longer takes a `missing` arg — it
+iterates manifest declarations directly. The `planInstall` import in
+`commands/plugin.ts` was dropped too (the interactive path doesn't
+need it; `installPlugin` re-plans internally).
 
 ---
 

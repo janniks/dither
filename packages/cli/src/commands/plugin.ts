@@ -11,7 +11,6 @@ import { installPlugin, MissingInputsError, type InstallOptions, type InstalledP
 import {
   InstallCancelledError,
   mergeInputs,
-  planInstall,
   promptInteractive,
   readExistingGrants,
   readPackage,
@@ -52,9 +51,7 @@ async function installPluginOrExit(opts: InstallOptions): Promise<InstalledPlugi
       // reinstall pre-fills the prompts with the user's prior answers.
       const existing = await readExistingGrants(parsed.name);
       const base = existing ? mergeInputs(existing, opts) : opts;
-      const plan = await planInstall(parsed, base);
-      const missing = plan.ok ? [] : plan.missing;
-      const extra = await promptInteractive(parsed, opts, existing, missing);
+      const extra = await promptInteractive(parsed, opts, existing);
       // Spread opts first so non-grant fields (source, symlink) ride
       // through; the prompt-merged grant fields overwrite opts's.
       merged = { ...opts, ...mergeInputs(base, extra) };

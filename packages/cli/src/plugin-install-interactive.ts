@@ -283,7 +283,6 @@ export async function promptInteractive(
   parsed: ParsedPackage,
   opts: InstallInputs,
   existing: InstallInputs | null,
-  missing: MissingField[],
 ): Promise<InstallInputs> {
   const current: InstallInputs = existing ? mergeInputs(existing, opts) : opts;
   printHeader(parsed);
@@ -298,39 +297,49 @@ export async function promptInteractive(
   const envRefs: string[] = [];
   const files: Record<string, string> = {};
 
-  for (const field of missing) {
-    if (field.kind === "env") {
-      const def = (parsed.manifest.env ?? []).find((e) => e.name === field.name);
-      // Manifest descriptions are untrusted plugin prose — render them
-      // inside a labelled `from plugin` box above the prompt so the user
-      // can tell Dither's voice from the plugin's voice.
-      if (def?.description) pluginText(def.description);
-      const globalValue = await getGlobalEnv(field.name);
-      if (globalValue !== undefined) {
-        const mode = await promptSelect<"literal" | "ref">({
-          message: field.name,
-          options: [
-            { label: "Read from global dither env", value: "ref" },
-            { label: "Enter a new literal value", value: "literal" },
-          ],
-        });
-        if (mode === "ref") {
-          envRefs.push(field.name);
-          confirm(field.name, "(global)");
-          continue;
-        }
+  // Walk every env declaration in the manifest. Flag-supplied values
+  // skip the prompt; otherwise prompt with default = prior ?? manifest.
+  // No silent take of manifest defaults — see specs/plugin-install-consent.md.
+  for (const def of parsed.manifest.env ?? []) {
+    if (opts.env?.[def.name] !== undefined) continue;
+    if (opts.envRefs?.includes(def.name)) continue;
+    if (def.description) pluginText(def.description);
+    const priorLit = existing?.env?.[def.name];
+    const priorRef = existing?.envRefs?.includes(def.name) ?? false;
+    const globalValue = await getGlobalEnv(def.name);
+    if (globalValue !== undefined) {
+      const mode = await promptSelect<"literal" | "ref">({
+        message: def.name,
+        options: [
+          { label: "Read from global dither env", value: "ref" },
+          { label: "Enter a new literal value", value: "literal" },
+        ],
+        initial: priorRef ? "ref" : "literal",
+      });
+      if (mode === "ref") {
+        envRefs.push(def.name);
+        confirm(def.name, "(global)");
+        continue;
       }
-      const value = await promptText({ message: field.name });
-      env[field.name] = value;
-      confirm(field.name, value);
-      continue;
     }
-    // kind === "file"
-    const def = (parsed.manifest.files ?? []).find((f) => f.id === field.name);
-    if (def?.description) pluginText(def.description);
-    const dflt = def?.default;
+    const dflt = priorLit ?? def.default;
+    const value = await promptText({ message: def.name, default: dflt });
+    env[def.name] = value;
+    confirm(def.name, value);
+  }
+
+  // Walk every file declaration. Flag-supplied skips. Optional files with
+  // no prior and no manifest default skip silently (no meaningful default
+  // to confirm). Required-or-defaulted files prompt with the prior value
+  // pre-filled when reinstalling.
+  for (const def of parsed.manifest.files ?? []) {
+    if (opts.files?.[def.id] !== undefined) continue;
+    const priorPath = existing?.files?.[def.id];
+    const dflt = priorPath ?? def.default;
+    if (!def.required && !dflt) continue;
+    if (def.description) pluginText(def.description);
     const value = await promptText({
-      message: field.name,
+      message: def.id,
       default: dflt,
       placeholder: dflt,
       validate: (v) => {
@@ -342,8 +351,8 @@ export async function promptInteractive(
       },
     });
     const final = normalizePath(value);
-    files[field.name] = final;
-    confirm(field.name, final);
+    files[def.id] = final;
+    confirm(def.id, final);
   }
 
   // Consent for list-shaped grants: flag-supplied values skip the prompt
