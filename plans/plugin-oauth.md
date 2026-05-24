@@ -73,11 +73,11 @@ Add `exchangeCode` to `pkce.ts` (with test). Build the citty subcommand at `comm
 Wire the remaining flags: `--json`, `--no-open`, `--timeout`. Tighten error surfacing for the three rejection paths from phase 2. No new modules.
 
 **Acceptance:**
-- [ ] `--json` prints `{ refresh_token, access_token, expires_in, scope }` as one line to stdout; all informational text goes to stderr
-- [ ] `--no-open` suppresses browser spawn; authorize URL still printed
-- [ ] `--timeout <sec>` flag accepted; default 300
-- [ ] State mismatch / provider error / timeout each surface a single clear stderr line and exit non-zero
-- [ ] Reading stdout under `--json` produces parseable JSON (no contamination from progress text)
+- [x] `--json` prints `{ refresh_token, access_token, expires_in, scope }` as one line to stdout; all informational text goes to stderr
+- [x] `--no-open` suppresses browser spawn; authorize URL still printed
+- [x] `--timeout <sec>` flag accepted; default 300
+- [x] State mismatch / provider error / timeout each surface a single clear stderr line and exit non-zero
+- [x] Reading stdout under `--json` produces parseable JSON (no contamination from progress text)
 
 ---
 
@@ -89,3 +89,4 @@ When starting implementation, this file is named `./plans/plugin-oauth-RUNNING.m
 |--------|---------|
 | e80da00 | Phase 1 — pkce.ts (generate, buildAuthUrl, exchangeCode) + tests against RFC 7636 vector. 9/9 pass. |
 | 5a2f3fe | Phase 2 — oauth-listen.ts + open-browser.ts. Listener tested with real http.Server on port:0, covers happy path / state mismatch / ?error= / timeout / port reuse / 404 ignore. 6/6 pass. |
+| 6dce22b | Phase 3 — wired `dither plugin oauth` subcommand under pluginCommand. Full PKCE flow against any provider via --client-id/--auth-url/--token-url/--scopes/--port. 15/15 tests pass, typecheck green, help shows the subcommand. |

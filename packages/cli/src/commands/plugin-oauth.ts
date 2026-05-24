@@ -45,11 +45,31 @@ export const oauthSubcommand = defineCommand({
       default: "8888",
       description: "Local callback server port (default 8888).",
     },
+    timeout: {
+      type: "string" as const,
+      default: "300",
+      description: "Seconds to wait for the browser callback before aborting (default 300).",
+    },
+    "no-open": {
+      type: "boolean" as const,
+      default: false,
+      description: "Don't auto-open the browser. URL is still printed.",
+    },
+    json: {
+      type: "boolean" as const,
+      default: false,
+      description: "Print result as one-line JSON to stdout (suppresses human-readable output).",
+    },
   },
   async run({ args }) {
     const port = Number.parseInt(args.port, 10);
     if (!Number.isFinite(port) || port <= 0 || port > 65535) {
       process.stderr.write(`error: invalid --port '${args.port}'\n`);
+      process.exit(1);
+    }
+    const timeoutSec = Number.parseInt(args.timeout, 10);
+    if (!Number.isFinite(timeoutSec) || timeoutSec <= 0) {
+      process.stderr.write(`error: invalid --timeout '${args.timeout}'\n`);
       process.exit(1);
     }
     const redirectUri = `http://127.0.0.1:${port}/callback`;
@@ -75,9 +95,13 @@ export const oauthSubcommand = defineCommand({
     const codePromise = listenForCode({
       port,
       expectedState: state,
-      timeoutMs: 300_000,
+      timeoutMs: timeoutSec * 1000,
       onReady: () => {
-        process.stderr.write(`${pc.dim("listening on")} ${redirectUri} ${pc.dim("(opens browser)")}\n`);
+        if (args["no-open"]) {
+          process.stderr.write(`${pc.dim("listening on")} ${redirectUri} ${pc.dim("(open the authorize url above manually)")}\n`);
+          return;
+        }
+        process.stderr.write(`${pc.dim("listening on")} ${redirectUri} ${pc.dim("(opening browser)")}\n`);
         openBrowser(url);
       },
     });
@@ -106,10 +130,22 @@ export const oauthSubcommand = defineCommand({
       process.exit(1);
     }
 
+    if (args.json) {
+      process.stdout.write(
+        `${JSON.stringify({
+          refresh_token: tokens.refresh_token,
+          access_token: tokens.access_token,
+          expires_in: tokens.expires_in,
+          scope: tokens.scope,
+        })}\n`,
+      );
+      return;
+    }
+
     process.stderr.write("\n");
-    process.stdout.write(`${pc.green("✓")} refresh_token:\n`);
-    process.stdout.write(`${tokens.refresh_token}\n\n`);
-    process.stdout.write(`${pc.green("✓")} access_token (expires in ${tokens.expires_in}s):\n`);
+    process.stderr.write(`${pc.green("✓")} refresh_token:\n`);
+    process.stdout.write(`${tokens.refresh_token}\n`);
+    process.stderr.write(`\n${pc.green("✓")} access_token (expires in ${tokens.expires_in}s):\n`);
     process.stdout.write(`${tokens.access_token}\n`);
     if (tokens.scope) {
       process.stderr.write(`${pc.dim("scope:")} ${tokens.scope}\n`);
