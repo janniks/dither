@@ -68,6 +68,20 @@ describe("buildAuthUrl", () => {
     expect(u.searchParams.get("show_dialog")).toBe("true");
     expect(u.searchParams.get("client_id")).toBe("abc");
   });
+
+  it("omits code_challenge in confidential-client mode (no challenge arg)", () => {
+    const url = buildAuthUrl({
+      authUrl: "https://stackoverflow.com/oauth",
+      clientId: "12345",
+      scopes: ["no_expiry"],
+      redirectUri: "http://127.0.0.1:8888/callback",
+      state: "STATE",
+    });
+    const u = new URL(url);
+    expect(u.searchParams.has("code_challenge")).toBe(false);
+    expect(u.searchParams.has("code_challenge_method")).toBe(false);
+    expect(u.searchParams.get("state")).toBe("STATE");
+  });
 });
 
 describe("exchangeCode", () => {
@@ -101,6 +115,81 @@ describe("exchangeCode", () => {
     expect(body.get("redirect_uri")).toBe("http://127.0.0.1:8888/callback");
     expect(body.get("client_id")).toBe("abc");
     expect(body.get("code_verifier")).toBe("VER");
+  });
+
+  it("posts client_secret (and not code_verifier) in confidential mode", async () => {
+    let body = "";
+    const fakeFetch: typeof fetch = async (_url, init) => {
+      body = String(init?.body);
+      return new Response(
+        JSON.stringify({ access_token: "AT", expires_in: 3600 }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+    await exchangeCode({
+      tokenUrl: "https://stackoverflow.com/oauth/access_token/json",
+      clientId: "12345",
+      clientSecret: "sssh",
+      code: "CODE",
+      redirectUri: "http://127.0.0.1:8888/callback",
+      fetch: fakeFetch,
+    });
+    const b = new URLSearchParams(body);
+    expect(b.get("client_secret")).toBe("sssh");
+    expect(b.has("code_verifier")).toBe(false);
+    expect(b.get("grant_type")).toBe("authorization_code");
+  });
+
+  it("parses form-urlencoded token responses", async () => {
+    const fakeFetch: typeof fetch = async () =>
+      new Response("access_token=AT&expires=3600&scope=read", {
+        status: 200,
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      });
+    const r = await exchangeCode({
+      tokenUrl: "https://stackoverflow.com/oauth/access_token",
+      clientId: "12345",
+      clientSecret: "sssh",
+      code: "CODE",
+      redirectUri: "http://127.0.0.1:8888/callback",
+      fetch: fakeFetch,
+    });
+    expect(r).toEqual({ access_token: "AT", expires_in: 3600, scope: "read" });
+  });
+
+  it("normalizes `expires` to `expires_in` from a JSON response", async () => {
+    const fakeFetch: typeof fetch = async () =>
+      new Response(JSON.stringify({ access_token: "AT", expires: 7200 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    const r = await exchangeCode({
+      tokenUrl: "https://x/token",
+      clientId: "c",
+      clientSecret: "s",
+      code: "CODE",
+      redirectUri: "r",
+      fetch: fakeFetch,
+    });
+    expect(r.expires_in).toBe(7200);
+  });
+
+  it("returns refresh_token as undefined when the provider omits it", async () => {
+    const fakeFetch: typeof fetch = async () =>
+      new Response(JSON.stringify({ access_token: "AT", expires_in: 3600 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    const r = await exchangeCode({
+      tokenUrl: "https://x/token",
+      clientId: "c",
+      clientSecret: "s",
+      code: "CODE",
+      redirectUri: "r",
+      fetch: fakeFetch,
+    });
+    expect(r.refresh_token).toBeUndefined();
+    expect(r.access_token).toBe("AT");
   });
 
   it("throws with the response body on non-2xx", async () => {
