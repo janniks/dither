@@ -1,6 +1,8 @@
-// `dither plugin oauth` — run a PKCE OAuth flow for the user's own app and
-// print a refresh_token. Generic: every URL is supplied by the user; the
-// command ships zero provider knowledge.
+// `dither plugin oauth` — run an OAuth 2.0 auth-code flow for the user's own
+// app and print the tokens. Defaults to PKCE; passing --client-secret
+// switches to the confidential-client flow (Stack Exchange, Reddit, GitHub,
+// Notion). Generic: every URL is supplied by the user; the command ships
+// zero provider knowledge.
 
 import { defineCommand } from "citty";
 import pc from "picocolors";
@@ -17,13 +19,18 @@ export const oauthSubcommand = defineCommand({
   meta: {
     name: "oauth",
     description:
-      "Run a PKCE OAuth flow against the user's own app and print the refresh_token.",
+      "Run an OAuth 2.0 auth-code flow (PKCE by default; --client-secret for confidential clients) and print the tokens.",
   },
   args: {
     "client-id": {
       type: "string" as const,
       required: true,
       description: "OAuth app client_id.",
+    },
+    "client-secret": {
+      type: "string" as const,
+      description:
+        "OAuth app client_secret. Pass for providers that don't support PKCE (Stack Exchange, Reddit, GitHub classic, Notion). Switches the flow to confidential auth-code.",
     },
     "auth-url": {
       type: "string" as const,
@@ -74,16 +81,17 @@ export const oauthSubcommand = defineCommand({
     }
     const redirectUri = `http://127.0.0.1:${port}/callback`;
     const scopes = args.scopes.split(",").map((s) => s.trim()).filter(Boolean);
+    const secret = args["client-secret"];
 
-    const { verifier, challenge } = generatePkce();
+    const pkce = secret ? null : generatePkce();
     const state = generateState();
     const url = buildAuthUrl({
       authUrl: args["auth-url"],
       clientId: args["client-id"],
       scopes,
       redirectUri,
-      challenge,
       state,
+      challenge: pkce?.challenge,
     });
 
     process.stderr.write(`${pc.dim("redirect uri:")} ${redirectUri}\n`);
@@ -121,8 +129,9 @@ export const oauthSubcommand = defineCommand({
         tokenUrl: args["token-url"],
         clientId: args["client-id"],
         code,
-        verifier,
         redirectUri,
+        verifier: pkce?.verifier,
+        clientSecret: secret,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -133,7 +142,7 @@ export const oauthSubcommand = defineCommand({
     if (args.json) {
       process.stdout.write(
         `${JSON.stringify({
-          refresh_token: tokens.refresh_token,
+          refresh_token: tokens.refresh_token ?? null,
           access_token: tokens.access_token,
           expires_in: tokens.expires_in,
           scope: tokens.scope,
@@ -143,9 +152,16 @@ export const oauthSubcommand = defineCommand({
     }
 
     process.stderr.write("\n");
-    process.stderr.write(`${pc.green("✓")} refresh_token:\n`);
-    process.stdout.write(`${tokens.refresh_token}\n`);
-    process.stderr.write(`\n${pc.green("✓")} access_token (expires in ${tokens.expires_in}s):\n`);
+    if (tokens.refresh_token) {
+      process.stderr.write(`${pc.green("✓")} refresh_token:\n`);
+      process.stdout.write(`${tokens.refresh_token}\n\n`);
+    } else {
+      process.stderr.write(
+        `${pc.dim("(none — provider returned no refresh_token; re-run this command to renew)")}\n\n`,
+      );
+    }
+    const expiryNote = tokens.expires_in ? ` (expires in ${tokens.expires_in}s)` : "";
+    process.stderr.write(`${pc.green("✓")} access_token${expiryNote}:\n`);
     process.stdout.write(`${tokens.access_token}\n`);
     if (tokens.scope) {
       process.stderr.write(`${pc.dim("scope:")} ${tokens.scope}\n`);
