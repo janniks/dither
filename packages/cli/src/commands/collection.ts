@@ -52,7 +52,7 @@ const listSubcommand = defineCommand({
     verbose: {
       type: "boolean",
       alias: "v",
-      description: "Include on-disk path and file count for each entry.",
+      description: "Also show the on-disk path for each entry.",
       default: false,
     },
   },
@@ -64,17 +64,13 @@ const listSubcommand = defineCommand({
       return;
     }
     for (const c of collections) {
-      const missing = c.status === "missing" ? " (missing)" : "";
-      if (args.verbose) {
-        const count = c.status === "ok" ? countMd(c.path) : "?";
-        console.log(
-          `${c.name.padEnd(20)} ${c.source.padEnd(8)} ${count
-            .toString()
-            .padStart(5)} md  ${c.path}${missing}`,
-        );
-      } else {
-        console.log(`${c.name.padEnd(20)} ${c.source}${missing}`);
-      }
+      const count = c.status === "ok" ? countMd(c.path) : "?";
+      const cell = count.toString().padStart(5);
+      const tag = c.status === "missing" ? " (missing)" : "";
+      const tail = args.verbose
+        ? ` ${c.source.padEnd(8)}  ${c.path}`
+        : ` ${c.source}`;
+      console.log(`${c.name.padEnd(20)} ${cell} md ${tail}${tag}`);
     }
   },
 });
