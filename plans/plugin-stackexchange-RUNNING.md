@@ -75,12 +75,12 @@ End-to-end demoable: add the rest of the discovery edges and crawl every site li
 End-to-end demoable: on first run (or whenever `backfill_done = false`), plugin walks the user's full history page by page in the background. Per-run budget caps the work so a single run doesn't melt through quota; subsequent runs continue from where the last one stopped.
 
 **Acceptance:**
-- [ ] `state.cursors["<site>:<endpoint>"].backfill_page` (integer, default 0) + `backfill_done` (bool, default false) exist for every active (site, endpoint) pair.
-- [ ] Backward pass uses `?page=N&pagesize=100&order=desc&sort=creation&filter=<state.filter_id>&site=<site>`.
-- [ ] Per-run budget = 50 calls. Forward pass runs first; budget remainder feeds backward pass.
-- [ ] Truncated-pass cursor non-advance: if the budget runs out mid-page, `last_sync` (forward) and `backfill_page` (backward) do **not** advance.
-- [ ] `has_more === false` on a backward fetch flips `backfill_done = true` for that pair.
-- [ ] Progress reports per backward page (`"backfill stackoverflow/answers page 4 (N items, has_more)"`).
+- [x] `state.cursors["<site>:<endpoint>"].backfill_page` (integer, default 0) + `backfill_done` (bool, default false) exist for every active (site, endpoint) pair.
+- [x] Backward pass uses `?page=N&pagesize=100&order=desc&sort=creation&filter=<state.filter_id>&site=<site>`.
+- [x] Per-run budget = 50 calls. Forward pass runs first; budget remainder feeds backward pass; per-site `/questions/{ids}` batches also count against the same budget.
+- [x] Truncated-pass cursor non-advance: forward `last_sync` only advances on `drained=true`; backward `backfill_page` only advances by the count of fully-drained pages.
+- [x] `has_more === false` on a backward fetch flips `backfill_done = true` for that pair.
+- [x] Progress reports per backward page (`"backfill stackoverflow/answers page 4"`) and announces budget exhaustion (`"budget exhausted; N threads deferred to next run"`).
 
 ---
 
@@ -108,4 +108,5 @@ When starting implementation, this file is `plans/plugin-stackexchange-RUNNING.m
 | commit | summary |
 |--|--|
 | 2b436cb | Phase 1: walking skeleton — `/me/questions` forward sync on stackoverflow, full thread rendering, filter bootstrap. Plugin code lives under gitignored test.local/. |
-| _pending_ | Phase 2: all four discovery edges + multi-site fan-out — `discover.ts` per-endpoint ingestion, batched `/answers/{ids}` to resolve answer-comments → question_id, SE_SITES env, per-(site,endpoint) cursors. |
+| 14a08f2 | Phase 2: all four discovery edges + multi-site fan-out — `discover.ts` per-endpoint ingestion, batched `/answers/{ids}` to resolve answer-comments → question_id, SE_SITES env, per-(site,endpoint) cursors. |
+| _pending_ | Phase 3: backward backfill + per-run budget — `backwardPass` paginates history by creation date; 50-call shared budget; forward-first / backward-with-remainder; truncated passes don't advance their cursor. |
