@@ -53,18 +53,18 @@ End-to-end demoable: install the plugin, paste your access_token, run it. The qu
 End-to-end demoable: add the rest of the discovery edges and crawl every site listed in `SE_SITES`. A thread touched by multiple edges (e.g. you commented and bookmarked) writes one file with all relevant flags. One collection per site.
 
 **Acceptance:**
-- [ ] Manifest gains `SE_SITES` env (default `stackoverflow`); plugin parses it and crawls each site independently.
-- [ ] Manifest's `collections` is generated to include `stackexchange/<site>` for each listed site (or a hardcoded list of common sites if dynamic collections aren't supported by the manifest schema — verify against host).
-- [ ] Plugin adds `/me/answers`, `/me/comments`, `/me/favorites` forward calls, one per site.
-- [ ] Per-edge response → `question_id` set transformation:
-  - `/me/questions` → item's `question_id` (or `id` field on a question)
+- [x] Manifest gains `SE_SITES` env (default `stackoverflow`); plugin parses it and crawls each site independently.
+- [x] Manifest's `collections` lists a hardcoded set of common SE sites (`stackoverflow`, `serverfault`, `superuser`, `askubuntu`, `math`, `softwareengineering`, `codereview`, `stats`, `physics`, `tex`, `english`, `apple`). Power users can edit the manifest to add more — the plugin is gitignored under `test.local/`.
+- [x] Plugin adds `/me/answers`, `/me/comments`, `/me/favorites` forward calls, one per site.
+- [x] Per-edge response → `question_id` set transformation:
+  - `/me/questions` → item's `question_id`
   - `/me/answers` → item's `question_id` (each answer object carries it)
-  - `/me/comments` → item's `post_id` mapped to its parent question (`post_type === "question"` ⇒ id is the question; `post_type === "answer"` ⇒ need to resolve via the answer's `question_id`, which the filter must include)
-  - `/me/favorites` → item's `question_id` (favorites return question objects)
-- [ ] Union per-site, dedup, batched `/questions/{ids}` per site.
-- [ ] Frontmatter merges discovery flags: `my_question` + `my_answer_ids: [...]` + `my_comment_ids: [...]` + `bookmarked: true` all coexist when applicable.
-- [ ] Body markers (`**(your question)**`, `**(your answer)**`) appear inline on the user's contributions, derived from `owner.user_id` on each post matching the authenticated user. (User id resolved once per run via `/me?site=<site>`.)
-- [ ] Per-`(site, endpoint)` cursor keyed entries in `state.cursors`.
+  - `/me/comments` → item's `post_id` mapped to its parent question (`post_type === "question"` ⇒ id is the question; `post_type === "answer"` ⇒ batch-resolved via `/answers/{ids}` to get `question_id`)
+  - `/me/favorites` → item's `question_id`
+- [x] Union per-site, dedup, batched `/questions/{ids}` per site.
+- [x] Frontmatter merges discovery flags: `my_question` + `my_answer_ids: [...]` + `my_comment_ids: [...]` + `bookmarked: true` all coexist when applicable.
+- [x] Body markers (`**(your question)**`, `**(your answer)**`) appear inline on the user's contributions, derived directly from the per-thread `edges.my_question` / `edges.my_answer_ids` sets populated by the discovery endpoints. (Simpler than `/me?site=…` user-id resolution — the IDs come back to us directly.)
+- [x] Per-`(site, endpoint)` cursor keyed entries in `state.cursors`.
 
 ---
 
@@ -107,4 +107,5 @@ When starting implementation, this file is `plans/plugin-stackexchange-RUNNING.m
 
 | commit | summary |
 |--|--|
-| _pending_ | Phase 1: walking skeleton — `/me/questions` forward sync on stackoverflow, full thread rendering, filter bootstrap. Plugin code lives under gitignored test.local/. |
+| 2b436cb | Phase 1: walking skeleton — `/me/questions` forward sync on stackoverflow, full thread rendering, filter bootstrap. Plugin code lives under gitignored test.local/. |
+| _pending_ | Phase 2: all four discovery edges + multi-site fan-out — `discover.ts` per-endpoint ingestion, batched `/answers/{ids}` to resolve answer-comments → question_id, SE_SITES env, per-(site,endpoint) cursors. |
