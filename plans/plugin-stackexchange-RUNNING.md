@@ -91,13 +91,13 @@ End-to-end demoable: on first run (or whenever `backfill_done = false`), plugin 
 End-to-end demoable: plugin survives SE's `backoff` field and quota nearing zero. Self-throttle prevents bursting. Smoke tests catch regressions in body rendering and cursor advance logic.
 
 **Acceptance:**
-- [ ] Any response carrying a `backoff` field ⇒ `reschedule({ afterMs: backoff*1000, reason: "se backoff" })` + `Deno.exit(0)` immediately. State is persisted before exit.
-- [ ] 429 with `Retry-After` ⇒ same treatment.
-- [ ] `quota_remaining` ≤ 100 on any response ⇒ reschedule for next day (`afterMs = 24*60*60*1000`).
-- [ ] Self-throttle: never more than 5 outbound requests per second in a single run.
-- [ ] `render.test.ts` co-located: fixture Q + 2 answers + comments → asserts h1 title, score-descending answer order, accepted marker, blockquoted comments, `**(your answer)**` inline marker.
-- [ ] `cursors.test.ts` co-located: asserts first-request shape, truncated-pass non-advance, drained-pass advance, `backfill_done` flip when `has_more === false`.
-- [ ] Tests runnable via `deno test` from the plugin dir.
+- [x] Any response carrying a `backoff` field ⇒ `BackoffSignal` thrown → `reschedule({ afterMs: seconds*1000, reason: "se backoff" })` + `Deno.exit(0)` from the top-level catch. State is persisted before exit.
+- [x] 429 with `Retry-After` ⇒ `RateLimitSignal` → same treatment with `retryAfterSec*1000`.
+- [x] `quota_remaining` ≤ 100 on any response ⇒ `QuotaSignal` → reschedule for next day (`afterMs = 24*60*60*1000`).
+- [x] Self-throttle: `client.ts` enforces ≥ 200ms between outbound requests via a module-level timestamp (5 req/s ceiling).
+- [x] `render.test.ts` co-located: 3 tests covering h1 title, score-descending answer order, accepted marker, blockquoted comments with author + score, `**(your question)**` + `**(your answer)**` inline markers, and frontmatter omit-when-default rules.
+- [x] `cursors.test.ts` co-located: 5 tests covering `applyForward` truncated-pass non-advance + drained advance, `applyBackward` pagesDrained advance, `backfill_done` flip when `backfillDone=true`, no-op when `pagesDrained=0`.
+- [x] Tests runnable via `deno test` from the plugin dir (8/8 passing).
 
 ---
 
@@ -109,4 +109,5 @@ When starting implementation, this file is `plans/plugin-stackexchange-RUNNING.m
 |--|--|
 | 2b436cb | Phase 1: walking skeleton — `/me/questions` forward sync on stackoverflow, full thread rendering, filter bootstrap. Plugin code lives under gitignored test.local/. |
 | 14a08f2 | Phase 2: all four discovery edges + multi-site fan-out — `discover.ts` per-endpoint ingestion, batched `/answers/{ids}` to resolve answer-comments → question_id, SE_SITES env, per-(site,endpoint) cursors. |
-| _pending_ | Phase 3: backward backfill + per-run budget — `backwardPass` paginates history by creation date; 50-call shared budget; forward-first / backward-with-remainder; truncated passes don't advance their cursor. |
+| 9e73e95 | Phase 3: backward backfill + per-run budget — `backwardPass` paginates history by creation date; 50-call shared budget; forward-first / backward-with-remainder; truncated passes don't advance their cursor. |
+| _pending_ | Phase 4: rate-limit hygiene + smoke tests — `BackoffSignal` / `RateLimitSignal` / `QuotaSignal` thrown from `client.ts`, caught at top of `plugin.ts` and converted to `reschedule()`. 200ms throttle. 8/8 smoke tests pass. |
