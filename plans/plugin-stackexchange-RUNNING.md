@@ -32,17 +32,17 @@
 End-to-end demoable: install the plugin, paste your access_token, run it. The questions *you asked on stackoverflow.com* land as md files (full thread bodies: Q + answers sorted by score + comments + your-post markers + slim frontmatter). Refetch on activity bump works (idempotent rewrite). Forward pointer only. Hardcoded site = `stackoverflow`, hardcoded endpoint = `/me/questions`.
 
 **Acceptance:**
-- [ ] `test.local/plugins/stackexchange/{package.json, deno.json, plugin.ts}` exist; plugin loads under the host without errors.
-- [ ] Manifest declares `display_name`, `tagline`, `schedule: 0 */6 * * *`, `collections: ["stackexchange/stackoverflow"]`, `net: ["api.stackexchange.com"]`, env entries for `SE_KEY` + `SE_ACCESS_TOKEN`.
-- [ ] Missing `SE_KEY` or `SE_ACCESS_TOKEN` throws with a clear message before any HTTP call.
-- [ ] On first run, plugin POSTs to `/filters/create` with the desired-fields constant, caches the returned id in `state.filter_id`.
-- [ ] Plugin GETs `/me/questions?site=stackoverflow&fromdate=<last_sync>&order=desc&sort=activity&filter=<state.filter_id>&pagesize=100`, paginates via `has_more` + `page`, collects `question_id` set.
-- [ ] Plugin batches `/questions/{ids}?site=stackoverflow&filter=<state.filter_id>` (up to 100 ids per call), pulls each thread with nested answers + comments.
-- [ ] For each thread, writes `<question_id>.md` to collection `stackexchange/stackoverflow/` with frontmatter (`id`, `site`, `title`, `url`, `tags`, `score`, `answer_count`, `has_accepted`, `my_question: true`, `asked_at`, `last_activity_at`, `captured_at`) and the documented body shape (h1 title, question body, blockquoted comments, `## Answer by … — N ↑` headers sorted by score desc, accepted marker, your-post inline markers).
-- [ ] Omit-when-default rule applied (e.g. `my_answer_ids` not emitted when empty).
-- [ ] After a clean forward pass, `state.cursors["stackoverflow:questions"].last_sync = run_start_unix`.
-- [ ] Activity bump re-pulls the thread and overwrites the file (idempotent).
-- [ ] `progress({ message })` reports start, filter bootstrap (only first run), forward pass count, threads fetched, done.
+- [x] `test.local/plugins/stackexchange/{package.json, deno.json, plugin.ts}` exist; plugin loads under the host without errors.
+- [x] Manifest declares `display_name`, `tagline`, `schedule: 0 */6 * * *`, `collections: ["stackexchange/stackoverflow"]`, `net: ["api.stackexchange.com"]`, env entries for `SE_KEY` + `SE_ACCESS_TOKEN`.
+- [x] Missing `SE_KEY` or `SE_ACCESS_TOKEN` throws with a clear message before any HTTP call.
+- [x] On first run, plugin POSTs to `/filters/create` with the desired-fields constant, caches the returned id in `state.filter_id`.
+- [x] Plugin GETs `/me/questions?site=stackoverflow&fromdate=<last_sync>&order=desc&sort=activity&filter=<state.filter_id>&pagesize=100`, paginates via `has_more` + `page`, collects `question_id` set.
+- [x] Plugin batches `/questions/{ids}?site=stackoverflow&filter=<state.filter_id>` (up to 100 ids per call), pulls each thread with nested answers + comments.
+- [x] For each thread, writes `<question_id>.md` to collection `stackexchange/stackoverflow/` with frontmatter (`id`, `site`, `title`, `url`, `tags`, `score`, `answer_count`, `has_accepted`, `my_question: true`, `asked_at`, `last_activity_at`, `captured_at`) and the documented body shape (h1 title, question body, blockquoted comments, `## Answer by … — N ↑` headers sorted by score desc, accepted marker, your-post inline markers).
+- [x] Omit-when-default rule applied (e.g. `my_answer_ids` not emitted when empty).
+- [x] After a clean forward pass, `state.cursors["stackoverflow:questions"].last_sync = run_start_unix`.
+- [x] Activity bump re-pulls the thread and overwrites the file (idempotent).
+- [x] `progress({ message })` reports start, filter bootstrap (only first run), forward pass count, threads fetched, done.
 
 ---
 
@@ -107,4 +107,4 @@ When starting implementation, this file is `plans/plugin-stackexchange-RUNNING.m
 
 | commit | summary |
 |--|--|
-|  |  |
+| _pending_ | Phase 1: walking skeleton — `/me/questions` forward sync on stackoverflow, full thread rendering, filter bootstrap. Plugin code lives under gitignored test.local/. |
