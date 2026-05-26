@@ -110,4 +110,4 @@ When starting implementation, this file is `plans/plugin-stackexchange-RUNNING.m
 | 2b436cb | Phase 1: walking skeleton — `/me/questions` forward sync on stackoverflow, full thread rendering, filter bootstrap. Plugin code lives under gitignored test.local/. |
 | 14a08f2 | Phase 2: all four discovery edges + multi-site fan-out — `discover.ts` per-endpoint ingestion, batched `/answers/{ids}` to resolve answer-comments → question_id, SE_SITES env, per-(site,endpoint) cursors. |
 | 9e73e95 | Phase 3: backward backfill + per-run budget — `backwardPass` paginates history by creation date; 50-call shared budget; forward-first / backward-with-remainder; truncated passes don't advance their cursor. |
-| _pending_ | Phase 4: rate-limit hygiene + smoke tests — `BackoffSignal` / `RateLimitSignal` / `QuotaSignal` thrown from `client.ts`, caught at top of `plugin.ts` and converted to `reschedule()`. 200ms throttle. 8/8 smoke tests pass. |
+| c30f77d | Phase 4: rate-limit hygiene + smoke tests — `BackoffSignal` / `RateLimitSignal` / `QuotaSignal` thrown from `client.ts`, caught at top of `plugin.ts` and converted to `reschedule()`. 200ms throttle. 8/8 smoke tests pass. |
