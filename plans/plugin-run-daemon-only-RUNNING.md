@@ -103,3 +103,4 @@ Rename `plans/plugin-run-daemon-only-RUNNING.md` → `plans/plugin-run-daemon-on
 | commit | summary |
 | --- | --- |
 | d65ebcd | phase 1: kicks.ts module + signalDaemon, tests pinning I/O contract |
+| 6daf364 | phase 2: daemon wires scanKicks + SIGUSR1 + startup drain, openRun honors presupplied runId |

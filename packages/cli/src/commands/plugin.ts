@@ -1,11 +1,12 @@
 import { defineCommand } from "citty";
 import { spawn } from "node:child_process";
-import { mkdirSync, openSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { resolveWatchPath } from "../watch-paths";
 import { appendToInbox, type WatchTarget } from "../inbox";
 import { Cron } from "croner";
+import pc from "picocolors";
 import { formatRelTime } from "../relative-time";
 import { installPlugin, MissingInputsError, type InstallOptions, type InstalledPlugin } from "../plugin-install";
 import {
@@ -16,10 +17,13 @@ import {
   readPackage,
 } from "../plugin-install-interactive";
 import { parseSchedule } from "../schedule-parser";
-import { runPlugin, PLUGIN_NOT_INSTALLED } from "../plugin-run";
+import { hasKick, signalDaemon, writeKick, type KickOverrides } from "../kicks";
+import { generateRunId } from "../run-log";
+import { isLockHeld } from "../locks";
+import { pluginDir as pluginDirOf } from "../home";
 import { listPlugins } from "../plugin-list";
 import { removePlugin } from "../plugin-remove";
-import { ditherText, fitOneLine, printTable, promptConfirm } from "../prompt";
+import { ditherText, printTable, promptConfirm } from "../prompt";
 import { formatRelPast } from "../relative-time";
 import { openBrowser } from "../open-browser";
 import { resolveHome, runResultPath } from "../home";
@@ -120,23 +124,23 @@ function printInstallHint(name: string, fromRunPath: boolean): void {
     try {
       const next = new Cron(parseSchedule(grants.schedule)).nextRun();
       if (next) {
-        process.stdout.write(`\nnext run: ${formatRelTime(next.getTime())} (${next.toISOString()})\n`);
+        process.stdout.write(pc.dim(`\nnext run: ${formatRelTime(next.getTime())} (${next.toISOString()})\n`));
       }
     } catch {
       // Invalid schedule — daemon will surface the real error at fire time.
     }
-    process.stdout.write(`next: dither plugin run ${name} (manual one-shot fire)\n`);
+    process.stdout.write(pc.dim(`next: dither plugin run ${name} (manual one-shot fire)\n`));
     return;
   }
   const watch = grants.watch?.collections ?? [];
   if (watch.length > 0) {
     process.stdout.write(
-      `\nnote: runs automatically when files change in: ${watch.join(", ")}\n` +
-        `      'dither plugin run ${name}' fires it once.\n`,
+      pc.dim(`\nnote: runs automatically when files change in: ${watch.join(", ")}\n` +
+        `      'dither plugin run ${name}' fires it once.\n`),
     );
     return;
   }
-  process.stdout.write(`\nnext: dither plugin run ${name}\n`);
+  process.stdout.write(pc.dim(`\nnext: dither plugin run ${name}\n`));
 }
 
 
@@ -367,10 +371,6 @@ function readGrantArgs(args: GrantArgs) {
   };
 }
 
-function appendStringArg(argv: string[], flag: string, value: string | undefined): void {
-  if (value !== undefined) argv.push(flag, value);
-}
-
 const installSubcommand = defineCommand({
   meta: {
     name: "install",
@@ -399,7 +399,7 @@ const installSubcommand = defineCommand({
       ...grants,
       ...(args.symlink ? { symlink: true } : {}),
     });
-    console.log(`installed ${result.name}@${result.version}${args.symlink ? " (symlinked)" : ""}`);
+    console.log(`\ninstalled ${result.name}@${result.version}${args.symlink ? " (symlinked)" : ""}`);
     console.log(`  → ${result.dest}`);
     if (result.protectedInstall) await handleProtectedInstall(result.protectedInstall);
     await ensureDaemonForPlugin(result.name).catch(() => {});
@@ -408,11 +408,33 @@ const installSubcommand = defineCommand({
   },
 });
 
+/**
+ * Ensure the daemon is up. The CLI is now a thin client — the daemon is
+ * the sole supervisor for plugin runs — so every `plugin run` ensures
+ * liveness before writing a kick. Reuses the existing startDaemon path
+ * (lock-gated, polls the pid file). Dead daemon → spawn; alive → no-op.
+ */
+async function ensureDaemonRunning(): Promise<void> {
+  const pid = await readDaemonPid();
+  if (pid) return;
+  await startDaemon();
+}
+
+function buildOverrides(grants: ReturnType<typeof readGrantArgs>): KickOverrides {
+  const out: KickOverrides = {};
+  if (Object.keys(grants.env).length > 0) out.env = grants.env;
+  if (grants.envRefs.length > 0) out.envRefs = grants.envRefs;
+  if (Object.keys(grants.files).length > 0) out.files = grants.files;
+  if (grants.net.length > 0) out.net = grants.net;
+  if (grants.collections.length > 0) out.collections = grants.collections;
+  return out;
+}
+
 const runSubcommand = defineCommand({
   meta: {
     name: "run",
     description:
-      "Fire a plugin once. Accepts an installed plugin name, or a path to a plugin directory (auto-installs via 'dither plugin install' first).",
+      "Fire a plugin once. The daemon supervises the run; this command writes a kick and tails the journal until it finishes.",
   },
   args: {
     target: {
@@ -423,14 +445,7 @@ const runSubcommand = defineCommand({
     detach: {
       type: "boolean",
       description:
-        "Fork the run into the background and return immediately. Stdout/stderr are captured to a log file.",
-      default: false,
-    },
-    verbose: {
-      type: "boolean",
-      alias: "v",
-      description:
-        "Forward plugin stderr (Deno output, console.log/error) to your terminal in real time.",
+        "Skip the tail and exit immediately after kicking the daemon. Use 'dither plugin runs <name>' to tail later.",
       default: false,
     },
     "no-auto-open": {
@@ -479,31 +494,20 @@ const runSubcommand = defineCommand({
       printInstallHint(installed.name, true);
     }
 
-    if (args.detach) {
-      const home = resolveHome();
-      const logsDir = join(home, "logs");
-      mkdirSync(logsDir, { recursive: true });
-      const logPath = join(logsDir, `${pluginName}-${Date.now()}.log`);
-      const fd = openSync(logPath, "a");
-      const childArgs = [process.argv[1]!, "plugin", "run", pluginName];
-      if (args.backfill) childArgs.push("--backfill");
-      if (args.verbose) childArgs.push("--verbose");
-      if (args["no-auto-open"]) childArgs.push("--no-auto-open");
-      if (runOverrides) {
-        appendStringArg(childArgs, "--env", args.env);
-        appendStringArg(childArgs, "--allow-env", args["allow-env"]);
-        appendStringArg(childArgs, "--file", args.file);
-        appendStringArg(childArgs, "--allow-net", args["allow-net"]);
-        appendStringArg(childArgs, "--allow-collection", args["allow-collection"]);
-      }
-      const child = spawn(process.execPath, childArgs, {
-        detached: true,
-        stdio: ["ignore", fd, fd],
-      });
-      child.unref();
-      console.log(`detached run for ${pluginName} (pid ${child.pid})`);
-      console.log(`  logs: ${logPath}`);
-      return { detached: true, pid: child.pid, logPath };
+    // Pre-check: a pending kick or a held lock means the plugin is already
+    // queued/running. Reject rather than coalesce — keeps the model simple
+    // (one kick per plugin) and surfaces a clear "tail-existing" message.
+    if (hasKick(pluginName) || isLockHeld(pluginName)) {
+      process.stderr.write(
+        `${pluginName} is already running — tail with 'dither plugin runs ${pluginName}'\n`,
+      );
+      process.exit(1);
+    }
+
+    if (!existsSync(pluginDirOf(pluginName))) {
+      process.stderr.write(`error: plugin not installed: '${pluginName}'\n`);
+      process.stderr.write(`hint: run 'dither plugin list' to see installed plugins.\n`);
+      process.exit(1);
     }
 
     if (args.backfill) {
@@ -517,61 +521,29 @@ const runSubcommand = defineCommand({
       console.log(`backfill: seeded inbox with ${seeded} entries`);
     }
 
-    const tty = process.stderr.isTTY;
-    let result;
-    try {
-      result = await runPlugin({
-        name: pluginName,
-        ...runOverrides,
-        ...(args.backfill ? { trigger: "watch" as const } : {}),
-        verbose: args.verbose,
-        onProgress: (msg) => {
-          if (tty) {
-            // Middle-truncate so the line fits on one terminal row.
-            // `\r\x1b[K` only clears one visual line — if the message
-            // wraps, the next rewrite leaves the overflow as garbage.
-            const cols = process.stderr.columns ?? 80;
-            process.stderr.write(`\r\x1b[K${fitOneLine(msg.message, cols)}`);
-          } else {
-            process.stderr.write(`${msg.message}\n`);
-          }
-        },
-      });
-    } catch (err) {
-      if (tty) process.stderr.write("\r\x1b[K");
-      const e = err as Error & { code?: string; exitCode?: number };
-      if (e?.code === FDA_REQUIRED) {
-        process.stderr.write(`${e.message}\n`);
-        if (!args["no-auto-open"] && process.stdin.isTTY && process.stderr.isTTY) {
-          await maybeOpenFdaSettings();
-        }
-        process.exit(e.exitCode ?? 1);
-      }
-      if (e?.code === PLUGIN_NOT_INSTALLED) {
-        process.stderr.write(`error: ${e.message}\n`);
-        process.stderr.write(`hint: run 'dither plugin list' to see installed plugins.\n`);
-        process.exit(1);
-      }
-      // Plugin process exited non-zero. Without --verbose the ChildProcess
-      // stack trace citty would print is noise — replay via `plugin runs`
-      // shows the actual plugin output. With --verbose, plugin stderr
-      // already streamed live; keep the throw so the stack lands too.
-      if (e?.exitCode !== undefined && !args.verbose) {
-        process.stderr.write(`error: ${e.message}\n`);
-        process.stderr.write(
-          `hint: run 'dither plugin runs ${pluginName}' to replay this run's output.\n`,
-        );
-        process.exit(e.exitCode ?? 1);
-      }
-      throw err;
-    }
-    if (tty) process.stderr.write("\r\x1b[K");
+    // CLI assigns the runId so the tail can follow before the daemon has
+    // opened the journal. The daemon honors a presupplied id in openRun.
+    const runId = generateRunId(pluginName);
+    const overrides = runOverrides ? buildOverrides(runOverrides) : {};
+    await writeKick(pluginName, {
+      runId,
+      kickedAt: new Date().toISOString(),
+      ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
+    });
+    await ensureDaemonRunning();
+    signalDaemon();
 
-    console.log(`run ${result.runId} added ${result.added.length} documents:`);
-    for (const path of result.added) {
-      console.log(`  ${path}`);
+    if (args.detach) {
+      console.log(`kicked ${pluginName} (run ${runId})`);
+      console.log(`  tail with: dither plugin runs ${runId}`);
+      return { runId, detached: true };
     }
-    return result;
+
+    // Tail the journal. Ctrl-c during the tail stops tailing only — the
+    // daemon owns the run. The "detached" hint surfaces on user-initiated
+    // abort so accidental key presses don't read as a lost run.
+    await tailRun(runId);
+    return { runId };
   },
 });
 

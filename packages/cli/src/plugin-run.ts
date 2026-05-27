@@ -25,12 +25,6 @@ import { claimInbox, clearInflight, restoreInflight, type WatchTarget } from "./
 import { clearRefire, decideRunOutcome, readRefire, writeRefire } from "./refire";
 import { resolveWatchPath } from "./watch-paths";
 
-export interface ProgressMessage {
-  message: string;
-  done?: number;
-  total?: number;
-}
-
 export interface RunOptions {
   name: string;
   trigger?: "scheduled" | "watch" | "manual";
@@ -47,10 +41,6 @@ export interface RunOptions {
   /** Files that triggered this run. Surfaced in input.json.targets. Watch
    *  fires usually leave this unset — the runner claims the inbox itself. */
   targets?: WatchTarget[];
-  /** Called for every `progress()` NDJSON message the plugin emits on stderr. */
-  onProgress?: (msg: ProgressMessage) => void;
-  /** Forward plugin stderr (Deno output, console.log/error) to the host's stderr in real time. */
-  verbose?: boolean;
   /** Pre-supplied runId. The kick path uses this so the CLI's tail can
    *  follow the journal before the daemon opens it. */
   runId?: string;
@@ -63,7 +53,6 @@ export interface RunResult {
 
 /** Error code stamped on errors that signal a known, clean failure path. */
 export const PLUGIN_NOT_INSTALLED = "PLUGIN_NOT_INSTALLED";
-export const PLUGIN_ALREADY_RUNNING = "PLUGIN_ALREADY_RUNNING";
 
 const DITHER_ENV_VARS = [
   "DITHER_RUN_DIR",
@@ -86,13 +75,20 @@ interface ParsedFrontmatter {
   collection?: unknown;
 }
 
+interface ProgressMessage {
+  kind: "progress";
+  message: string;
+  done?: number;
+  total?: number;
+}
+
 interface RescheduleMessage {
   kind: "reschedule";
   afterMs: number;
   reason?: string;
 }
 
-type ControlMessage = (ProgressMessage & { kind: "progress" }) | RescheduleMessage;
+type ControlMessage = ProgressMessage | RescheduleMessage;
 
 function denoPermissionList(kind: string, entries: string[]): string {
   const entry = entries.find((e) => e.includes(","));
@@ -227,11 +223,9 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
   // watch, and manual fires all funnel through the same lock.
   const lock = await acquireLock(opts.name);
   if (!lock) {
-    const err = new Error(
+    throw new Error(
       `Plugin '${opts.name}' is already running. Wait for it to finish, or check 'dither status'.`,
-    ) as Error & { code?: string };
-    err.code = PLUGIN_ALREADY_RUNNING;
-    throw err;
+    );
   }
 
   const trigger = opts.trigger ?? "manual";
@@ -440,10 +434,9 @@ async function runPluginLocked(
 
     // We sniff stderr only enough to (a) extract `progress()` control lines
     // and (b) detect FDA/EPERM on a protected path so we can throw an
-    // error tagged `code: FDA_REQUIRED` with a clean hint. The full stream goes to the run
-    // journal (`stderr` events). It is *not* mirrored to the host's stderr
-    // unless `verbose` is set — otherwise Deno's coloured stack traces leak
-    // into the user's terminal alongside the helpful headline.
+    // error tagged `code: FDA_REQUIRED` with a clean hint. The full stream
+    // goes to the run journal as `stderr` events; the CLI tail surfaces
+    // those live, so no separate verbose path is needed.
     let sawProtectedEpermPath: string | null = null;
     let lastReschedule: { afterMs: number; reason?: string } | null = null;
 
@@ -472,9 +465,6 @@ async function runPluginLocked(
               done: msg.done,
               total: msg.total,
             });
-            if (opts.onProgress) {
-              opts.onProgress({ message: msg.message, done: msg.done, total: msg.total });
-            }
           } else {
             // Last reschedule wins if a plugin sends multiple. Journal each.
             lastReschedule = { afterMs: msg.afterMs, reason: msg.reason };
@@ -487,7 +477,6 @@ async function runPluginLocked(
           return;
         }
         void journal.append({ kind: "stderr", line });
-        if (opts.verbose) process.stderr.write(`${line}\n`);
         if (isMacOS() && sawProtectedEpermPath === null && /PermissionDenied|EPERM/i.test(line)) {
           const path = findProtectedPathInError(line);
           if (path) sawProtectedEpermPath = path;

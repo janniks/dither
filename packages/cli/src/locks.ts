@@ -124,6 +124,25 @@ export async function acquire(name: string): Promise<LockHandle | null> {
   return null;
 }
 
+/**
+ * Read-only "is this lock held by a live process?" probe. Lets callers
+ * pre-check a busy plugin without an acquire/release dance. Returns
+ * false on missing files, malformed contents, or stale (dead) holders.
+ */
+export function isLockHeld(name: string): boolean {
+  const path = lockPath(name);
+  if (!existsSync(path)) return false;
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf-8");
+  } catch {
+    return false;
+  }
+  const pid = Number.parseInt(raw.trim(), 10);
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  return isPidAlive(pid);
+}
+
 export async function release(handle: LockHandle): Promise<void> {
   try {
     const raw = await readFile(handle.path, "utf-8");

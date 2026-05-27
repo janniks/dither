@@ -170,8 +170,14 @@ describe("CLI dispatch", () => {
     expect(searchOut).toContain("notes/memo.md");
   });
 
-  it("dither plugin install + run end-to-end via subcommands", async () => {
+  // The CLI's `plugin run` now hands the run off to the daemon (kick +
+  // SIGUSR1). Driving that end-to-end from a unit test would require
+  // spawning a real daemon — out of scope here. Production callers reduce
+  // to one (`fireWithSuppress` inside the daemon); tests use `runPlugin`
+  // directly, which stays importable.
+  it("`runPlugin` runs an installed plugin and promotes its outputs", async () => {
     const { main } = await import("./main");
+    const { runPlugin } = await import("./plugin-run");
 
     await captureLogs(async () => {
       await runCommand(main, {
@@ -181,11 +187,7 @@ describe("CLI dispatch", () => {
 
     expect(existsSync(join(home, "plugins", "import-folder"))).toBe(true);
 
-    await captureLogs(async () => {
-      await runCommand(main, {
-        rawArgs: ["plugin", "run", "import-folder"],
-      });
-    });
+    await runPlugin({ name: "import-folder" });
 
     const importedDir = join(home, "entries", "imported");
     expect(existsSync(importedDir)).toBe(true);

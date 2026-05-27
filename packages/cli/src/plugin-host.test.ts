@@ -609,7 +609,7 @@ await writeEntry({ collection: "notes/personal", body: "ok" });
     rmSync(dir, { recursive: true, force: true });
   }, 60000);
 
-  it("forwards progress() messages through onProgress and hides them from stderr", async () => {
+  it("journals progress() messages as `progress` events", async () => {
     const progDir = mkdtempSync(join(tmpdir(), "dither-progress-plugin-"));
     writeFileSync(
       join(progDir, "package.json"),
@@ -631,16 +631,17 @@ progress({ message: "done", done: 2, total: 2 });
 
     const { installPlugin } = await import("./plugin-install");
     const { runPlugin } = await import("./plugin-run");
+    const { readRun } = await import("./run-log");
 
     await installPlugin({ source: progDir });
-    const seen: { message: string; done?: number; total?: number }[] = [];
-    const result = await runPlugin({
-      name: "progresser",
-      onProgress: (m) => seen.push(m),
-    });
-
+    const result = await runPlugin({ name: "progresser" });
     expect(result.added.length).toBe(1);
-    expect(seen).toEqual([
+
+    const events = await readRun(result.runId);
+    const progress = events
+      .filter((e) => e.kind === "progress")
+      .map((e) => ({ message: e.message, done: e.done, total: e.total }));
+    expect(progress).toEqual([
       { message: "starting", done: undefined, total: undefined },
       { message: "halfway", done: 1, total: 2 },
       { message: "done", done: 2, total: 2 },
