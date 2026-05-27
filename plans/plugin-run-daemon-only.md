@@ -96,7 +96,9 @@ Acceptance:
 
 ## Finalize
 
-Rename `plans/plugin-run-daemon-only-RUNNING.md` → `plans/plugin-run-daemon-only.md` with any final edits in the same commit.
+All six phases shipped. The daemon is the sole plugin supervisor; the CLI is a thin client (kick + tail). `runPlugin` is decomposed into Supervisor + Promotion + a small orchestrator (~82 lines); the per-plugin lock lives in `fireWithSuppress`. New filesystem channel `<home>/kicks/<plugin>.json` mirrors `refires/` exactly. SIGUSR1 is the daemon's drain signal; SIGHUP keeps its existing reload semantics.
+
+Pre-existing test failures in `lifecycle.test.ts`, `commands/collection.test.ts`, and `commands/status.test.ts` were left alone — they come from parallel-agent WIP on `status.ts`, `prompt.ts`, and `home-nav.tsx`, unrelated to this refactor.
 
 ## Phase log
 
@@ -107,4 +109,4 @@ Rename `plans/plugin-run-daemon-only-RUNNING.md` → `plans/plugin-run-daemon-on
 | dae6ee8 | phase 3: CLI plugin run X kicks the daemon + tails; drops --verbose, onProgress, old --detach |
 | a411c9a | phase 4: lock moves from runPlugin into fireWithSuppress |
 | 9f81462 | phase 5: extract Supervisor (spawn + control parsing + FDA + childPid) |
-| (phase6) | phase 6: extract Promotion (planPromotion + copyAdded + index-defer) |
+| 49ce473 | phase 6: extract Promotion (planPromotion + copyAdded + index-defer) |
