@@ -14,6 +14,7 @@ import { inboxHasItems, recoverOrphanInflight } from "./inbox";
 import { Refirer } from "./refirer";
 import { readRefire } from "./refire";
 import { scanKicks, type KickPayload } from "./kicks";
+import { acquire as acquireLock, release as releaseLock } from "./locks";
 import { qmdReconcile, clearInflightJobs, needsReindexPath } from "./daemon-jobs";
 
 /**
@@ -89,6 +90,17 @@ async function fireWithSuppress(
   }
   detector.record(source, name, true);
 
+  // Single-arbiter for "is this plugin running right now". All four fire
+  // sources (Scheduler, Watcher, Refirer, kick path) flow through here, so
+  // a contested plugin fires in lock-acquire order rather than fanning out.
+  // The lock used to live in `runPlugin`; moving it here makes runPlugin a
+  // pure orchestrator that doesn't import locks at all.
+  const lock = await acquireLock(name);
+  if (!lock) {
+    console.error(`[daemon] ${trigger} fire of '${name}' skipped — already running`);
+    return;
+  }
+
   try {
     const result = await runPlugin({
       name,
@@ -100,6 +112,8 @@ async function fireWithSuppress(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[daemon] ${trigger} fire of '${name}' failed: ${message}`);
+  } finally {
+    await releaseLock(lock);
   }
 
   // Pick up any refire row the run just wrote (plugin asked to be refired,

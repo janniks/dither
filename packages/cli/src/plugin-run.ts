@@ -12,12 +12,7 @@ import { needsReindexPath } from "./daemon-jobs";
 import { getGlobalEnv } from "./global-env";
 import { resolveCollection, validateCollectionPath } from "./collection-registry";
 import { grantsCover, validateGrantPattern } from "./grants";
-import {
-  acquire as acquireLock,
-  release as releaseLock,
-  acquireTheme,
-  releaseTheme,
-} from "./locks";
+import { acquireTheme, releaseTheme } from "./locks";
 import { openRun, type RunHandle } from "./run-log";
 import { isMacOS, findProtectedPathInError, formatFdaError, FDA_REQUIRED } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
@@ -219,14 +214,11 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
     throw err;
   }
 
-  // Single-arbiter check: only one run of this plugin at a time. Schedule,
-  // watch, and manual fires all funnel through the same lock.
-  const lock = await acquireLock(opts.name);
-  if (!lock) {
-    throw new Error(
-      `Plugin '${opts.name}' is already running. Wait for it to finish, or check 'dither status'.`,
-    );
-  }
+  // The per-plugin lock used to live here but moved into the daemon's
+  // `fireWithSuppress` — the lock is the daemon's invariant, and the
+  // daemon is the only production caller. Tests can still call runPlugin
+  // directly (story 10); two concurrent test runs would race the on-disk
+  // state, but that's a test-author concern.
 
   const trigger = opts.trigger ?? "manual";
   const journal = await openRun(opts.name, trigger, opts.runId);
@@ -293,8 +285,6 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
       })
       .catch(() => {});
     throw err;
-  } finally {
-    await releaseLock(lock);
   }
 }
 

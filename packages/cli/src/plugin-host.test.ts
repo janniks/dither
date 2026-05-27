@@ -697,26 +697,12 @@ await writeEntry({
     rmSync(counterDir, { recursive: true, force: true });
   }, 60000);
 
-  it("two concurrent runs of the same plugin: one wins, the other rejects", async () => {
-    const { installPlugin } = await import("./plugin-install");
-    const { runPlugin } = await import("./plugin-run");
-
-    await installPlugin({ source: FIXTURE_PATH });
-
-    const [a, b] = await Promise.allSettled([
-      runPlugin({ name: "import-folder" }),
-      runPlugin({ name: "import-folder" }),
-    ]);
-
-    const fulfilled = [a, b].filter((r) => r.status === "fulfilled");
-    const rejected = [a, b].filter((r) => r.status === "rejected");
-    expect(fulfilled).toHaveLength(1);
-    expect(rejected).toHaveLength(1);
-    expect((rejected[0] as PromiseRejectedResult).reason.message).toMatch(/already running/);
-
-    // Lock file released after the winner finishes.
-    expect(existsSync(join(home, "locks", "import-folder.lock"))).toBe(false);
-  }, 60000);
+  // The per-plugin lock used to live in runPlugin; it now lives in
+  // fireWithSuppress (daemon-side). runPlugin itself no longer single-
+  // arbiters — it's a pure orchestrator. The four daemon fire sources
+  // (Scheduler, Watcher, Refirer, Kicker) all funnel through the one
+  // lock-acquiring entry point, so the "one wins, one rejects" property
+  // is now a property of fireWithSuppress, not runPlugin.
 
   it("captures a final unterminated stderr reschedule before run completion", async () => {
     vi.resetModules();
