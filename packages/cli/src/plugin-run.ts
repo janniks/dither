@@ -1,7 +1,6 @@
 import { mkdir, readFile, writeFile, readdir, copyFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import matter from "gray-matter";
 import { pluginDir as pluginDirOf, resolveHome } from "./home";
@@ -14,10 +13,11 @@ import { resolveCollection, validateCollectionPath } from "./collection-registry
 import { grantsCover, validateGrantPattern } from "./grants";
 import { acquireTheme, releaseTheme } from "./locks";
 import { openRun, type RunHandle } from "./run-log";
-import { isMacOS, findProtectedPathInError, formatFdaError, FDA_REQUIRED } from "./tcc-hint";
+import { formatFdaError, FDA_REQUIRED } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
 import { claimInbox, clearInflight, restoreInflight, type WatchTarget } from "./inbox";
 import { clearRefire, decideRunOutcome, readRefire, writeRefire } from "./refire";
+import { supervise } from "./supervisor";
 import { resolveWatchPath } from "./watch-paths";
 
 export interface RunOptions {
@@ -70,21 +70,6 @@ interface ParsedFrontmatter {
   collection?: unknown;
 }
 
-interface ProgressMessage {
-  kind: "progress";
-  message: string;
-  done?: number;
-  total?: number;
-}
-
-interface RescheduleMessage {
-  kind: "reschedule";
-  afterMs: number;
-  reason?: string;
-}
-
-type ControlMessage = ProgressMessage | RescheduleMessage;
-
 function denoPermissionList(kind: string, entries: string[]): string {
   const entry = entries.find((e) => e.includes(","));
   if (entry) {
@@ -93,33 +78,6 @@ function denoPermissionList(kind: string, entries: string[]): string {
     );
   }
   return entries.join(",");
-}
-
-function parseControl(line: string): ControlMessage | null {
-  if (!line || line[0] !== "{") return null;
-  try {
-    const obj = JSON.parse(line) as Record<string, unknown>;
-    if (obj._dither === "progress") {
-      if (typeof obj.message !== "string") return null;
-      return {
-        kind: "progress",
-        message: obj.message,
-        done: typeof obj.done === "number" ? obj.done : undefined,
-        total: typeof obj.total === "number" ? obj.total : undefined,
-      };
-    }
-    if (obj._dither === "reschedule") {
-      if (typeof obj.afterMs !== "number" || obj.afterMs <= 0) return null;
-      return {
-        kind: "reschedule",
-        afterMs: obj.afterMs,
-        reason: typeof obj.reason === "string" ? obj.reason : undefined,
-      };
-    }
-    return null;
-  } catch {
-    return null;
-  }
 }
 
 interface PromoteCandidate {
@@ -422,83 +380,22 @@ async function runPluginLocked(
       DITHER_PLUGIN_NAME: opts.name,
     };
 
-    // We sniff stderr only enough to (a) extract `progress()` control lines
-    // and (b) detect FDA/EPERM on a protected path so we can throw an
-    // error tagged `code: FDA_REQUIRED` with a clean hint. The full stream
-    // goes to the run journal as `stderr` events; the CLI tail surfaces
-    // those live, so no separate verbose path is needed.
-    let sawProtectedEpermPath: string | null = null;
-    let lastReschedule: { afterMs: number; reason?: string } | null = null;
-
+    // Spawn + stderr handling + control-message parsing live in
+    // `supervisor.ts`. The supervisor returns the exit code (no throw);
+    // we translate non-zero into the same FDA-tagged error the old
+    // inline path raised.
     const denoPath = await ensureDeno();
-    await new Promise<void>((res, rej) => {
-      const child = spawn(denoPath, denoArgs, {
-        env,
-        stdio: ["inherit", "inherit", "pipe"],
-      });
-      if (typeof child.pid === "number") {
-        // Recorded so `readSummary` can tell a still-running run from one
-        // whose process exited before finalizing result.json. Best-effort —
-        // a failed write here doesn't matter; UI just falls back to "running"
-        // (today's behavior) for this run.
-        void journal.setChildPid(child.pid);
-      }
-      let buf = "";
-      child.stderr!.setEncoding("utf-8");
-      const handleLine = (line: string): void => {
-        const msg = parseControl(line);
-        if (msg) {
-          if (msg.kind === "progress") {
-            void journal.append({
-              kind: "progress",
-              message: msg.message,
-              done: msg.done,
-              total: msg.total,
-            });
-          } else {
-            // Last reschedule wins if a plugin sends multiple. Journal each.
-            lastReschedule = { afterMs: msg.afterMs, reason: msg.reason };
-            void journal.append({
-              kind: "reschedule",
-              afterMs: msg.afterMs,
-              ...(msg.reason ? { reason: msg.reason } : {}),
-            });
-          }
-          return;
-        }
-        void journal.append({ kind: "stderr", line });
-        if (isMacOS() && sawProtectedEpermPath === null && /PermissionDenied|EPERM/i.test(line)) {
-          const path = findProtectedPathInError(line);
-          if (path) sawProtectedEpermPath = path;
-        }
-      };
-      child.stderr!.on("data", (chunk: string) => {
-        buf += chunk;
-        let nl: number;
-        while ((nl = buf.indexOf("\n")) !== -1) {
-          const line = buf.slice(0, nl);
-          buf = buf.slice(nl + 1);
-          handleLine(line);
-        }
-      });
-      child.stderr!.on("end", () => {
-        if (buf) handleLine(buf);
-      });
-      child.on("error", rej);
-      child.on("close", (code) => {
-        if (code === 0) {
-          res();
-          return;
-        }
-        const message = sawProtectedEpermPath
-          ? formatFdaError(sawProtectedEpermPath, denoPath)
-          : `plugin '${opts.name}' exited with code ${code}`;
-        const err = new Error(message) as Error & { exitCode: number; code?: string };
-        err.exitCode = code ?? -1;
-        if (sawProtectedEpermPath) err.code = FDA_REQUIRED;
-        rej(err);
-      });
-    });
+    const sup = await supervise({ denoPath, denoArgs, env, journal });
+    if (sup.exitCode !== 0) {
+      const message = sup.fdaPath
+        ? formatFdaError(sup.fdaPath, denoPath)
+        : `plugin '${opts.name}' exited with code ${sup.exitCode}`;
+      const err = new Error(message) as Error & { exitCode: number; code?: string };
+      err.exitCode = sup.exitCode;
+      if (sup.fdaPath) err.code = FDA_REQUIRED;
+      throw err;
+    }
+    const lastReschedule = sup.lastReschedule;
 
     // Two-pass promote: validate every output, then copy. Any validation
     // failure throws before any file is moved into the library, so a partial

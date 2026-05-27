@@ -105,3 +105,5 @@ Rename `plans/plugin-run-daemon-only-RUNNING.md` → `plans/plugin-run-daemon-on
 | d65ebcd | phase 1: kicks.ts module + signalDaemon, tests pinning I/O contract |
 | 6daf364 | phase 2: daemon wires scanKicks + SIGUSR1 + startup drain, openRun honors presupplied runId |
 | dae6ee8 | phase 3: CLI plugin run X kicks the daemon + tails; drops --verbose, onProgress, old --detach |
+| a411c9a | phase 4: lock moves from runPlugin into fireWithSuppress |
+| (phase5) | phase 5: extract Supervisor (spawn + control parsing + FDA + childPid) |
