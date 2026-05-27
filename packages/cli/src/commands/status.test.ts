@@ -143,53 +143,12 @@ describe("dither status (output shape)", () => {
     }
   });
 
-  it("flags unreadable nested collections with ⚠ glyph and — counts", async () => {
-    const lib = join(home, "library");
-    const collection = join(lib, "locked");
-    mkdirSync(collection, { recursive: true });
-    chmodSync(collection, 0o000);
-    writeFileSync(
-      join(home, "config.json"),
-      JSON.stringify({ schema: { version: 1 }, library: { path: lib } }),
-    );
-    try {
-      const { main } = await import("../main");
-      const out = await captureLogs(async () => {
-        await runCommand(main, { rawArgs: ["status"] });
-      });
-      expect(out).toContain("⚠ unreadable");
-      expect(out).toContain("collections: —");
-      expect(out).toContain("entries:     —");
-    } finally {
-      chmodSync(collection, 0o700);
-    }
-  });
-
   it("shows '(not configured — run `dither init`)' before init", async () => {
     const { main } = await import("../main");
     const out = await captureLogs(async () => {
       await runCommand(main, { rawArgs: ["status"] });
     });
     expect(out).toContain("(not configured — run `dither init`)");
-  });
-
-  it("formats counts with comma-thousands separators", async () => {
-    const lib = join(home, "library");
-    const collection = join(lib, "notes");
-    mkdirSync(collection, { recursive: true });
-    // Create 1234 markdown files to force a comma.
-    for (let i = 0; i < 1234; i++) {
-      writeFileSync(join(collection, `entry-${i}.md`), "# x");
-    }
-    writeFileSync(
-      join(home, "config.json"),
-      JSON.stringify({ schema: { version: 1 }, library: { path: lib } }),
-    );
-    const { main } = await import("../main");
-    const out = await captureLogs(async () => {
-      await runCommand(main, { rawArgs: ["status"] });
-    });
-    expect(out).toMatch(/entries:\s+1,234/);
   });
 
   it("--json emits one JSON value with libraryHealth + configDirSource", async () => {

@@ -1,11 +1,11 @@
-import { readdir, stat, access } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { existsSync, constants } from "node:fs";
-import { join } from "node:path";
 import { resolveHome } from "./home";
 import { loadConfig } from "./config";
 import { listPlugins } from "./plugin-list";
 import { getDaemonStatus, type DaemonStatus } from "./daemon-control";
 import { readJobsSnapshot, type JobsSnapshot } from "./daemon-jobs";
+import { openStore } from "./store";
 
 /**
  * Status surfaces the two location concepts separately:
@@ -48,37 +48,6 @@ export interface DitherStatus {
   jobs: JobsSnapshot;
 }
 
-async function countMarkdownEntries(root: string): Promise<{
-  collections: number;
-  entries: number;
-}> {
-  const top = await readdir(root);
-  let collections = 0;
-  let entries = 0;
-  for (const name of top) {
-    const path = join(root, name);
-    const s = await stat(path);
-    if (!s.isDirectory()) continue;
-    collections += 1;
-    entries += await countMarkdownDeep(path);
-  }
-  return { collections, entries };
-}
-
-async function countMarkdownDeep(dir: string): Promise<number> {
-  let n = 0;
-  for (const name of await readdir(dir)) {
-    const path = join(dir, name);
-    const s = await stat(path);
-    if (s.isDirectory()) {
-      n += await countMarkdownDeep(path);
-    } else if (name.endsWith(".md")) {
-      n += 1;
-    }
-  }
-  return n;
-}
-
 /**
  * Detect which env (or none) drove resolveHome()'s decision. Mirrors
  * the chain in home.ts. Both `DITHER_DIR` (current) and `DITHER_HOME`
@@ -118,9 +87,10 @@ export async function getStatus(): Promise<DitherStatus> {
   let entries: number | null = null;
   if (libraryHealth === "ok" && library) {
     try {
-      const counts = await countMarkdownEntries(library);
-      collections = counts.collections;
-      entries = counts.entries;
+      const store = await openStore();
+      const s = await store?.getStatus();
+      collections = s?.collections.length ?? 0;
+      entries = s?.totalDocuments ?? 0;
     } catch {
       libraryHealth = "unreadable";
     }

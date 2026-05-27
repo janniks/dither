@@ -150,8 +150,10 @@ export async function promptConfirm(message: string, defaultValue = true): Promi
  * for tests.
  */
 export function composePromptMessage(message: string, dflt: string | undefined): string {
-  if (!dflt || /ENTER/i.test(message)) return message;
-  return `${message} (ENTER for ${tildePath(dflt)})`;
+  const i = message.search(/\s*\(ENTER/i);
+  if (i !== -1) return pc.cyan(message.slice(0, i)) + message.slice(i);
+  if (!dflt) return message;
+  return `${pc.cyan(message)} (ENTER for ${tildePath(dflt)})`;
 }
 
 export async function promptText(opts: PromptTextOptions): Promise<string> {
@@ -232,12 +234,26 @@ export function confirm(label: string, value: string): void {
   if (process.stdout.isTTY) {
     const lineFits = value.length + label.length + 4 <= cols;
     if (lineFits) {
-      moveCursor(process.stdout, 0, -2);
+      // Cursor advance accounting (empirically derived):
+      //   - No-box case: consola/clack consumes 2 rows for prompt + submit.
+      //   - With-box case: pluginText writes (out.length - 1) row advances
+      //     (no trailing \n — see pluginText), then consola/clack consumes
+      //     3 rows (its prompt seems to render an extra anchor row when the
+      //     cursor enters mid-line). Net = out.length + 2.
+      const extra = pluginTextLinesAbove;
+      const k = extra > 0 ? extra + 2 : 2;
+      moveCursor(process.stdout, 0, -k);
       clearScreenDown(process.stdout);
     }
   }
+  pluginTextLinesAbove = 0;
   process.stdout.write(`${pc.green("✓")} ${label}: ${shown}\n`);
 }
+
+// Tracks the line count of the most recent `pluginText` render so the next
+// `confirm` can wipe it (along with the echoed prompt). Reset on every
+// confirm() call and on every pluginText() call that renders nothing.
+let pluginTextLinesAbove = 0;
 
 /**
  * Render manifest-supplied prose (a plugin's `description`, env / file
@@ -255,23 +271,29 @@ export function confirm(label: string, value: string): void {
  */
 export function pluginText(raw: string): void {
   const safe = sanitizePluginText(raw);
-  if (safe.text === "") return;
+  if (safe.text === "") {
+    pluginTextLinesAbove = 0;
+    return;
+  }
   const cols = Math.max(40, Math.min(100, process.stdout.columns ?? 80));
   const inner = cols - 4;
   const lines = wrapPluginText(safe.text, inner);
   if (safe.truncated) lines.push("", "(description truncated)");
   const label = " from plugin ";
-  // Top line is `┌` + `─` + label + topFill + `┐` = 3 + label.length + topFill.
   const topFill = "─".repeat(Math.max(0, cols - 3 - label.length));
   const bot = "─".repeat(cols - 2);
-  const out: string[] = [];
+  const out: string[] = [""]; // leading blank visually anchors the box to the prompt below, not the answer above
   out.push(pc.dim(`┌─${label}${topFill}┐`));
   for (const line of lines) {
     const pad = " ".repeat(Math.max(0, inner - line.length));
     out.push(`${pc.dim("│")} ${line}${pad} ${pc.dim("│")}`);
   }
   out.push(pc.dim(`└${bot}┘`));
-  process.stdout.write(`${out.join("\n")}\n`);
+  // No trailing newline: consola prepends its own \n before the prompt, so
+  // doubling up would leave a visible blank line between the bottom border
+  // and the prompt arrow.
+  process.stdout.write(out.join("\n"));
+  pluginTextLinesAbove = out.length;
 }
 
 /**

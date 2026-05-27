@@ -2,11 +2,8 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
+import { GitHubLogoIcon } from "@radix-ui/react-icons";
 import { DitherCanvasHover } from "@/lib/dither-canvas-hover";
-
-const ghMarkMask = `url("data:image/svg+xml,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 15 15"><path fill="white" fill-rule="evenodd" clip-rule="evenodd" d="M7.49933 0.25C3.49635 0.25 0.25 3.49593 0.25 7.50024C0.25 10.703 2.32715 13.4206 5.2081 14.3797C5.57084 14.446 5.70302 14.2222 5.70302 14.0299C5.70302 13.8576 5.69679 13.4019 5.69323 12.797C3.67661 13.235 3.25112 11.825 3.25112 11.825C2.92132 10.9874 2.44599 10.7644 2.44599 10.7644C1.78773 10.3149 2.49584 10.3238 2.49584 10.3238C3.22353 10.375 3.60629 11.0711 3.60629 11.0711C4.25298 12.1788 5.30335 11.8588 5.71638 11.6732C5.78225 11.205 5.96962 10.8854 6.17658 10.7043C4.56675 10.5209 2.87415 9.89918 2.87415 7.12104C2.87415 6.32925 3.15677 5.68257 3.62053 5.17563C3.54576 4.99226 3.29697 4.25521 3.69174 3.25691C3.69174 3.25691 4.30015 3.06196 5.68522 3.99973C6.26337 3.83906 6.8838 3.75895 7.50022 3.75583C8.1162 3.75895 8.73619 3.83906 9.31523 3.99973C10.6994 3.06196 11.3069 3.25691 11.3069 3.25691C11.7026 4.25521 11.4538 4.99226 11.3795 5.17563C11.8441 5.68257 12.1245 6.32925 12.1245 7.12104C12.1245 9.9063 10.4292 10.5192 8.81452 10.6985C9.07444 10.9224 9.30633 11.3648 9.30633 12.0413C9.30633 13.0102 9.29742 13.7922 9.29742 14.0299C9.29742 14.2239 9.42828 14.4496 9.79591 14.3788C12.6746 13.4179 14.75 10.7025 14.75 7.50024C14.75 3.49593 11.5036 0.25 7.49933 0.25Z"/></svg>',
-)}")`;
 
 export function HomeNav() {
   const logoRef = useRef<HTMLSpanElement>(null);
@@ -77,31 +74,31 @@ export function HomeNav() {
           <div className="ml-auto hidden items-center gap-[18px] md:flex">
             <Link
               href="/docs"
-              className="text-fd-muted-foreground hover:text-fd-foreground text-[13px] font-semibold no-underline"
+              className="text-fd-muted-foreground hover:text-fd-foreground text-[14px] font-medium no-underline"
             >
               Documentation
             </Link>
             <Link
               href="/#plugins"
-              className="text-fd-muted-foreground hover:text-fd-foreground text-[13px] font-semibold no-underline"
+              className="text-fd-muted-foreground hover:text-fd-foreground text-[14px] font-medium no-underline"
             >
               Plugins
             </Link>
             <Link
               href="/#manifesto"
-              className="text-fd-muted-foreground hover:text-fd-foreground text-[13px] font-semibold no-underline"
+              className="text-fd-muted-foreground hover:text-fd-foreground text-[14px] font-medium no-underline"
             >
               Manifesto
             </Link>
             <Link
               href="/#faq"
-              className="text-fd-muted-foreground hover:text-fd-foreground text-[13px] font-semibold no-underline"
+              className="text-fd-muted-foreground hover:text-fd-foreground text-[14px] font-medium no-underline"
             >
               FAQs
             </Link>
             <Link
               href="/docs"
-              className="inline-flex items-center rounded-lg border border-[#99D892]/30 bg-[#99D892]/15 px-3.5 py-1.5 text-[13px] font-semibold text-[#99D892] no-underline backdrop-blur-md transition-colors hover:bg-[#99D892]/25"
+              className="inline-flex items-center rounded-lg border border-[#99D892]/30 bg-[#99D892]/15 px-3.5 py-1.5 text-[14px] font-medium text-[#99D892] no-underline backdrop-blur-md transition-colors hover:bg-[#99D892]/25"
             >
               Install
             </Link>
@@ -112,10 +109,9 @@ export function HomeNav() {
               aria-label="GitHub"
               className="group inline-flex items-center pr-0.5 outline-offset-4"
             >
-              <span
+              <GitHubLogoIcon
                 aria-hidden
-                className="block size-[22px] bg-linear-to-br from-fd-muted-foreground to-fd-foreground/50 mask-contain mask-center mask-no-repeat transition-[filter] duration-300 ease-out group-hover:brightness-110 group-hover:to-fd-foreground/85 dark:group-hover:brightness-125"
-                style={{ maskImage: ghMarkMask, WebkitMaskImage: ghMarkMask }}
+                className="size-[22px] text-fd-muted-foreground transition-colors duration-300 ease-out group-hover:text-fd-foreground/85"
               />
             </a>
           </div>
@@ -163,14 +159,15 @@ export function HomeNav() {
             )}
           </button>
         </nav>
-
       </div>
 
       {/* mobile expandable panel — rendered as a sibling of the pill so no
           ancestor backdrop-filter breaks the blur. Sized to its content. */}
       <div
         className={`pointer-events-none absolute inset-x-7 top-[82px] z-30 grid overflow-hidden rounded-[20px] border border-fd-border bg-fd-background/50 shadow-[0_12px_24px_-12px_rgba(0,0,0,0.25),0_1px_1px_rgba(255,255,255,0.06)_inset] transition-[grid-template-rows,opacity] duration-300 ease-out md:hidden ${
-          open ? "!pointer-events-auto grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+          open
+            ? "!pointer-events-auto grid-rows-[1fr] opacity-100"
+            : "grid-rows-[0fr] opacity-0"
         }`}
         style={{
           backdropFilter: "blur(20px) saturate(140%)",
@@ -179,56 +176,55 @@ export function HomeNav() {
       >
         <div className="min-h-0">
           <div className="flex flex-col gap-1 p-2">
-          <Link
-            href="/docs"
-            onClick={() => setOpen(false)}
-            className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
-          >
-            Documentation
-          </Link>
-          <Link
-            href="/#plugins"
-            onClick={() => setOpen(false)}
-            className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
-          >
-            Plugins
-          </Link>
-          <Link
-            href="/#manifesto"
-            onClick={() => setOpen(false)}
-            className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
-          >
-            Manifesto
-          </Link>
-          <Link
-            href="/#faq"
-            onClick={() => setOpen(false)}
-            className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
-          >
-            FAQs
-          </Link>
-          <Link
-            href="/docs"
-            onClick={() => setOpen(false)}
-            className="border-[#99D892]/30 bg-[#99D892]/15 text-[#99D892] hover:bg-[#99D892]/25 inline-flex items-center rounded-lg border px-3 py-2 text-[14px] font-semibold no-underline"
-          >
-            Install
-          </Link>
-          <a
-            href="https://github.com/janniks/dither"
-            target="_blank"
-            rel="noreferrer"
-            onClick={() => setOpen(false)}
-            className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[14px] font-semibold no-underline"
-          >
-            <span
-              aria-hidden
-              className="block size-[18px] bg-linear-to-br from-fd-muted-foreground to-fd-foreground/60 mask-contain mask-center mask-no-repeat"
-              style={{ maskImage: ghMarkMask, WebkitMaskImage: ghMarkMask }}
-            />
-            GitHub
-          </a>
-        </div>
+            <Link
+              href="/docs"
+              onClick={() => setOpen(false)}
+              className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-medium no-underline"
+            >
+              Documentation
+            </Link>
+            <Link
+              href="/#plugins"
+              onClick={() => setOpen(false)}
+              className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-medium no-underline"
+            >
+              Plugins
+            </Link>
+            <Link
+              href="/#manifesto"
+              onClick={() => setOpen(false)}
+              className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-medium no-underline"
+            >
+              Manifesto
+            </Link>
+            <Link
+              href="/#faq"
+              onClick={() => setOpen(false)}
+              className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 rounded-xl px-3 py-2 text-[14px] font-medium no-underline"
+            >
+              FAQs
+            </Link>
+            <Link
+              href="/docs"
+              onClick={() => setOpen(false)}
+              className="border-[#99D892]/30 bg-[#99D892]/15 text-[#99D892] hover:bg-[#99D892]/25 inline-flex items-center rounded-lg border px-3 py-2 text-[14px] font-medium no-underline"
+            >
+              Install
+            </Link>
+            <a
+              href="https://github.com/janniks/dither"
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => setOpen(false)}
+              className="text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[14px] font-medium no-underline"
+            >
+              <GitHubLogoIcon
+                aria-hidden
+                className="size-[18px]"
+              />
+              GitHub
+            </a>
+          </div>
         </div>
       </div>
     </div>

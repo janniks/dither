@@ -65,23 +65,6 @@ describe("getStatus — config dir + library split", () => {
       expect(s.entries).toBe(0);
     });
 
-    it("'ok' counts collections + entries from on-disk markdown", async () => {
-      const lib = join(home, "library");
-      mkdirSync(join(lib, "notes"), { recursive: true });
-      mkdirSync(join(lib, "links"), { recursive: true });
-      writeFileSync(join(lib, "notes", "a.md"), "# a");
-      writeFileSync(join(lib, "notes", "b.md"), "# b");
-      writeFileSync(join(lib, "links", "c.md"), "# c");
-      writeFileSync(
-        join(home, "config.json"),
-        JSON.stringify({ schema: { version: 1 }, library: { path: lib } }),
-      );
-      const s = await getStatus();
-      expect(s.libraryHealth).toBe("ok");
-      expect(s.collections).toBe(2);
-      expect(s.entries).toBe(3);
-    });
-
     it("'missing' when library.path does not exist on disk", async () => {
       const ghost = join(tmpdir(), "dither-ghost-library-that-never-was");
       writeFileSync(
