@@ -1,23 +1,19 @@
-import { mkdir, readFile, writeFile, readdir, copyFile, rm } from "node:fs/promises";
+import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import matter from "gray-matter";
 import { pluginDir as pluginDirOf, resolveHome } from "./home";
-import { assertInitialized, libraryRoot as resolveLibraryRoot, type DitherConfig } from "./config";
+import { assertInitialized, libraryRoot as resolveLibraryRoot } from "./config";
 import { parsePackage } from "./manifest";
-import { updateIndex } from "./update-index";
-import { needsReindexPath } from "./daemon-jobs";
 import { getGlobalEnv } from "./global-env";
-import { resolveCollection, validateCollectionPath } from "./collection-registry";
-import { grantsCover, validateGrantPattern } from "./grants";
-import { acquireTheme, releaseTheme } from "./locks";
+import { validateGrantPattern } from "./grants";
 import { openRun, type RunHandle } from "./run-log";
 import { formatFdaError, FDA_REQUIRED } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
 import { claimInbox, clearInflight, restoreInflight, type WatchTarget } from "./inbox";
 import { clearRefire, decideRunOutcome, readRefire, writeRefire } from "./refire";
 import { supervise } from "./supervisor";
+import { promote } from "./promotion";
 import { resolveWatchPath } from "./watch-paths";
 
 export interface RunOptions {
@@ -65,11 +61,6 @@ interface GrantsFile {
   collections?: string[];
 }
 
-interface ParsedFrontmatter {
-  source?: unknown;
-  collection?: unknown;
-}
-
 function denoPermissionList(kind: string, entries: string[]): string {
   const entry = entries.find((e) => e.includes(","));
   if (entry) {
@@ -78,89 +69,6 @@ function denoPermissionList(kind: string, entries: string[]): string {
     );
   }
   return entries.join(",");
-}
-
-interface PromoteCandidate {
-  src: string;
-  dest: string;
-  collection: string;
-  filename: string;
-}
-
-async function planPromotion(
-  runDir: string,
-  pluginName: string,
-  cfg: DitherConfig,
-  allowedCollections: readonly string[],
-): Promise<PromoteCandidate[]> {
-  const entries = await readdir(runDir);
-  const out: PromoteCandidate[] = [];
-  for (const filename of entries) {
-    if (!filename.endsWith(".md")) continue;
-    const src = join(runDir, filename);
-    const content = await readFile(src, "utf-8");
-    const data = matter(content).data as ParsedFrontmatter;
-
-    const source = typeof data.source === "string" ? data.source : null;
-    if (source !== pluginName) {
-      throw new Error(
-        `output ${filename} declares source=${source ?? "(missing)"}; expected ${pluginName}`,
-      );
-    }
-    const collection = typeof data.collection === "string" ? data.collection : null;
-    if (!collection) {
-      throw new Error(`output ${filename} missing 'collection' frontmatter`);
-    }
-    validateCollectionPath(collection);
-    if (!grantsCover(allowedCollections, collection)) {
-      throw new Error(
-        `plugin '${pluginName}' is not granted write access to collection '${collection}'`,
-      );
-    }
-
-    // Resolve the destination by top-segment lookup. External mounts win
-    // when registered; otherwise the library auto-creates a subdir. The
-    // qmd-side collection name is the top segment in either case (see
-    // store.ts) so search and partial-reindex behave identically.
-    const [top, ...rest] = collection.split("/");
-    const resolved = resolveCollection(cfg, top!);
-    let destDir: string;
-    if (resolved?.source === "external") {
-      if (resolved.status === "missing") {
-        throw new Error(
-          `output ${filename} targets external collection '${top}' but its path is missing: ${resolved.path}`,
-        );
-      }
-      destDir = rest.length > 0 ? join(resolved.path, ...rest) : resolved.path;
-    } else {
-      destDir = join(cfg.library.path, collection);
-    }
-    const dest = join(destDir, filename);
-    if (existsSync(dest)) {
-      const existing = await readFile(dest, "utf-8");
-      const existingSource = (matter(existing).data as ParsedFrontmatter).source;
-      if (existingSource !== pluginName) {
-        throw new Error(
-          `output ${filename} would clobber an existing entry at '${collection}/${filename}' (source=${
-            typeof existingSource === "string" ? existingSource : "(missing)"
-          }, this plugin=${pluginName})`,
-        );
-      }
-    }
-
-    out.push({ src, dest, collection, filename });
-  }
-  return out;
-}
-
-async function copyAdded(candidates: PromoteCandidate[]): Promise<string[]> {
-  const added: string[] = [];
-  for (const c of candidates) {
-    await mkdir(join(c.dest, ".."), { recursive: true });
-    await copyFile(c.src, c.dest);
-    added.push(c.dest);
-  }
-  return added;
 }
 
 export async function runPlugin(opts: RunOptions): Promise<RunResult> {
@@ -395,51 +303,15 @@ async function runPluginLocked(
       if (sup.fdaPath) err.code = FDA_REQUIRED;
       throw err;
     }
-    const lastReschedule = sup.lastReschedule;
-
-    // Two-pass promote: validate every output, then copy. Any validation
-    // failure throws before any file is moved into the library, so a partial
-    // promote is impossible. The full config is passed so promote-time
-    // resolution can branch on external-collection mounts.
     const cfg = await assertInitialized();
-    const candidates = await planPromotion(runDir, opts.name, cfg, grantCollections);
-    const added = await copyAdded(candidates);
-    for (const path of added) {
-      await journal.append({ kind: "added", path });
-    }
-
-    if (added.length > 0) {
-      // qmd collections are top-level library subdirs (see store.ts), so a
-      // multi-segment frontmatter `collection: "messages/inbox"` must be
-      // narrowed to `"messages"` before being passed to updateIndex —
-      // otherwise qmd's exact-name filter matches nothing and the index
-      // silently stays stale.
-      const touchedCollections = Array.from(
-        new Set(candidates.map((c) => c.collection.split("/")[0]!)),
-      );
-      // qmd-index.lock coordinates with the daemon's job runner; if
-      // it's busy (daemon is mid-indexing), defer by touching
-      // needs-reindex so the daemon coalesces this into its next
-      // post-job reconciliation. Added files are already on disk —
-      // only the rescan is deferred.
-      const indexLock = await acquireTheme("index");
-      if (indexLock === null) {
-        await writeFile(needsReindexPath(), "", "utf-8").catch(() => undefined);
-        await journal.append({
-          kind: "reindex-deferred",
-          reason: "qmd-index.lock busy",
-          touchedCollections,
-        });
-      } else {
-        try {
-          await updateIndex(touchedCollections);
-        } finally {
-          await releaseTheme(indexLock);
-        }
-      }
-    }
-
-    return { added, reschedule: lastReschedule };
+    const result = await promote({
+      runDir,
+      plugin: opts.name,
+      config: cfg,
+      grants: grantCollections,
+      journal,
+    });
+    return { added: result.added, reschedule: sup.lastReschedule };
   } finally {
     // Always clean up the run dir — failed runs would otherwise leave
     // input.json (containing plaintext env values, possibly secrets) on disk.

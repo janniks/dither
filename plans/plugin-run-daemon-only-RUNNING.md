@@ -106,4 +106,5 @@ Rename `plans/plugin-run-daemon-only-RUNNING.md` → `plans/plugin-run-daemon-on
 | 6daf364 | phase 2: daemon wires scanKicks + SIGUSR1 + startup drain, openRun honors presupplied runId |
 | dae6ee8 | phase 3: CLI plugin run X kicks the daemon + tails; drops --verbose, onProgress, old --detach |
 | a411c9a | phase 4: lock moves from runPlugin into fireWithSuppress |
-| (phase5) | phase 5: extract Supervisor (spawn + control parsing + FDA + childPid) |
+| 9f81462 | phase 5: extract Supervisor (spawn + control parsing + FDA + childPid) |
+| (phase6) | phase 6: extract Promotion (planPromotion + copyAdded + index-defer) |
