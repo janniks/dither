@@ -95,6 +95,26 @@ export function hasKick(plugin: string): boolean {
 }
 
 /**
+ * Drain every pending kick by handing each one to the daemon's fire
+ * callback, then unlinking the file. POSIX coalesces signals, so a single
+ * SIGUSR1 may have to consume more than one kick; this scan covers them
+ * all. Also runs once at daemon startup to recover kicks that landed
+ * while the daemon was down.
+ *
+ * The `fire` callback returns void — sources don't await `runPlugin`
+ * (Scheduler/Watcher/Refirer all just call `fireWithSuppress` and return).
+ */
+export async function scanKicks(
+  fire: (plugin: string, payload: KickPayload) => void,
+): Promise<void> {
+  const all = await listKicks();
+  for (const entry of all) {
+    fire(entry.plugin, entry.payload);
+    await clearKick(entry.plugin).catch(() => undefined);
+  }
+}
+
+/**
  * Send SIGUSR1 to the daemon, telling it to drain `kicks/` now. No-op if
  * the pid file is missing, malformed, or points at a dead process — the
  * CLI's daemon-auto-start step is responsible for liveness; this helper

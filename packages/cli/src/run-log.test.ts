@@ -174,6 +174,20 @@ describe("run-log", () => {
       expect(runs[0]!.status).toBe("running");
     });
 
+    it("openRun honors a presupplied runId", async () => {
+      const { openRun, generateRunId } = await import("./run-log");
+      const id = generateRunId("myplugin");
+      const handle = await openRun("myplugin", "manual", id);
+      expect(handle.runId).toBe(id);
+    });
+
+    it("openRun throws when a presupplied runId collides with an existing run", async () => {
+      const { openRun, generateRunId } = await import("./run-log");
+      const id = generateRunId("myplugin");
+      await openRun("myplugin", "manual", id);
+      await expect(openRun("myplugin", "manual", id)).rejects.toThrow(/presupplied runId/);
+    });
+
     it("openRun retries on runId collision and produces distinct ids with intact manifests", async () => {
       // Force a single collision: first two randomBytes calls return the
       // same suffix; third call returns a different one. With the retry

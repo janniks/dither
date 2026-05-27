@@ -13,6 +13,7 @@ import { LoopDetector, type HaltRecord } from "./loop-detector";
 import { inboxHasItems, recoverOrphanInflight } from "./inbox";
 import { Refirer } from "./refirer";
 import { readRefire } from "./refire";
+import { scanKicks, type KickPayload } from "./kicks";
 import { qmdReconcile, clearInflightJobs, needsReindexPath } from "./daemon-jobs";
 
 /**
@@ -67,12 +68,18 @@ function watchEntriesOf(plugins: InstalledPluginInfo[]): WatchEntry[] {
   });
 }
 
+interface KickContext {
+  runId: string;
+  overrides?: KickPayload["overrides"];
+}
+
 async function fireWithSuppress(
   watcher: Watcher,
   refirer: Refirer,
   detector: LoopDetector,
   name: string,
-  trigger: "scheduled" | "watch",
+  trigger: "scheduled" | "watch" | "manual",
+  kick?: KickContext,
 ): Promise<void> {
   const source = `${trigger}:${name}`;
   if (detector.shouldHalt(source, name)) {
@@ -83,7 +90,12 @@ async function fireWithSuppress(
   detector.record(source, name, true);
 
   try {
-    const result = await runPlugin({ name, trigger });
+    const result = await runPlugin({
+      name,
+      trigger,
+      ...(kick?.runId ? { runId: kick.runId } : {}),
+      ...(kick?.overrides ?? {}),
+    });
     for (const path of result.added) watcher.suppressOnce(path);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -102,6 +114,19 @@ async function fireWithSuppress(
     const stillPending = await inboxHasItems(name).catch(() => false);
     if (stillPending) void fireWithSuppress(watcher, refirer, detector, name, "watch");
   }
+}
+
+function fireKick(
+  watcher: Watcher,
+  refirer: Refirer,
+  detector: LoopDetector,
+  name: string,
+  payload: KickPayload,
+): void {
+  void fireWithSuppress(watcher, refirer, detector, name, "manual", {
+    runId: payload.runId,
+    ...(payload.overrides ? { overrides: payload.overrides } : {}),
+  });
 }
 
 async function writePidFile(state: DaemonState): Promise<void> {
@@ -267,6 +292,13 @@ export async function runDaemon(): Promise<void> {
   await refirer.reload().catch((err) => {
     console.error(`[daemon] refire reload failed: ${err instanceof Error ? err.message : String(err)}`);
   });
+  // Drain kicks that arrived while the daemon was down. Same robustness
+  // pattern as recoverOrphanInflight + refirer.reload.
+  await scanKicks((name, payload) =>
+    fireKick(watcher, refirer, detector, name, payload),
+  ).catch((err) => {
+    console.error(`[daemon] kick drain failed: ${err instanceof Error ? err.message : String(err)}`);
+  });
   await writeStatusSnapshot(state, scheduler, watcher, detector);
 
   // qmd state reconciliation runs in the background — it can take
@@ -348,13 +380,24 @@ export async function runDaemon(): Promise<void> {
     fireQmdReconcile();
   }
 
+  function onUsr1(): void {
+    // POSIX coalesces signals — every kick on disk gets processed per scan.
+    void scanKicks((name, payload) =>
+      fireKick(watcher, refirer, detector, name, payload),
+    ).catch((err) => {
+      console.error(`[daemon] kick scan failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+  }
+
   process.on("SIGTERM", onTerm);
   process.on("SIGINT", onTerm);
   process.on("SIGHUP", onHup);
+  process.on("SIGUSR1", onUsr1);
 
   await exited;
 
   process.off("SIGTERM", onTerm);
   process.off("SIGINT", onTerm);
   process.off("SIGHUP", onHup);
+  process.off("SIGUSR1", onUsr1);
 }

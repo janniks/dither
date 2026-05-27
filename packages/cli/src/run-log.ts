@@ -4,6 +4,7 @@ import type { FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { resolveHome, runEventsPath, runLogPath } from "./home";
+import { isPidAlive } from "./locks";
 
 /**
  * Run-log: one append-only JSONL stream with two scopes.
@@ -73,6 +74,10 @@ export interface RunManifest {
   plugin: string;
   trigger: string;
   startedAt: string;
+  /** PID of the child plugin process. Set after spawn, used by readSummary
+   *  to distinguish a still-running run from one whose process died without
+   *  finalizing result.json. */
+  childPid?: number;
 }
 
 export interface RunResultRecord {
@@ -85,7 +90,7 @@ export interface RunResultRecord {
 }
 
 export interface RunSummary extends RunManifest {
-  status: "ok" | "fail" | "running";
+  status: "ok" | "fail" | "running" | "interrupted";
   finishedAt?: string;
   durationMs?: number;
   addedCount?: number;
@@ -404,7 +409,7 @@ function pad(n: number, w = 2): string {
   return String(n).padStart(w, "0");
 }
 
-function generateRunId(plugin: string): string {
+export function generateRunId(plugin: string): string {
   const now = new Date();
   const stamp =
     `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}` +
@@ -421,19 +426,32 @@ export interface RunHandle {
   readonly dir: string;
   append(event: RunEventInput): Promise<void>;
   close(result: RunResultRecord): Promise<void>;
+  /** Record the child plugin process's PID into manifest.json. Lets
+   *  readSummary infer "interrupted" vs "running" when result.json is
+   *  missing. Safe to call multiple times — last value wins. */
+  setChildPid(pid: number): Promise<void>;
 }
 
 /**
  * Open a new Run scope. Writes `manifest.json`, leaves `events.jsonl`
  * empty (created on first append), and returns a handle whose `append`
  * + `close` are tied to this runId. Closing writes `result.json`.
+ *
+ * `presuppliedId` lets a caller (the CLI) hand in a runId minted earlier
+ * — useful for kicks, where the CLI writes the runId into the kick file
+ * so the tail can follow the journal before the daemon opens it. The
+ * collision-retry loop only runs when we're minting locally.
  */
-export async function openRun(plugin: string, trigger: string): Promise<RunHandle> {
+export async function openRun(
+  plugin: string,
+  trigger: string,
+  presuppliedId?: string,
+): Promise<RunHandle> {
   // `mkdir({recursive:false})` lets us detect runId collisions: the
   // wider 4-byte suffix already makes them astronomically unlikely, but
   // a silent overwrite would clobber the prior Run's manifest.
   await mkdir(historyDir(), { recursive: true });
-  let runId = generateRunId(plugin);
+  let runId = presuppliedId ?? generateRunId(plugin);
   let dir = runDirOf(runId);
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -442,6 +460,10 @@ export async function openRun(plugin: string, trigger: string): Promise<RunHandl
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
       if (attempt === 2) throw new Error(`openRun: runId collisions exhausted for plugin ${plugin}`);
+      // A presupplied id collides with an existing run dir — surface that as
+      // an error rather than silently minting a fresh one. Callers handing
+      // in an id (the kick path) want exactly that id or a clean failure.
+      if (presuppliedId) throw new Error(`openRun: presupplied runId already exists: ${presuppliedId}`);
       runId = generateRunId(plugin);
       dir = runDirOf(runId);
     }
@@ -452,7 +474,8 @@ export async function openRun(plugin: string, trigger: string): Promise<RunHandl
     trigger,
     startedAt: new Date().toISOString(),
   };
-  await writeFile(join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));
+  const manifestPath = join(dir, "manifest.json");
+  await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
 
   return {
     runId,
@@ -468,6 +491,12 @@ export async function openRun(plugin: string, trigger: string): Promise<RunHandl
       const tmp = `${target}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
       await writeFile(tmp, JSON.stringify(result, null, 2));
       await rename(tmp, target);
+    },
+    async setChildPid(pid) {
+      manifest.childPid = pid;
+      const tmp = `${manifestPath}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+      await writeFile(tmp, JSON.stringify(manifest, null, 2));
+      await rename(tmp, manifestPath);
     },
   };
 }
@@ -529,11 +558,20 @@ async function readSummary(runId: string): Promise<RunSummary | null> {
     // result not yet written → run still in flight (or crashed mid-run)
   }
 
+  // No result.json: distinguish "still running" from "interrupted" by
+  // probing the recorded child PID. Old runs without childPid fall through
+  // to "running" — they predate this field and we can't tell.
+  const status: RunSummary["status"] = result
+    ? result.status
+    : manifest.childPid !== undefined && !isPidAlive(manifest.childPid)
+    ? "interrupted"
+    : "running";
+
   const startedMs = Date.parse(manifest.startedAt);
   const finishedMs = result ? Date.parse(result.finishedAt) : NaN;
   return {
     ...manifest,
-    status: result ? result.status : "running",
+    status,
     finishedAt: result?.finishedAt,
     durationMs:
       Number.isFinite(startedMs) && Number.isFinite(finishedMs) ? finishedMs - startedMs : undefined,

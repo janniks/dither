@@ -51,6 +51,9 @@ export interface RunOptions {
   onProgress?: (msg: ProgressMessage) => void;
   /** Forward plugin stderr (Deno output, console.log/error) to the host's stderr in real time. */
   verbose?: boolean;
+  /** Pre-supplied runId. The kick path uses this so the CLI's tail can
+   *  follow the journal before the daemon opens it. */
+  runId?: string;
 }
 
 export interface RunResult {
@@ -60,6 +63,7 @@ export interface RunResult {
 
 /** Error code stamped on errors that signal a known, clean failure path. */
 export const PLUGIN_NOT_INSTALLED = "PLUGIN_NOT_INSTALLED";
+export const PLUGIN_ALREADY_RUNNING = "PLUGIN_ALREADY_RUNNING";
 
 const DITHER_ENV_VARS = [
   "DITHER_RUN_DIR",
@@ -223,13 +227,15 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
   // watch, and manual fires all funnel through the same lock.
   const lock = await acquireLock(opts.name);
   if (!lock) {
-    throw new Error(
+    const err = new Error(
       `Plugin '${opts.name}' is already running. Wait for it to finish, or check 'dither status'.`,
-    );
+    ) as Error & { code?: string };
+    err.code = PLUGIN_ALREADY_RUNNING;
+    throw err;
   }
 
   const trigger = opts.trigger ?? "manual";
-  const journal = await openRun(opts.name, trigger);
+  const journal = await openRun(opts.name, trigger, opts.runId);
   const runId = journal.runId;
 
   try {
@@ -447,6 +453,13 @@ async function runPluginLocked(
         env,
         stdio: ["inherit", "inherit", "pipe"],
       });
+      if (typeof child.pid === "number") {
+        // Recorded so `readSummary` can tell a still-running run from one
+        // whose process exited before finalizing result.json. Best-effort —
+        // a failed write here doesn't matter; UI just falls back to "running"
+        // (today's behavior) for this run.
+        void journal.setChildPid(child.pid);
+      }
       let buf = "";
       child.stderr!.setEncoding("utf-8");
       const handleLine = (line: string): void => {

@@ -106,6 +106,30 @@ describe("kicks", () => {
     expect(() => signalDaemon()).not.toThrow();
   });
 
+  it("scanKicks fires each pending kick and unlinks the file", async () => {
+    const { writeKick, scanKicks, listKicks } = await import("./kicks");
+    await writeKick("a", { runId: "r-a", kickedAt: "t1" });
+    await writeKick("b", { runId: "r-b", kickedAt: "t2", overrides: { net: ["x.com"] } });
+    const fired: Array<{ name: string; runId: string }> = [];
+    await scanKicks((name, payload) => {
+      fired.push({ name, runId: payload.runId });
+    });
+    expect(fired).toEqual([
+      { name: "a", runId: "r-a" },
+      { name: "b", runId: "r-b" },
+    ]);
+    expect(await listKicks()).toEqual([]);
+  });
+
+  it("scanKicks is a no-op when no kicks exist", async () => {
+    const { scanKicks } = await import("./kicks");
+    let called = 0;
+    await scanKicks(() => {
+      called += 1;
+    });
+    expect(called).toBe(0);
+  });
+
   it("signalDaemon sends SIGUSR1 to a live pid", async () => {
     const { signalDaemon } = await import("./kicks");
     let received = false;
