@@ -78,13 +78,13 @@ Combined CONTEXT.md edit:
 - Update the IPC primitive list to 6 file-based + 1 POSIX.
 
 **Acceptance:**
-- [ ] "Snapshot" no longer appears as a primitive in CONTEXT.md
-- [ ] Marker description includes the lazy-signal framing
-- [ ] Refire is documented as Kick + retry state
-- [ ] "Reconciler" no longer appears as a named term
-- [ ] "Lock theme" no longer appears as a named term
-- [ ] IPC primitive count reads as 6 file-based + 1 POSIX (Signal)
-- [ ] Example dialogue still parses with the new terminology
+- [x] "Snapshot" no longer appears as a primitive in CONTEXT.md
+- [x] Marker description includes the lazy-signal framing
+- [x] Refire is documented as Kick + retry state
+- [x] "Reconciler" no longer appears as a named term
+- [x] "Lock theme" no longer appears as a named term
+- [x] IPC primitive count reads as 6 file-based + 1 POSIX (Signal)
+- [x] Example dialogue still parses with the new terminology
 
 ---
 
@@ -186,3 +186,4 @@ Two coordinated moves in one commit:
 |----------|-----------|
 | `a58e932` | phase 1 — promotion.ts IIFE rewritten as early-throw + 2-level ternary |
 | `37b688e` | phase 2 — run-log truncateGlobal clears both queues and sizes; docstring on singleton state |
+| `c031f6b` | phase 3 — ENOENT idiom rule documented in AGENTS.md |
