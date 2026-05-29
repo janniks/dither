@@ -126,6 +126,39 @@ function foo() {
 }
 ```
 
+#### I/O patterns
+
+Two ENOENT-tolerant idioms coexist. Pick the one matching where the
+boundary lives, not by author taste.
+
+- **`try/catch` when the function IS the I/O boundary** — a reader whose
+  job is to return `null` / `[]` for "file missing":
+
+```ts
+// Good — readRefire is the boundary
+export async function readRefire(plugin: string): Promise<RefireRow | null> {
+  try {
+    const raw = await readFile(refirePath(plugin), "utf-8");
+    return JSON.parse(raw) as RefireRow;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+}
+```
+
+- **`.catch(() => null)` (or `.catch(() => undefined)`) when the caller is
+  doing best-effort cleanup** — the I/O is a side concern, not the
+  function's purpose:
+
+```ts
+// Good — caller doesn't care if the marker write fails
+await writeFile(needsReindexPath(), "", "utf-8").catch(() => undefined);
+```
+
+Don't use `.catch(() => null)` to silence errors on a primary read path —
+you lose the distinction between "missing file" and "real I/O failure."
+
 ### Testing
 
 - Avoid mocks as much as possible

@@ -59,9 +59,9 @@ Rewrite the 3-level nested ternary with embedded `(() => { throw … })()` IIFE 
 Add an "I/O patterns" section (or extend "General principles") in `AGENTS.md` with the rule: `try/catch (err.code === "ENOENT")` when the function IS the I/O boundary; `.catch(() => null)` when the caller is doing best-effort cleanup. One short example of each.
 
 **Acceptance:**
-- [ ] `AGENTS.md` contains the rule + one example of each idiom
-- [ ] Rule readable at 1/4 desktop width (AGENTS.md format constraint)
-- [ ] No code change required (optional: fix one or two egregious mismatches as examples if any stand out)
+- [x] `AGENTS.md` contains the rule + one example of each idiom
+- [x] Rule readable at 1/4 desktop width (AGENTS.md format constraint)
+- [x] No code change required (optional: fix one or two egregious mismatches as examples if any stand out)
 
 ---
 
@@ -185,3 +185,4 @@ Two coordinated moves in one commit:
 |  commit  |  summary  |
 |----------|-----------|
 | `a58e932` | phase 1 — promotion.ts IIFE rewritten as early-throw + 2-level ternary |
+| `37b688e` | phase 2 — run-log truncateGlobal clears both queues and sizes; docstring on singleton state |
