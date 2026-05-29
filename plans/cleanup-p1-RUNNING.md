@@ -33,9 +33,9 @@
 Rewrite the 3-level nested ternary with embedded `(() => { throw … })()` IIFE at `promotion.ts:85-93` as an early-return helper. Behavior preserved.
 
 **Acceptance:**
-- [ ] `promotion.ts:85-93` block no longer contains an IIFE or 3+ nested ternaries
-- [ ] All existing `promotion.test.ts` cases pass without modification
-- [ ] `oxlint` / `tsc` clean
+- [x] `promotion.ts:85-93` block no longer contains an IIFE or 3+ nested ternaries
+- [x] All existing `promotion.test.ts` cases pass without modification
+- [x] `oxlint` / `tsc` clean
 
 ---
 

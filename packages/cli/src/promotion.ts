@@ -82,14 +82,13 @@ async function planPromotion(opts: PromoteOptions): Promise<Candidate[]> {
     // store.ts) so search and partial-reindex behave identically.
     const [top, ...rest] = collection.split("/");
     const resolved = resolveCollection(opts.config, top!);
+    if (resolved?.source === "external" && resolved.status === "missing") {
+      throw new Error(
+        `output ${filename} targets external collection '${top}' but its path is missing: ${resolved.path}`,
+      );
+    }
     const destDir = resolved?.source === "external"
-      ? (resolved.status === "missing"
-          ? (() => {
-              throw new Error(
-                `output ${filename} targets external collection '${top}' but its path is missing: ${resolved.path}`,
-              );
-            })()
-          : (rest.length > 0 ? join(resolved.path, ...rest) : resolved.path))
+      ? (rest.length > 0 ? join(resolved.path, ...rest) : resolved.path)
       : join(opts.config.library.path, collection);
     const dest = join(destDir, filename);
     if (existsSync(dest)) {
