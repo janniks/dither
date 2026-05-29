@@ -64,7 +64,7 @@ describe("dither plugin runs", () => {
       added: [],
     });
 
-    const { pluginCommand } = await import("./plugin");
+    const { pluginCommand } = await import("./command-plugin");
     await runCommand(pluginCommand, { rawArgs: ["runs"] });
 
     const out = logs.join("\n");
@@ -75,7 +75,7 @@ describe("dither plugin runs", () => {
   });
 
   it("with no arg + empty history prints the hint", async () => {
-    const { pluginCommand } = await import("./plugin");
+    const { pluginCommand } = await import("./command-plugin");
     await runCommand(pluginCommand, { rawArgs: ["runs"] });
     expect(logs.join("\n")).toContain("No runs yet");
   });
@@ -88,7 +88,7 @@ describe("dither plugin runs", () => {
       added: ["/x.md"],
     });
 
-    const { pluginCommand } = await import("./plugin");
+    const { pluginCommand } = await import("./command-plugin");
     await runCommand(pluginCommand, { rawArgs: ["runs", runId] });
 
     const resultLines = logs.filter((l) => l.includes('"type":"_result"'));
@@ -113,7 +113,7 @@ describe("dither plugin runs", () => {
       added: ["/other.md"],
     });
 
-    const { pluginCommand } = await import("./plugin");
+    const { pluginCommand } = await import("./command-plugin");
     await runCommand(pluginCommand, { rawArgs: ["runs", "foo"] });
 
     const resultLines = logs.filter((l) => l.includes('"type":"_result"'));
@@ -126,7 +126,7 @@ describe("dither plugin runs", () => {
     const exit = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("exit");
     });
-    const { pluginCommand } = await import("./plugin");
+    const { pluginCommand } = await import("./command-plugin");
     await runCommand(pluginCommand, { rawArgs: ["runs", "nonexistent"] }).catch(
       () => undefined,
     );
@@ -138,7 +138,7 @@ describe("dither plugin runs", () => {
     const exit = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("exit");
     });
-    const { pluginCommand } = await import("./plugin");
+    const { pluginCommand } = await import("./command-plugin");
     await runCommand(pluginCommand, {
       rawArgs: ["runs", "20260522T100000-ghost-ffffffff"],
     }).catch(() => undefined);
@@ -178,7 +178,7 @@ describe("dither plugin runs", () => {
       };
     });
 
-    const { pluginCommand } = await import("./plugin");
+    const { pluginCommand } = await import("./command-plugin");
     const cmdPromise = runCommand(pluginCommand, { rawArgs: ["runs", runId] });
 
     await new Promise((r) => setTimeout(r, 150));

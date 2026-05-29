@@ -13,7 +13,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCommand } from "citty";
-import { defaultLibraryPath } from "./init";
+import { defaultLibraryPath } from "./command-init";
 
 async function captureLogs(fn: () => Promise<void>): Promise<string> {
   const logs: string[] = [];
@@ -447,7 +447,7 @@ describe("dither init (Phase 1)", () => {
       const target = join(home, "validator-probe");
       expect(existsSync(target)).toBe(false);
 
-      const { resolveLibraryPath } = await import("./init");
+      const { resolveLibraryPath } = await import("./command-init");
       const out = await resolveLibraryPath(target, { dryRun: true });
 
       expect(existsSync(target)).toBe(false);
@@ -455,7 +455,7 @@ describe("dither init (Phase 1)", () => {
     });
 
     it("rejects an unwritable parent without creating anything", async () => {
-      const { resolveLibraryPath } = await import("./init");
+      const { resolveLibraryPath } = await import("./command-init");
       await expect(
         resolveLibraryPath("/usr/local/etc/forbidden-dither", { dryRun: true }),
       ).rejects.toThrow(/parent directory/);

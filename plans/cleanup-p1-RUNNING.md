@@ -170,13 +170,13 @@ Two coordinated moves in one commit:
 **C. Update `main.ts`** import paths for all renamed commands.
 
 **Acceptance:**
-- [ ] All files in `commands/` start with `command-`
-- [ ] `commands/command-plugin.ts` is the dispatcher only (no inline subcommand bodies, no `handleProtectedInstall`, no run-tailing block)
-- [ ] Each plugin subcommand has its own file
-- [ ] `main.ts` imports all renamed commands
-- [ ] `dither --help` and each subcommand's `--help` produce equivalent output to before
-- [ ] All command tests pass (rename test files in parallel)
-- [ ] No duplicate imports in `command-plugin.ts` (the audit found `relative-time`, `run-log`, `home` each imported twice in the original)
+- [x] All files in `commands/` start with `command-`
+- [x] `commands/command-plugin.ts` is the dispatcher only (no inline subcommand bodies, no `handleProtectedInstall`, no run-tailing block)
+- [x] Each plugin subcommand has its own file
+- [x] `main.ts` imports all renamed commands
+- [x] `dither --help` and each subcommand's `--help` produce equivalent output to before
+- [x] All command tests pass (rename test files in parallel)
+- [x] No duplicate imports in `command-plugin.ts` (the audit found `relative-time`, `run-log`, `home` each imported twice in the original)
 
 ---
 
@@ -189,3 +189,4 @@ Two coordinated moves in one commit:
 | `c031f6b` | phase 3 — ENOENT idiom rule documented in AGENTS.md |
 | `57f92a6` | phase 4 — CONTEXT.md: drop Snapshot/Reconciler/Lock-theme; Marker as lazy Signal |
 | `25670b7` | phase 5 — kill 1Hz heartbeat; event-driven status writes |
+| `c5b9a4a` | phase 6 — markers extraction + `<home>/markers/` layout |

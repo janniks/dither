@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { markTerms, renderSnippet } from "./search";
+import { markTerms, renderSnippet } from "./command-search";
 
 const B = (s: string) => `<B>${s}</B>`;
 const D = (s: string) => `<D>${s}</D>`;

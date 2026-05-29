@@ -45,7 +45,7 @@ describe("handleProtectedInstall", () => {
     process.stdout.isTTY = false;
     const cap = captureStdout();
     const open = vi.fn();
-    const { handleProtectedInstall } = await import("./plugin");
+    const { handleProtectedInstall } = await import("./command-plugin-install");
     try {
       await handleProtectedInstall(FAKE_INFO, open);
       const all = cap.all();
@@ -66,7 +66,7 @@ describe("handleProtectedInstall", () => {
     });
     const cap = captureStdout();
     const open = vi.fn();
-    const { handleProtectedInstall } = await import("./plugin");
+    const { handleProtectedInstall } = await import("./command-plugin-install");
     try {
       await handleProtectedInstall(FAKE_INFO, open);
       expect(open).toHaveBeenCalledWith(FAKE_INFO.settingsUri);
@@ -84,7 +84,7 @@ describe("handleProtectedInstall", () => {
     });
     const cap = captureStdout();
     const open = vi.fn();
-    const { handleProtectedInstall } = await import("./plugin");
+    const { handleProtectedInstall } = await import("./command-plugin-install");
     try {
       await handleProtectedInstall(FAKE_INFO, open);
       expect(open).not.toHaveBeenCalled();
@@ -107,7 +107,7 @@ describe("handleProtectedInstall", () => {
     });
     const cap = captureStdout();
     const open = vi.fn();
-    const { handleProtectedInstall } = await import("./plugin");
+    const { handleProtectedInstall } = await import("./command-plugin-install");
     try {
       await handleProtectedInstall(FAKE_INFO, open);
       expect(open).not.toHaveBeenCalled();
