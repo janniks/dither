@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, copyFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, copyFile } from "node:fs/promises";
 import { join } from "node:path";
 import matter from "gray-matter";
 import { type DitherConfig } from "./config";
@@ -7,7 +7,7 @@ import { resolveCollection, validateCollectionPath } from "./collection-registry
 import { grantsCover } from "./grants";
 import { acquireTheme, releaseTheme } from "./locks";
 import { updateIndex } from "./update-index";
-import { needsReindexPath } from "./daemon-jobs";
+import { requestReindex } from "./markers";
 import type { RunHandle } from "./run-log";
 
 /**
@@ -140,7 +140,7 @@ export async function promote(opts: PromoteOptions): Promise<PromoteResult> {
   // files are already on disk — only the rescan is deferred.
   const lock = await acquireTheme("index");
   if (lock === null) {
-    await writeFile(needsReindexPath(), "", "utf-8").catch(() => undefined);
+    await requestReindex().catch(() => undefined);
     await opts.journal.append({
       kind: "reindex-deferred",
       reason: "qmd-index.lock busy",

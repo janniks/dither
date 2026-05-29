@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -7,6 +7,7 @@ import { openStore } from "./store";
 import { appendGlobal, readGlobal, type LogEvent } from "./run-log";
 import { acquireTheme, releaseTheme, statusAll, type LockHandle, type LockTheme } from "./locks";
 import { embedLoop } from "./progress";
+import { claimReindex, readMarkerState, releaseReindexClaim } from "./markers";
 
 /**
  * Daemon-side qmd state reconciler + job runners.
@@ -14,28 +15,15 @@ import { embedLoop } from "./progress";
  * On each trigger (daemon startup, SIGHUP, post-job, init-handoff), the
  * reconciler discovers what work the qmd state implies and runs jobs
  * sequentially. The model is stateless w.r.t. work intent — the SQLite
- * state + marker files are the source of truth, so a fresh init, a
- * crash recovery, and a user-triggered reindex all flow through the
- * same code path.
+ * state + marker files (see markers.ts) are the source of truth, so a
+ * fresh init, a crash recovery, and a user-triggered reindex all flow
+ * through the same code path.
  *
- * Marker files under `~/.dither/`:
- *   - `needs-reindex`: any non-daemon writer touches this when it
- *     couldn't acquire qmd-index.lock; the daemon coalesces all
- *     deferred reindex requests into one follow-up pass.
- *   - `embed-disabled`: written by `dither index cancel`; the
- *     reconciler skips embedding while this exists. Cleared by
- *     `dither index update`.
- *
- * Lock topology (see locks.ts → theme surface): one lock per job theme. Jobs
- * acquire their theme lock at start, release at end. Failed
- * acquisitions (lock already held by another process) emit a
- * `job-skipped` event and the reconciler continues to the next phase.
+ * Lock topology (see locks.ts): one lock per job theme. Jobs acquire
+ * their theme lock at start, release at end. Failed acquisitions (lock
+ * already held by another process) emit a `job-skipped` event and the
+ * reconciler continues to the next phase.
  */
-
-/** Path of the `needs-reindex` marker file. */
-export function needsReindexPath(): string {
-  return join(resolveHome(), "needs-reindex");
-}
 
 export type JobType = "model-download" | "indexing" | "embedding";
 
@@ -198,14 +186,8 @@ function reduceJobsSnapshot(events: LogEvent[], inflightOnDisk: CurrentJob[]): J
   return {
     current: liveCurrent,
     recent: recent.slice(-10),
-    needsReindex: existsSync(needsReindexPath()),
-    embedDisabled: existsSync(embedDisabledPath()),
+    ...readMarkerState(),
   };
-}
-
-/** Path of the `embed-disabled` marker file. */
-export function embedDisabledPath(): string {
-  return join(resolveHome(), "embed-disabled");
 }
 
 export interface ReconcileSummary {
@@ -237,26 +219,13 @@ export async function qmdReconcile(): Promise<ReconcileSummary> {
     }
 
     // Step 1: explicit reindex request via marker, OR an empty/new
-    // index that benefits from a first-pass scan.
-    if (existsSync(needsReindexPath())) {
-      // Atomic consume: rename the marker aside so any reindex request
-      // that arrives during this cycle lands on a fresh `needs-reindex`
-      // file and is picked up by the next cycle. Unlinking the original
-      // at the *end* of a long index job would otherwise silently
-      // clobber the new request.
-      const processing = `${needsReindexPath()}.processing`;
-      try {
-        renameSync(needsReindexPath(), processing);
-      } catch {
-        // Vanished between check and rename — no-op.
-      }
+    // index that benefits from a first-pass scan. claimReindex does
+    // the atomic rename so any request arriving during the cycle lands
+    // on a fresh marker and is picked up next cycle.
+    if (claimReindex()) {
       const ran = await runIndexJob(store, "needs-reindex-marker");
       if (ran) jobsRun++;
-      try {
-        unlinkSync(processing);
-      } catch {
-        // Already gone — fine.
-      }
+      releaseReindexClaim();
     } else {
       // First-ever reconcile on a fresh library: index everything.
       const status = await store.getStatus();
@@ -267,7 +236,7 @@ export async function qmdReconcile(): Promise<ReconcileSummary> {
     }
 
     // Step 2: chunks need embedding, AND user hasn't cancelled embed.
-    if (!existsSync(embedDisabledPath())) {
+    if (!readMarkerState().embedDisabled) {
       const status = await store.getStatus();
       if (status.needsEmbedding > 0) {
         const ran = await runEmbedJob(store);
@@ -382,7 +351,7 @@ async function runEmbedJob(
       // embed-disabled marker. Between iterations the loop checks it
       // and exits early — current store.embed() batch still completes,
       // but no further iterations are queued.
-      () => existsSync(embedDisabledPath()),
+      () => readMarkerState().embedDisabled,
     );
     // Edge: nothing to embed → onProgress never fired → close download anyway.
     await closeDownload();

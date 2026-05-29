@@ -159,7 +159,7 @@ describe("promote", () => {
 
     expect(out.added).toHaveLength(1);
     expect(out.reindexDeferred).toBe(true);
-    expect(existsSync(join(home, "needs-reindex"))).toBe(true);
+    expect(existsSync(join(home, "markers", "needs-reindex"))).toBe(true);
     expect(j.events.some((e) => e.kind === "reindex-deferred")).toBe(true);
   });
 

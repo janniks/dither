@@ -129,13 +129,13 @@ Combined CONTEXT.md edit:
 - Create `markers.test.ts` covering paths, write/clear, and the migration.
 
 **Acceptance:**
-- [ ] `markers.ts` exists with the named exports
-- [ ] No other file imports marker path helpers from `daemon-jobs.ts`
-- [ ] Markers live at `<home>/markers/needs-reindex` and `<home>/markers/embed-disabled`
-- [ ] Auto-migration moves old top-level marker files on first run; idempotent
-- [ ] `daemon-jobs.ts` shrinks (no marker path helpers, no MarkerState type)
-- [ ] `markers.test.ts` covers happy path + migration
-- [ ] Existing tests pass
+- [x] `markers.ts` exists with the named exports
+- [x] No other file imports marker path helpers from `daemon-jobs.ts`
+- [x] Markers live at `<home>/markers/needs-reindex` and `<home>/markers/embed-disabled`
+- [x] Auto-migration moves old top-level marker files on first run; idempotent
+- [x] `daemon-jobs.ts` shrinks (no marker path helpers, no MarkerState type)
+- [x] `markers.test.ts` covers happy path + migration
+- [x] Existing tests pass
 
 ---
 
@@ -188,3 +188,4 @@ Two coordinated moves in one commit:
 | `37b688e` | phase 2 — run-log truncateGlobal clears both queues and sizes; docstring on singleton state |
 | `c031f6b` | phase 3 — ENOENT idiom rule documented in AGENTS.md |
 | `57f92a6` | phase 4 — CONTEXT.md: drop Snapshot/Reconciler/Lock-theme; Marker as lazy Signal |
+| `25670b7` | phase 5 — kill 1Hz heartbeat; event-driven status writes |

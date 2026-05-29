@@ -15,7 +15,8 @@ import { Refirer } from "./refirer";
 import { readRefire } from "./refire";
 import { scanKicks, type KickPayload } from "./kicks";
 import { acquire as acquireLock, release as releaseLock } from "./locks";
-import { qmdReconcile, clearInflightJobs, needsReindexPath } from "./daemon-jobs";
+import { qmdReconcile, clearInflightJobs } from "./daemon-jobs";
+import { needsReindexPath } from "./markers";
 
 /**
  * Long-lived daemon process. The status snapshot is event-driven — written

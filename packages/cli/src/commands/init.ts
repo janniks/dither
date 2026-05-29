@@ -1,5 +1,5 @@
 import { defineCommand } from "citty";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { access, lstat, mkdir, realpath } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
@@ -19,7 +19,7 @@ import {
   DaemonStoppedDuringReconcileError,
   type DaemonEvent,
 } from "../daemon-client";
-import { embedDisabledPath } from "../daemon-jobs";
+import { disableEmbed } from "../markers";
 
 /**
  * Resolve a `--library <path>` value into a canonical, writable directory
@@ -356,7 +356,7 @@ export const initCommand = defineCommand({
     // by writing the embed-disabled marker so the daemon's reconciler
     // skips the embed phase. `dither index update` clears it.
     if (!args.download) {
-      writeFileSync(embedDisabledPath(), "", "utf-8");
+      disableEmbed();
       stepDone("weights skipped (--no-download)");
     }
 

@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCommand } from "citty";
-import { embedDisabledPath, needsReindexPath } from "../daemon-jobs";
+import { embedDisabledPath, needsReindexPath } from "../markers";
 import { themeLockPath } from "../locks";
 
 async function captureLogs(fn: () => Promise<void>): Promise<string> {
@@ -119,7 +119,8 @@ describe("dither index commands", () => {
       );
       mkdirSync(join(home, "notes"), { recursive: true });
       writeFileSync(join(home, "notes", "memo.md"), "# Memo\n\nHello.\n", "utf-8");
-      writeFileSync(embedDisabledPath(), "", "utf-8");
+      const { disableEmbed } = await import("../markers");
+      disableEmbed();
       expect(existsSync(embedDisabledPath())).toBe(true);
 
       const { main } = await import("../main");

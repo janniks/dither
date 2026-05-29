@@ -11,22 +11,22 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { clearInflightJobs, qmdReconcile, readJobsSnapshot } from "./daemon-jobs";
 import {
-  clearInflightJobs,
+  disableEmbed,
   embedDisabledPath,
   needsReindexPath,
-  qmdReconcile,
-  readJobsSnapshot,
-} from "./daemon-jobs";
+  requestReindexSync,
+} from "./markers";
 import { readGlobal } from "./run-log";
 
-function renameSyncProcessing(home: string): void {
-  const marker = join(home, "needs-reindex");
+function renameSyncProcessing(): void {
+  const marker = needsReindexPath();
   renameSync(marker, `${marker}.processing`);
 }
 
-function unlinkProcessing(home: string): void {
-  unlinkSync(join(home, "needs-reindex.processing"));
+function unlinkProcessing(): void {
+  unlinkSync(`${needsReindexPath()}.processing`);
 }
 
 describe("daemon-jobs", () => {
@@ -46,12 +46,12 @@ describe("daemon-jobs", () => {
   });
 
   describe("marker paths", () => {
-    it("needsReindexPath is under <home>", () => {
-      expect(needsReindexPath()).toBe(join(home, "needs-reindex"));
+    it("needsReindexPath is under <home>/markers/", () => {
+      expect(needsReindexPath()).toBe(join(home, "markers", "needs-reindex"));
     });
 
-    it("embedDisabledPath is under <home>", () => {
-      expect(embedDisabledPath()).toBe(join(home, "embed-disabled"));
+    it("embedDisabledPath is under <home>/markers/", () => {
+      expect(embedDisabledPath()).toBe(join(home, "markers", "embed-disabled"));
     });
   });
 
@@ -85,7 +85,7 @@ describe("daemon-jobs", () => {
       // needsEmbedding count; without a real library, neither path
       // fires. We only assert that the marker existing isn't enough
       // to break the cycle.
-      writeFileSync(embedDisabledPath(), "", "utf-8");
+      disableEmbed();
       const summary = await qmdReconcile();
       expect(summary.jobsRun).toBe(0);
       expect(existsSync(embedDisabledPath())).toBe(true);
@@ -97,7 +97,7 @@ describe("daemon-jobs", () => {
       // Marker is present but openStore() returns null because no
       // config is written. The marker should NOT be cleared — the
       // reconcile didn't actually run an index job.
-      writeFileSync(needsReindexPath(), "", "utf-8");
+      requestReindexSync();
       await qmdReconcile();
       // Marker should still exist since we didn't get to the index
       // step (no store).
@@ -140,14 +140,14 @@ describe("daemon-jobs", () => {
       // marker WHILE the previous one is being "processed". Without
       // atomic consumption the late marker would be unlinked alongside
       // the original; with the rename pattern it survives.
-      writeFileSync(needsReindexPath(), "", "utf-8");
+      requestReindexSync();
       // Move the marker into processing the way the reconciler does.
-      renameSyncProcessing(home);
+      renameSyncProcessing();
       // External writer arrives mid-cycle:
-      writeFileSync(needsReindexPath(), "", "utf-8");
+      requestReindexSync();
       // Reconciler finishes the in-flight cycle and unlinks ONLY the
       // processing file:
-      unlinkProcessing(home);
+      unlinkProcessing();
       // Fresh marker survives → next cycle will pick it up.
       expect(existsSync(needsReindexPath())).toBe(true);
       expect(existsSync(`${needsReindexPath()}.processing`)).toBe(false);

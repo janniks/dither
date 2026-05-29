@@ -1,9 +1,9 @@
 import { defineCommand } from "citty";
-import { existsSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import pc from "picocolors";
 import { assertInitialized } from "../config";
 import { readDaemonPid, startDaemon } from "../daemon-control";
-import { embedDisabledPath, needsReindexPath } from "../daemon-jobs";
+import { disableEmbed, enableEmbed, requestReindexSync } from "../markers";
 import {
   acquireTheme,
   releaseTheme,
@@ -32,14 +32,8 @@ const updateSubcommand = defineCommand({
     await assertInitialized();
 
     // Clear embed-disabled so a previously cancelled embed becomes
-    // eligible again on the next daemon reconcile.
-    if (existsSync(embedDisabledPath())) {
-      try {
-        unlinkSync(embedDisabledPath());
-      } catch {
-        // Lost-the-race; fine.
-      }
-    }
+    // eligible again on the next daemon reconcile. Idempotent.
+    enableEmbed();
 
     // Acquire qmd-index.lock so a concurrent daemon-side index job
     // doesn't fight us at the SQLite layer. Non-blocking — if the
@@ -56,7 +50,7 @@ const updateSubcommand = defineCommand({
         `${pc.yellow("⚠")} qmd is busy: indexing (started ${elapsedSec}s ago).`,
       );
       console.error(`  ${pc.dim("watch with `dither status`. needs-reindex queued for catch-up.")}`);
-      writeFileSync(needsReindexPath(), "", "utf-8");
+      requestReindexSync();
       process.exitCode = 1;
       return;
     }
@@ -82,7 +76,7 @@ const updateSubcommand = defineCommand({
       // again on the daemon side — useful when the daemon was mid-job
       // and our inline update raced; the marker ensures the next
       // reconcile catches anything we missed.
-      writeFileSync(needsReindexPath(), "", "utf-8");
+      requestReindexSync();
       try {
         process.kill(pid, "SIGHUP");
       } catch {
@@ -125,7 +119,7 @@ const cancelSubcommand = defineCommand({
     let failures = 0;
     for (const [theme] of active) {
       if (theme === "embed") {
-        writeFileSync(embedDisabledPath(), "", "utf-8");
+        disableEmbed();
         const released = await waitForLockRelease(theme, 30_000);
         if (released) {
           console.log(`${pc.green("✓")} cancelled embed`);
