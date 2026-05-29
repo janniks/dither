@@ -1,0 +1,74 @@
+%% openindex plugin-run lifecycle — MANUAL kick (`dither plugin run twitter`)
+%% Sources: notes/ipc-landscape.html flows ② + ④,
+%% packages/cli/src/{daemon,plugin-run,promotion,kicks,run-log,locks,markers}.ts
+sequenceDiagram
+    autonumber
+    box CLI side
+      participant CLI
+    end
+    box daemon process
+      participant DAEMON as daemon
+      participant FIRE as fireWithSuppress
+      participant RP as runPlugin
+      participant SUP as supervisor
+      participant PROM as promotion
+    end
+    box plugin
+      participant DENO as plugin (Deno)
+    end
+    box filesystem channels
+      participant KICK as kicks/
+      participant LOCK as locks/
+      participant LOG as run-log
+      participant MARK as markers
+    end
+
+    CLI->>KICK: writeKick(name, {runId, overrides})
+    CLI->>LOG: snapshot global byte offset (for tail)
+    CLI->>DAEMON: process.kill(pid, SIGUSR1)
+    Note over CLI,DAEMON: spec called this SIGHUP; kicks actually use SIGUSR1 (kicks.ts:139)
+
+    DAEMON->>KICK: scanKicks() → drain rows
+    DAEMON->>FIRE: fireWithSuppress(name, "manual", notify, kickCtx)
+
+    FIRE->>FIRE: detector.shouldHalt(source, name)?
+    alt loop threshold reached
+      FIRE->>LOG: append halt event
+      FIRE-->>DAEMON: notify() → status.json; return
+    else proceed
+      FIRE->>LOCK: acquireLock(name)
+      Note over FIRE,LOCK: per-plugin lock is the single arbiter — all fire sources funnel through here
+      FIRE-->>DAEMON: notify() → status.json (run-started)
+      FIRE->>RP: runPlugin({name, trigger:"manual", runId, overrides})
+
+      RP->>LOG: openRun → history/<runId>/manifest.json
+      RP->>DENO: write runs/<runId>/input.json + import map
+      RP->>DENO: spawn Deno (--allow-* per grants)
+      RP->>DENO: setChildPid in journal
+
+      loop while alive
+        DENO-->>SUP: stderr NDJSON (progress / reschedule / log)
+        SUP->>LOG: append {kind: progress|reschedule|stderr}
+      end
+
+      DENO-->>RP: exit(code)
+
+      RP->>PROM: planPromotion(runs/<runId>/*.md)
+      PROM->>PROM: copyAdded → library
+      PROM->>MARK: requestReindex (touch needs-reindex)
+
+      RP->>RP: decideRunOutcome({exitCode, rescheduleMs, prior})
+      RP->>LOG: writeRefire if ok-rescheduled / failed-retry
+      RP->>LOG: close → result.json (tmp+rename)
+      RP->>DENO: rm -rf runs/<runId>/
+      Note over RP,DENO: rm -rf guards plaintext secrets in input.json
+      RP-->>FIRE: {added, reschedule}
+
+      FIRE->>LOCK: releaseLock(name)
+      FIRE-->>DAEMON: notify() → status.json (run-ended)
+      Note over FIRE,DAEMON: notify is the event-driven status-write callback (NEW in cleanup-p1 phase 5)
+    end
+
+    CLI->>LOG: followGlobal from pinned offset
+    LOG-->>CLI: stream events → terminal {kind: result}
+    CLI->>CLI: exit

@@ -1,0 +1,89 @@
+mindmap
+  root((🗺️ Openindex Newcomer Map))
+    I want to understand the system at a glance
+      codebase-architecture.mmd
+        System overview diagram
+      codebase-domain.mmd
+        Core concepts & terminology
+      CONTEXT.md
+        Domain language & key models
+      notes/ipc-landscape.html
+        Daemon ↔ CLI interaction overview
+      notes/ipc-graph.html
+        Visual dependency graph
+    I want to understand the IPC primitives
+      codebase-ipc-primitives.mmd
+        Message types & protocols
+      CONTEXT.md
+        Daemon ↔ CLI wire protocol section
+      packages/cli/src/daemon-client.ts
+        Client-side IPC implementation
+      packages/cli/src/daemon.ts
+        Daemon request handlers
+      notes/ipc-graph.html
+        IPC interaction diagram
+    I want to follow a plugin run end-to-end
+      codebase-plugin-run-sequence.mmd
+        Plugin execution flow diagram
+      packages/cli/src/commands/command-plugin-run.ts
+        CLI command entry point
+      packages/cli/src/daemon-jobs.ts
+        Daemon job orchestration
+      packages/cli/src/daemon.ts
+        fireWithSuppress handler
+    I want to understand daemon's reconciler engine
+      codebase-reconciler.mmd
+        Reconciliation workflow diagram
+      packages/cli/src/daemon-jobs.ts
+        Reconciler job implementation
+      packages/cli/src/daemon.ts
+        Reconciliation trigger points
+    I want to understand the fire-source funnel
+      codebase-fire-funnel.mmd
+        Source → fire → plugin pathway
+      packages/cli/src/scheduler.ts
+        Scheduled fire triggers
+      packages/cli/src/watcher.ts
+        File system watch integration
+      packages/cli/src/refirer.ts
+        Manual refire logic
+    I want to understand locks
+      codebase-locks.mmd
+        Lock acquisition & semantics
+      packages/cli/src/locks.ts
+        Lock implementation
+      packages/cli/src/daemon.ts
+        Lock usage in handlers
+    I want to understand the CLI surface
+      codebase-cli-commands.mmd
+        Command tree diagram
+      packages/cli/src/main.ts
+        CLI bootstrap & dispatch
+      packages/cli/src/commands/
+        Individual command implementations
+      packages/cli/src/cli-dispatch.ts
+        Command routing logic
+    I want to understand the on-disk layout
+      codebase-filesystem.mmd
+        Directory structure diagram
+      notes/ipc-landscape.html
+        Disk layout section
+      CONTEXT.md
+        Data storage section
+    I want the vocabulary
+      codebase-domain.mmd
+        Entity relationship diagram
+      CONTEXT.md
+        Domain language definitions
+      AGENTS.md
+        Model & architecture philosophy
+    I want style rules & project patterns
+      AGENTS.md
+        Code patterns & conventions
+      notes/p1-code-conventions-audit.md
+        Conventions audit & guidelines
+      docs/adr/0001-run-log-dual-scope.md
+        Run log scope decision
+      color-conventions.md
+        Output color & formatting rules
+

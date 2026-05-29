@@ -1,0 +1,56 @@
+%% Fire-source funnel: three sources, identical set/stop/stats shape,
+%% one choke point. Authoritative source: packages/cli/src/daemon.ts:75-134.
+flowchart TB
+
+  subgraph triggers[external triggers]
+    cron[croner cron tick]
+    fs[chokidar fs event<br/>debounced]
+    timer[setTimeout per refire row]
+  end
+
+  subgraph sources[fire sources — set/stop/stats]
+    sched["Scheduler<br/>set / stop / stats<br/>onFire callback"]
+    watch["Watcher<br/>set / stop / stats<br/>onFire callback"]
+    refire["Refirer<br/>set / stop / stats<br/>onFire callback"]
+  end
+
+  subgraph hub[the choke point]
+    fws["fireWithSuppress(name, trigger, notify)"]
+    det{{"LoopDetector.shouldHalt<br/>depth ≥ 3 = halt"}}
+  end
+
+  subgraph downstream[per-fire work]
+    acq[acquire Lock\nper-plugin]
+    run[runPlugin]
+    rel[release Lock]
+  end
+
+  notify(["notify()<br/>writeStatus closure"])
+
+  cron --> sched
+  fs --> watch
+  timer --> refire
+
+  sched --> fws
+  watch --> fws
+  refire --> fws
+
+  fws --> det
+  det -- halt --> notify
+  det -- proceed --> acq
+  acq --> notify
+  acq --> run
+  run --> rel
+  rel --> notify
+
+  classDef trig fill:#fef3c7,stroke:#b45309,color:#000
+  classDef src fill:#dbeafe,stroke:#1d4ed8,color:#000
+  classDef choke fill:#fee2e2,stroke:#b91c1c,color:#000,font-weight:bold
+  classDef work fill:#dcfce7,stroke:#15803d,color:#000
+  classDef sig fill:#f5d0fe,stroke:#a21caf,color:#000
+
+  class cron,fs,timer trig
+  class sched,watch,refire src
+  class fws,det choke
+  class acq,run,rel work
+  class notify sig

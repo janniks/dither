@@ -1,0 +1,50 @@
+flowchart TB
+    root(["dither<br/>main.ts"])
+
+    %% top-level commands
+    root --> init["init<br/>(first-run setup)"]:::ro
+    root --> search["search &lt;query&gt;<br/>(read qmd)"]:::ro
+    root --> get["get &lt;id|path&gt;<br/>(read qmd)"]:::ro
+    root --> status["status<br/>(read status.json + qmd)"]:::ro
+    root --> env["env"]:::ro
+    root --> daemon["daemon"]:::dctl
+    root --> index["index"]:::marker
+    root --> coll["collection"]:::ro
+    root --> plugin["plugin"]:::plug
+
+    %% env
+    env --> envSet["set NAME VAL<br/>(write env.json)"]:::ro
+    env --> envGet["get NAME<br/>(read env.json)"]:::ro
+    env --> envUnset["unset NAME<br/>(write env.json)"]:::ro
+    env --> envList["list<br/>(read env.json)"]:::ro
+
+    %% daemon
+    daemon --> dStart["start<br/>(spawn detached daemon)"]:::dctl
+    daemon --> dStop["stop<br/>(SIGTERM, 35s drain)"]:::dctl
+    daemon --> dStatus["status<br/>(probe pid + snapshot)"]:::dctl
+    daemon --> dReload["reload<br/>(SIGHUP)"]:::dctl
+    daemon --> dLogs["logs [-f]<br/>(tail daemon.log)"]:::dctl
+    daemon --> dRun["run (hidden)<br/>(runDaemon in-process)"]:::dctl
+
+    %% index
+    index --> iUpdate["update<br/>(clear embed-disabled,<br/>write needs-reindex, SIGHUP)"]:::marker
+    index --> iCancel["cancel<br/>(write embed-disabled marker)"]:::marker
+
+    %% collection
+    coll --> cAdd["add &lt;path&gt; [--name]<br/>(register external + reindex)"]:::ro
+    coll --> cList["list [-v]<br/>(read registry)"]:::ro
+    coll --> cRemove["remove &lt;name&gt;<br/>(unregister + reindex)"]:::ro
+
+    %% plugin
+    plugin --> pInstall["install<br/>(installPlugin +<br/>handleProtectedInstall macOS +<br/>ensureDaemonForPlugin)"]:::plug
+    plugin --> pRun["run &lt;name&gt;<br/>(write kick, SIGHUP, tail run-log)"]:::plug
+    plugin --> pRuns["runs<br/>(read history/&lt;runId&gt;)"]:::plug
+    plugin --> pList["list<br/>(read plugins/)"]:::plug
+    plugin --> pRemove["remove<br/>(rm plugins/&lt;name&gt;)"]:::plug
+    plugin --> pOauth["oauth<br/>(OAuth flow → env.json)"]:::plug
+
+    %% palette
+    classDef ro fill:#cffafe,stroke:#0e7490,color:#0e3a4a
+    classDef dctl fill:#ffedd5,stroke:#c2410c,color:#7c2d12
+    classDef plug fill:#dcfce7,stroke:#15803d,color:#14532d
+    classDef marker fill:#fee2e2,stroke:#b91c1c,color:#7f1d1d

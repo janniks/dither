@@ -1,0 +1,72 @@
+%% openindex / dither — qmdReconcile cycle (daemon-jobs.ts:207-258)
+%% Post-phase-6: needs-reindex marker is claimed via atomic rename (markers.claimReindex)
+%% Two serial steps: (1) index decision  (2) embed decision  — bracketed by reconcile-started/done
+stateDiagram-v2
+  [*] --> Idle
+
+  Idle --> ReconcileStarted: tick / SIGHUP / startup
+  ReconcileStarted: append reconcile-started (cycleId)
+
+  ReconcileStarted --> NoLibrary: openStore() === null
+  NoLibrary --> ReconcileDone: reason=no-library
+
+  ReconcileStarted --> ClaimingReindex: store opened
+
+  state ClaimingReindex {
+    [*] --> ProbeMarker
+    ProbeMarker --> Claimed: rename needs-reindex -> .processing OK
+    ProbeMarker --> NotClaimed: ENOENT (no marker)
+  }
+
+  ClaimingReindex --> RunningIndexJob: Claimed [reason=needs-reindex-marker]
+  ClaimingReindex --> FreshLibraryCheck: NotClaimed
+  FreshLibraryCheck: store.getStatus()
+  FreshLibraryCheck --> RunningIndexJob: totalDocuments==0 && collections>0 [reason=first-pass]
+  FreshLibraryCheck --> CheckingEmbed: otherwise (skip index)
+
+  state RunningIndexJob {
+    [*] --> AcquireIndexLock
+    AcquireIndexLock --> IndexBusy: acquireTheme(index) == null
+    AcquireIndexLock --> IndexRun: lock held
+    IndexBusy --> [*]: emit job-skipped(indexing,lock-busy)
+    IndexRun --> IndexRun: store.update onProgress -> emit job-progress
+    IndexRun --> [*]: emit job-done(indexing)
+  }
+
+  RunningIndexJob --> ReleasingReindex: was Claimed
+  RunningIndexJob --> CheckingEmbed: was first-pass (no marker to release)
+  ReleasingReindex: releaseReindexClaim() unlinks .processing
+  ReleasingReindex --> CheckingEmbed
+
+  CheckingEmbed: readMarkerState().embedDisabled?
+  CheckingEmbed --> ReconcileDone: embedDisabled == true
+  CheckingEmbed --> EmbedNeededCheck: enabled
+  EmbedNeededCheck: store.getStatus().needsEmbedding
+  EmbedNeededCheck --> ReconcileDone: needsEmbedding == 0
+  EmbedNeededCheck --> RunningEmbedJob: needsEmbedding > 0
+
+  state RunningEmbedJob {
+    [*] --> AcquireEmbedLock
+    AcquireEmbedLock --> EmbedBusy: acquireTheme(embed) == null
+    EmbedBusy --> [*]: emit job-skipped(embedding,lock-busy)
+    AcquireEmbedLock --> ModelDownload: lock held
+    ModelDownload: emit job-started(model-download)
+    ModelDownload --> EmbedIter: first onProgress -> closeDownload
+    EmbedIter: store.embed() batch
+    EmbedIter --> EmbedCheckCancel: batch complete
+    EmbedCheckCancel: readMarkerState().embedDisabled?
+    EmbedCheckCancel --> EmbedIter: still enabled && more chunks
+    EmbedCheckCancel --> [*]: disabled OR drained -> emit job-done(embedding)
+  }
+
+  RunningEmbedJob --> ReconcileDone
+
+  ReconcileStarted --> ReconcileFailed: thrown error (any step)
+  ClaimingReindex --> ReconcileFailed: thrown error
+  RunningIndexJob --> ReconcileFailed: thrown error
+  RunningEmbedJob --> ReconcileFailed: thrown error
+  ReconcileFailed: append reconcile-failed (cycleId, error)
+  ReconcileFailed --> ReconcileDone: finally: store.close()
+
+  ReconcileDone: append reconcile-done (cycleId, jobsRun)
+  ReconcileDone --> Idle
