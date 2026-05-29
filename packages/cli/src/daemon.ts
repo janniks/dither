@@ -18,21 +18,19 @@ import { acquire as acquireLock, release as releaseLock } from "./locks";
 import { qmdReconcile, clearInflightJobs, needsReindexPath } from "./daemon-jobs";
 
 /**
- * Long-lived daemon process. In phase 3 the inner loop is a quiet heartbeat
- * that rewrites the status snapshot — phases 4 and 5 will populate it with
- * scheduler and watcher activity. The interesting work is the lifecycle:
- * PID file, signal handlers (SIGTERM graceful, SIGHUP no-op reload hook),
- * snapshot publishing.
+ * Long-lived daemon process. The status snapshot is event-driven — written
+ * at startup, SIGHUP reload, run start/end, loop-detector halt, and shutdown.
+ * No periodic heartbeat; liveness is the pid file + `kill(pid, 0)` + token
+ * match. `lastUpdated` on the snapshot tells the user how fresh it is.
  */
 
-const HEARTBEAT_MS = 1_000;
 const SHUTDOWN_GRACE_MS = 30_000;
 
 export interface StatusSnapshot {
   pid: number;
   token: string;
   startedAt: string;
-  lastTick: string;
+  lastUpdated: string;
   version: string;
   schedules: number;
   watches: number;
@@ -80,12 +78,14 @@ async function fireWithSuppress(
   detector: LoopDetector,
   name: string,
   trigger: "scheduled" | "watch" | "manual",
+  notify: () => void,
   kick?: KickContext,
 ): Promise<void> {
   const source = `${trigger}:${name}`;
   if (detector.shouldHalt(source, name)) {
     detector.record(source, name, false);
     console.error(`[daemon] halting ${trigger} fire of '${name}' — loop threshold reached`);
+    notify();
     return;
   }
   detector.record(source, name, true);
@@ -100,6 +100,7 @@ async function fireWithSuppress(
     console.error(`[daemon] ${trigger} fire of '${name}' skipped — already running`);
     return;
   }
+  notify();
 
   try {
     const result = await runPlugin({
@@ -114,6 +115,7 @@ async function fireWithSuppress(
     console.error(`[daemon] ${trigger} fire of '${name}' failed: ${message}`);
   } finally {
     await releaseLock(lock);
+    notify();
   }
 
   // Pick up any refire row the run just wrote (plugin asked to be refired,
@@ -126,7 +128,7 @@ async function fireWithSuppress(
   // until the inbox is empty (or the next event lands a fresh debounce).
   if (trigger === "watch") {
     const stillPending = await inboxHasItems(name).catch(() => false);
-    if (stillPending) void fireWithSuppress(watcher, refirer, detector, name, "watch");
+    if (stillPending) void fireWithSuppress(watcher, refirer, detector, name, "watch", notify);
   }
 }
 
@@ -136,8 +138,9 @@ function fireKick(
   detector: LoopDetector,
   name: string,
   payload: KickPayload,
+  notify: () => void,
 ): void {
-  void fireWithSuppress(watcher, refirer, detector, name, "manual", {
+  void fireWithSuppress(watcher, refirer, detector, name, "manual", notify, {
     runId: payload.runId,
     ...(payload.overrides ? { overrides: payload.overrides } : {}),
   });
@@ -210,7 +213,7 @@ async function writeStatusSnapshot(
     pid: process.pid,
     token: state.token,
     startedAt: state.startedAt,
-    lastTick: new Date().toISOString(),
+    lastUpdated: new Date().toISOString(),
     version: "0.0.1",
     schedules: state.scheduleCount,
     watches: state.watchCount,
@@ -246,17 +249,26 @@ export async function runDaemon(): Promise<void> {
   let watcher!: Watcher;
   // eslint-disable-next-line prefer-const
   let refirer!: Refirer;
+  // Status-snapshot writer — bound after the triad is constructed because
+  // writeStatusSnapshot needs scheduler/watcher/refirer. The initial no-op
+  // is replaced once the triad exists; any callback that fires before then
+  // (impossible in practice — triad start is synchronous below) is a no-op.
+  // eslint-disable-next-line prefer-const
+  let writeStatus: () => void = () => undefined;
   watcher = new Watcher((name: string) =>
-    fireWithSuppress(watcher, refirer, detector, name, "watch"),
+    fireWithSuppress(watcher, refirer, detector, name, "watch", writeStatus),
   );
   const scheduler = new Scheduler((name: string) =>
-    fireWithSuppress(watcher, refirer, detector, name, "scheduled"),
+    fireWithSuppress(watcher, refirer, detector, name, "scheduled", writeStatus),
   );
   // Refirer drives plugin-initiated reschedules + post-failure retries. Fires
   // through the same watch-trigger pipeline (drains inbox, runs plugin).
   refirer = new Refirer((name: string) =>
-    fireWithSuppress(watcher, refirer, detector, name, "watch"),
+    fireWithSuppress(watcher, refirer, detector, name, "watch", writeStatus),
   );
+  writeStatus = (): void => {
+    void writeStatusSnapshot(state, scheduler, watcher, detector);
+  };
   // reconcile() loads config + grants fresh on every call, so SIGHUP
   // (`dither daemon reload`) is the supported way to pick up a library
   // change after `dither init --force`. We do NOT auto-reload on config
@@ -309,7 +321,7 @@ export async function runDaemon(): Promise<void> {
   // Drain kicks that arrived while the daemon was down. Same robustness
   // pattern as recoverOrphanInflight + refirer.reload.
   await scanKicks((name, payload) =>
-    fireKick(watcher, refirer, detector, name, payload),
+    fireKick(watcher, refirer, detector, name, payload, writeStatus),
   ).catch((err) => {
     console.error(`[daemon] kick drain failed: ${err instanceof Error ? err.message : String(err)}`);
   });
@@ -357,10 +369,6 @@ export async function runDaemon(): Promise<void> {
     resolveExit = r;
   });
 
-  const tickHandle = setInterval(() => {
-    void writeStatusSnapshot(state, scheduler, watcher, detector);
-  }, HEARTBEAT_MS);
-
   function onTerm(): void {
     if (state.shuttingDown) return;
     state.shuttingDown = true;
@@ -368,7 +376,6 @@ export async function runDaemon(): Promise<void> {
   }
 
   async function shutdown(): Promise<void> {
-    clearInterval(tickHandle);
     scheduler.stop();
     watcher.stop();
     refirer.stop();
@@ -380,15 +387,19 @@ export async function runDaemon(): Promise<void> {
       await new Promise((r) => setTimeout(r, 250));
     }
     await appendGlobal({ kind: "daemon-stopped", pid: process.pid }).catch(() => undefined);
+    // Final status write — reflects the shutting-down state.
+    await writeStatusSnapshot(state, scheduler, watcher, detector).catch(() => undefined);
     await removePidFile(state);
     resolveExit();
   }
 
   function onHup(): void {
     state.reloadRequested = true;
-    void Promise.all([reconcile(), refirer.reload()]).catch((err) => {
-      console.error(`[daemon] reload failed: ${err instanceof Error ? err.message : String(err)}`);
-    });
+    void Promise.all([reconcile(), refirer.reload()])
+      .then(() => writeStatus())
+      .catch((err) => {
+        console.error(`[daemon] reload failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
     // SIGHUP is also the handoff signal from `dither init` / `dither
     // index update` — reconcile qmd state too.
     fireQmdReconcile();
@@ -397,7 +408,7 @@ export async function runDaemon(): Promise<void> {
   function onUsr1(): void {
     // POSIX coalesces signals — every kick on disk gets processed per scan.
     void scanKicks((name, payload) =>
-      fireKick(watcher, refirer, detector, name, payload),
+      fireKick(watcher, refirer, detector, name, payload, writeStatus),
     ).catch((err) => {
       console.error(`[daemon] kick scan failed: ${err instanceof Error ? err.message : String(err)}`);
     });

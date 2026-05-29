@@ -99,13 +99,13 @@ Combined CONTEXT.md edit:
 - Update `commands/status.ts` to display `lastUpdated: "Nm ago"` so humans can judge staleness.
 
 **Acceptance:**
-- [ ] No `setInterval` writes `status.json` in `daemon.ts`
-- [ ] `status.json` written on each of: startup, SIGHUP reload, run start, run end, halt, shutdown
-- [ ] `lastUpdated` field present; `heartbeat`/`lastBeat` removed
-- [ ] `probeDaemon` uses pid + kill(0) + token; no freshness window
-- [ ] `STATUS_FRESH_MS` constant deleted
-- [ ] `dither status` displays "Nm ago" for `lastUpdated`
-- [ ] `daemon.test.ts` / `daemon-control.test.ts` / `status.test.ts` pass (some assertions about heartbeat update to assert event-driven writes instead)
+- [x] No `setInterval` writes `status.json` in `daemon.ts`
+- [x] `status.json` written on each of: startup, SIGHUP reload, run start, run end, halt, shutdown
+- [x] `lastUpdated` field present; `heartbeat`/`lastBeat` removed
+- [x] `probeDaemon` uses pid + kill(0) + token; no freshness window
+- [x] `STATUS_FRESH_MS` constant deleted
+- [x] `dither status` displays "Nm ago" for `lastUpdated`
+- [x] `daemon.test.ts` / `daemon-control.test.ts` / `status.test.ts` pass (some assertions about heartbeat update to assert event-driven writes instead)
 
 ---
 
@@ -187,3 +187,4 @@ Two coordinated moves in one commit:
 | `a58e932` | phase 1 — promotion.ts IIFE rewritten as early-throw + 2-level ternary |
 | `37b688e` | phase 2 — run-log truncateGlobal clears both queues and sizes; docstring on singleton state |
 | `c031f6b` | phase 3 — ENOENT idiom rule documented in AGENTS.md |
+| `57f92a6` | phase 4 — CONTEXT.md: drop Snapshot/Reconciler/Lock-theme; Marker as lazy Signal |

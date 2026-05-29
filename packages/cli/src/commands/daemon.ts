@@ -77,19 +77,19 @@ const statusSubcommand = defineCommand({
       return;
     }
     if (!s.running) {
-      const why = formatProbeReason(s.reason, s.staleMs);
+      const why = formatProbeReason(s.reason);
       console.log(`daemon: not running${why ? ` (${why})` : ""}`);
       if (s.pid) console.log(`pid:    ${s.pid}`);
       if (s.snapshot) {
         console.log(`startedAt: ${s.snapshot.startedAt}`);
-        console.log(`lastTick:  ${s.snapshot.lastTick}`);
+        console.log(`lastUpdated:  ${s.snapshot.lastUpdated}`);
       }
       return;
     }
     console.log(`daemon:      running (pid ${s.pid})`);
     if (s.snapshot) {
       console.log(`startedAt:   ${s.snapshot.startedAt}`);
-      console.log(`lastTick:    ${s.snapshot.lastTick}`);
+      console.log(`lastUpdated: ${s.snapshot.lastUpdated}`);
       console.log(`schedules:   ${s.snapshot.schedules}`);
       printPreview(s.snapshot.scheduleEntries, (e) => {
         const next = e.nextRun ? formatRelTime(Date.parse(e.nextRun)) : "—";

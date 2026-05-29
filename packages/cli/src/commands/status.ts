@@ -3,6 +3,7 @@ import pc from "picocolors";
 import { getStatus, type DitherStatus } from "../status";
 import { formatProbeReason } from "../daemon-control";
 import { tildePath } from "../prompt";
+import { formatRelPast } from "../relative-time";
 
 const fmt = (n: number): string => new Intl.NumberFormat(undefined).format(n);
 
@@ -63,8 +64,13 @@ function printHumanStatus(s: DitherStatus): void {
       label = `running (pid ${s.daemon.pid})`;
     }
     console.log(`daemon:      ${pc.green(label)}`);
+    const stamp = s.daemon.snapshot?.lastUpdated;
+    if (stamp) {
+      const ago = formatRelPast(Date.parse(stamp));
+      console.log(`             ${pc.dim(`status updated ${ago}`)}`);
+    }
   } else {
-    const why = formatProbeReason(s.daemon.reason, s.daemon.staleMs);
+    const why = formatProbeReason(s.daemon.reason);
     const tail = why ? pc.dim(` (${why})`) : "";
     console.log(`daemon:      ${pc.dim("not running")}${tail}`);
   }

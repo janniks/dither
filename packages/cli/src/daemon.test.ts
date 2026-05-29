@@ -153,7 +153,7 @@ describe("daemon control (no daemon)", () => {
             pid,
             token,
             startedAt,
-            lastTick: new Date().toISOString(),
+            lastUpdated: new Date().toISOString(),
             version: "0.0.1",
             schedules: 0,
             watches: 0,
