@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dither — IPC & process landscape</title>
+<style>
+  :root {
+    --bg:       #0d1117;
+    --panel:    #161b22;
+    --border:   #30363d;
+    --text:     #c9d1d9;
+    --dim:      #8b949e;
+    --accent:   #58a6ff;
+
+    --lock:      #f0883e;
+    --kick:      #58a6ff;
+    --inbox:     #a371f7;
+    --refire:    #39c5cf;
+    --marker:    #ff7b72;
+    --runlog:    #7ee787;
+    --snapshot:  #8b949e;
+    --signal:    #ff79c6;
+    --spawn:     #e3b341;
+
+    --cli:    #58a6ff;
+    --daemon: #f0883e;
+    --plugin: #7ee787;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 2rem 1.5rem 4rem;
+    line-height: 1.55;
+  }
+
+  .container { max-width: 1180px; margin: 0 auto; }
+
+  h1 {
+    font-size: 2rem;
+    font-weight: 600;
+    margin: 0 0 0.5rem;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    color: var(--dim);
+    margin-bottom: 2.5rem;
+    font-size: 1.05rem;
+    max-width: 800px;
+  }
+  h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 2.5rem 0 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 1.5rem 0 0.75rem;
+    color: var(--text);
+  }
+  code, .mono {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.9em;
+  }
+  p { margin: 0.5rem 0; }
+
+  /* primitive table */
+  .prim-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+  }
+  .prim-table th, .prim-table td {
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .prim-table th {
+    color: var(--dim);
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: rgba(255,255,255,0.02);
+  }
+  .prim-table td.name { font-weight: 600; }
+  .prim-table td.path,
+  .prim-table code {
+    font-family: ui-monospace, monospace;
+    color: var(--dim);
+    font-size: 0.85rem;
+  }
+
+  .dot {
+    display: inline-block;
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    margin-right: 0.5rem;
+    vertical-align: middle;
+  }
+  .dot.lock     { background: var(--lock); }
+  .dot.kick     { background: var(--kick); }
+  .dot.inbox    { background: var(--inbox); }
+  .dot.refire   { background: var(--refire); }
+  .dot.marker   { background: var(--marker); }
+  .dot.runlog   { background: var(--runlog); }
+  .dot.snapshot { background: var(--snapshot); }
+  .dot.signal   { background: var(--signal); }
+  .dot.spawn    { background: var(--spawn); }
+
+  /* processes */
+  .processes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+    margin: 1rem 0;
+  }
+  .process {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.1rem;
+    border-left-width: 4px;
+  }
+  .process.cli    { border-left-color: var(--cli); }
+  .process.daemon { border-left-color: var(--daemon); }
+  .process.plugin { border-left-color: var(--plugin); }
+  .process h4 {
+    margin: 0 0 0.4rem;
+    font-size: 1rem;
+    color: var(--text);
+  }
+  .process p {
+    margin: 0;
+    color: var(--dim);
+    font-size: 0.9rem;
+  }
+  .process .pill {
+    display: inline-block;
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 3px;
+    margin-left: 0.4rem;
+  }
+  .process.cli    .pill { background: rgba(88,166,255,0.15); color: var(--cli); }
+  .process.daemon .pill { background: rgba(240,136,62,0.15); color: var(--daemon); }
+  .process.plugin .pill { background: rgba(126,231,135,0.15); color: var(--plugin); }
+
+  /* tree */
+  .tree {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    font-family: ui-monospace, monospace;
+    font-size: 0.85rem;
+    white-space: pre;
+    overflow-x: auto;
+    color: var(--dim);
+    line-height: 1.7;
+  }
+  .tree .name     { color: var(--text); }
+  .tree .lock     { color: var(--lock); }
+  .tree .kick     { color: var(--kick); }
+  .tree .inbox    { color: var(--inbox); }
+  .tree .refire   { color: var(--refire); }
+  .tree .marker   { color: var(--marker); }
+  .tree .runlog   { color: var(--runlog); }
+  .tree .snapshot { color: var(--text); }
+
+  /* flows */
+  .flow {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem 1.25rem;
+    margin-bottom: 1rem;
+  }
+  .flow-title {
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: var(--text);
+    font-size: 1rem;
+  }
+  .flow-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .step {
+    display: grid;
+    grid-template-columns: 110px 16px 1fr auto;
+    align-items: start;
+    column-gap: 0.75rem;
+    padding: 0.35rem 0;
+  }
+  .step + .step { border-top: 1px dashed rgba(255,255,255,0.04); }
+  .step .actor {
+    text-align: right;
+    color: var(--dim);
+    font-size: 0.78rem;
+    font-family: ui-monospace, monospace;
+    line-height: 1.6;
+    padding-top: 0.05rem;
+  }
+  .step .actor.cli        { color: var(--cli); }
+  .step .actor.daemon,
+  .step .actor.scheduler,
+  .step .actor.watcher,
+  .step .actor.refirer,
+  .step .actor.supervisor,
+  .step .actor.reconciler { color: var(--daemon); }
+  .step .actor.plugin     { color: var(--plugin); }
+  .step .arrow {
+    color: var(--dim);
+    text-align: center;
+    line-height: 1.6;
+  }
+  .step .action {
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
+  .step .ipc {
+    font-family: ui-monospace, monospace;
+    font-size: 0.72rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 3px;
+    color: var(--bg);
+    font-weight: 700;
+    align-self: center;
+    white-space: nowrap;
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
+  }
+  .ipc.lock     { background: var(--lock); }
+  .ipc.kick     { background: var(--kick); }
+  .ipc.inbox    { background: var(--inbox); }
+  .ipc.refire   { background: var(--refire); }
+  .ipc.marker   { background: var(--marker); }
+  .ipc.runlog   { background: var(--runlog); }
+  .ipc.snapshot { background: var(--snapshot); color: var(--bg); }
+  .ipc.signal   { background: var(--signal); }
+  .ipc.spawn    { background: var(--spawn); }
+  .ipc.inproc   { background: var(--border); color: var(--text); }
+
+  .gap {
+    grid-column: 1 / -1;
+    color: var(--dim);
+    font-size: 0.78rem;
+    font-style: italic;
+    padding: 0.35rem 0 0.35rem 110px;
+    margin-left: 16px;
+  }
+
+  .note {
+    color: var(--dim);
+    font-size: 0.88rem;
+    margin-top: 0.85rem;
+    padding: 0.65rem 0.85rem;
+    background: rgba(255,255,255,0.02);
+    border-left: 3px solid var(--border);
+    border-radius: 3px;
+  }
+
+  /* legend */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem 1.5rem;
+    margin: 0.75rem 0 1.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--dim);
+  }
+  .legend-item b { color: var(--text); }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 3rem 0 1.5rem;
+  }
+
+  .footer {
+    color: var(--dim);
+    font-size: 0.8rem;
+    text-align: center;
+    margin-top: 3rem;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>dither — IPC & process landscape</h1>
+<div class="subtitle">
+  Single CLI binary. One long-lived daemon. Sandboxed Deno subprocesses for plugins.
+  The filesystem is the wire — every IPC primitive is a file (or signal).
+</div>
+
+<div class="legend">
+  <div class="legend-item"><span class="dot lock"></span><b>Lock</b> mutex</div>
+  <div class="legend-item"><span class="dot kick"></span><b>Kick</b> per-plugin run request</div>
+  <div class="legend-item"><span class="dot inbox"></span><b>Inbox</b> watch-event queue</div>
+  <div class="legend-item"><span class="dot refire"></span><b>Refire</b> reschedule state</div>
+  <div class="legend-item"><span class="dot marker"></span><b>Marker</b> global presence flag</div>
+  <div class="legend-item"><span class="dot runlog"></span><b>Run-log</b> event stream</div>
+  <div class="legend-item"><span class="dot snapshot"></span><b>Snapshot</b> replaceable JSON</div>
+  <div class="legend-item"><span class="dot signal"></span><b>Signal</b> POSIX</div>
+  <div class="legend-item"><span class="dot spawn"></span><b>Spawn</b> process</div>
+</div>
+
+<h2>Processes</h2>
+<div class="processes">
+  <div class="process cli">
+    <h4>CLI <span class="pill">dither &lt;cmd&gt;</span></h4>
+    <p>Short-lived. Reads <code>qmd</code> directly for search/get. Sends requests to the daemon for plugin and index work. Auto-spawns the daemon if it's not running.</p>
+  </div>
+  <div class="process daemon">
+    <h4>daemon <span class="pill">dither daemon run</span></h4>
+    <p>Long-lived. Owns scheduler, watcher, refirer, reconciler, plugin host. Heartbeats <code>status.json</code> at 1&nbsp;Hz. Writes <code>dither.pid</code> at startup; verifies own identity before unlinking it on shutdown.</p>
+  </div>
+  <div class="process plugin">
+    <h4>plugin <span class="pill">Deno subprocess</span></h4>
+    <p>Spawned per run by the daemon. Sandboxed via Deno flags derived from grants (<code>--allow-{read,write,env,net}</code>). Writes markdown into <code>runs/&lt;runId&gt;/</code>; daemon promotes on clean exit.</p>
+  </div>
+</div>
+
+<h2>IPC primitives</h2>
+<table class="prim-table">
+  <thead>
+    <tr><th>name</th><th>on disk</th><th>scope</th><th>shape &amp; lifecycle</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="name"><span class="dot lock"></span>Lock</td>
+      <td class="path">locks/&lt;name&gt;.lock</td>
+      <td>per-name</td>
+      <td>O_EXCL create; body is holder PID. Acquire/release; stale (dead PID) is reclaimed. Two surfaces: <code>acquire(name)</code> for plugins / <code>daemon-start</code>, <code>acquireTheme(theme)</code> for <code>qmd-{download,index,embed}</code>.</td>
+    </tr>
+    <tr>
+      <td class="name"><span class="dot kick"></span>Kick</td>
+      <td class="path">kicks/&lt;plugin&gt;.json</td>
+      <td>per-plugin</td>
+      <td>CLI writes one to request a run. Daemon scans on SIGHUP and consumes (delete on fire). Latest-write-wins.</td>
+    </tr>
+    <tr>
+      <td class="name"><span class="dot inbox"></span>Inbox</td>
+      <td class="path">inboxes/&lt;plugin&gt;.ndjson</td>
+      <td>per-plugin</td>
+      <td>Watcher appends NDJSON rows (path + mtime). Fire start atomically renames inbox → inflight and reads it. Failure paths restore inflight → inbox (at-least-once).</td>
+    </tr>
+    <tr>
+      <td class="name"><span class="dot refire"></span>Refire</td>
+      <td class="path">refires/&lt;plugin&gt;.json</td>
+      <td>per-plugin</td>
+      <td>Reschedule state ({fireAt, attempts, suspended}). Refirer holds one <code>setTimeout</code> per row; chunks past 32-bit max.</td>
+    </tr>
+    <tr>
+      <td class="name"><span class="dot marker"></span>Marker</td>
+      <td class="path">markers/&lt;name&gt;</td>
+      <td>daemon-global</td>
+      <td>Zero-byte presence flag. Cheap per-iteration check via <code>existsSync</code>. Two flavors today: <em>request</em> (<code>needs-reindex</code> — write, consume, clear) and <em>state</em> (<code>embed-disabled</code> — write, persist, explicit unlink).</td>
+    </tr>
+    <tr>
+      <td class="name"><span class="dot runlog"></span>Run-log</td>
+      <td class="path">run-log.jsonl, history/&lt;runId&gt;/events.jsonl</td>
+      <td>global + per-run</td>
+      <td>Append-only JSONL. Followers poll + stat (rotation-safe via dev/inode). Per ADR&nbsp;0001 the seam is one module, the on-disk layout is two paths.</td>
+    </tr>
+    <tr>
+      <td class="name"><span class="dot snapshot"></span>Snapshot</td>
+      <td class="path">status.json, env.json, config.json, dither.pid, history/&lt;runId&gt;/{manifest,result}.json</td>
+      <td>global / per-run</td>
+      <td>One file replaced wholesale on each write (tmp + rename for atomicity where readers race).</td>
+    </tr>
+    <tr>
+      <td class="name"><span class="dot signal"></span>Signal</td>
+      <td class="path">SIGHUP / SIGTERM / SIGINT / kill(pid,&nbsp;0)</td>
+      <td>process</td>
+      <td>SIGHUP = reload config + grants + refires + reconcile. TERM/INT = graceful shutdown (30 s child-drain). <code>kill(pid,&nbsp;0)</code> = liveness probe (no signal sent).</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Disk layout (<code>~/.dither/</code>)</h2>
+<div class="tree"><span class="name">~/.dither/</span>
+├── <span class="snapshot">dither.pid</span>              daemon identity ({pid, token, startedAt})
+├── <span class="snapshot">status.json</span>             1 Hz daemon snapshot
+├── <span class="snapshot">env.json</span>                global env values (referenced via grants.envRefs)
+├── <span class="snapshot">config.json</span>             install config ({schema.version, library.path})
+├── <span class="runlog">run-log.jsonl</span>           global event stream (truncated on daemon start)
+├── <span class="snapshot">qmd-index.sqlite</span>        qmd FTS + vector index
+├── <span class="marker">markers/</span>
+│   ├── <span class="marker">needs-reindex</span>       <em>request</em> marker — written by promote
+│   └── <span class="marker">embed-disabled</span>      <em>state</em> marker — written by `dither index cancel`
+├── <span class="lock">locks/</span>
+│   ├── <span class="lock">&lt;plugin&gt;.lock</span>      per-plugin exclusion during run
+│   ├── <span class="lock">qmd-download.lock</span>   model weight download serialisation
+│   ├── <span class="lock">qmd-index.lock</span>      indexing job serialisation
+│   ├── <span class="lock">qmd-embed.lock</span>      embedding job serialisation
+│   └── <span class="lock">daemon-start.lock</span>   single-spawn guard
+├── <span class="kick">kicks/&lt;plugin&gt;.json</span>      CLI → daemon "run this plugin"
+├── <span class="inbox">inboxes/&lt;plugin&gt;.ndjson</span>   watcher → daemon watch-event queue
+├── <span class="inbox">inflight/&lt;plugin&gt;.ndjson</span>  claimed-but-unfinished inbox rows
+├── <span class="refire">refires/&lt;plugin&gt;.json</span>    refire reschedule + retry state
+├── history/&lt;runId&gt;/         per-run journal
+│   ├── <span class="snapshot">manifest.json</span>       identity (+ childPid post-spawn)
+│   ├── <span class="runlog">events.jsonl</span>        progress/stderr/added/reschedule
+│   └── <span class="snapshot">result.json</span>         terminal status (tmp + rename)
+├── runs/&lt;runId&gt;/            ephemeral plugin scratch (rm -rf'd in finally)
+├── jobs/&lt;jobId&gt;.json        qmd job inflight snapshot
+├── plugins/&lt;name&gt;/          installed plugin code + state/
+├── grants/&lt;plugin&gt;.json     consented permissions per plugin
+├── bin/deno-&lt;ver&gt;           managed Deno binary
+└── logs/daemon.log          stdout/stderr of daemon process</div>
+
+<h2>What spawns what</h2>
+<div class="flow">
+  <div class="flow-title">Process spawn graph</div>
+  <div class="flow-steps">
+    <div class="step">
+      <div class="actor cli">user shell</div>
+      <div class="arrow">→</div>
+      <div class="action"><code>dither &lt;command&gt;</code> — CLI process starts</div>
+      <div class="ipc spawn">spawn</div>
+    </div>
+    <div class="step">
+      <div class="actor cli">CLI</div>
+      <div class="arrow">→</div>
+      <div class="action">if daemon pid dead/missing and command needs it: fork detached <code>dither daemon run</code></div>
+      <div class="ipc spawn">spawn</div>
+    </div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action">per fire (schedule / watch / refire / kick): spawn Deno subprocess for the plugin</div>
+      <div class="ipc spawn">spawn</div>
+    </div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action">per reconcile cycle (1 Hz): in-process index / embed jobs (no spawn)</div>
+      <div class="ipc inproc">in-proc</div>
+    </div>
+  </div>
+</div>
+
+<h2>Flows</h2>
+
+<!-- Flow 1 -->
+<div class="flow">
+  <div class="flow-title">① <code>dither search</code> / <code>dither get</code> — CLI reads qmd directly</div>
+  <div class="flow-steps">
+    <div class="step">
+      <div class="actor cli">CLI</div>
+      <div class="arrow">→</div>
+      <div class="action">open <code>qmd-index.sqlite</code> in this process (better-sqlite3 native binding)</div>
+      <div class="ipc snapshot">sqlite</div>
+    </div>
+    <div class="step">
+      <div class="actor cli">CLI</div>
+      <div class="arrow">→</div>
+      <div class="action">run FTS / vector query; print results; exit</div>
+    </div>
+  </div>
+  <div class="note">No IPC. The daemon may not even be running. Search and get never touch a lock theme.</div>
+</div>
+
+<!-- Flow 2 -->
+<div class="flow">
+  <div class="flow-title">② Manual plugin run — <code>dither plugin run twitter</code></div>
+  <div class="flow-steps">
+    <div class="step">
+      <div class="actor cli">CLI</div>
+      <div class="arrow">→</div>
+      <div class="action">write kick file (payload = trigger info)</div>
+      <div class="ipc kick">kick</div>
+    </div>
+    <div class="step">
+      <div class="actor cli">CLI</div>
+      <div class="arrow">→</div>
+      <div class="action">snapshot global run-log byte offset → <code>kill(pid, SIGHUP)</code></div>
+      <div class="ipc signal">signal</div>
+    </div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action">SIGHUP handler: reload grants/refires; scan <code>kicks/</code></div>
+      <div class="ipc kick">kick</div>
+    </div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action">for each kick: <code>fireWithSuppress(name, "manual")</code></div>
+    </div>
+    <div class="step">
+      <div class="actor cli">CLI (still alive)</div>
+      <div class="arrow">→</div>
+      <div class="action">tail global run-log from pinned offset; render events; exit on run-close</div>
+      <div class="ipc runlog">run-log</div>
+    </div>
+  </div>
+  <div class="note">The "snapshot offset → signal → tail from offset" pattern is <code>daemonClient.triggerAndWatch()</code> — it closes the race where the daemon emits the event before the follower opens the log.</div>
+</div>
+
+<!-- Flow 3 -->
+<div class="flow">
+  <div class="flow-title">③ Fire sources — three triggers, one choke point</div>
+  <div class="flow-steps">
+    <div class="step">
+      <div class="actor scheduler">Scheduler</div>
+      <div class="arrow">→</div>
+      <div class="action">croner cron tick fires its callback</div>
+    </div>
+    <div class="step">
+      <div class="actor watcher">Watcher</div>
+      <div class="arrow">→</div>
+      <div class="action">chokidar add/change event → drop if path is suppress-mapped → <code>appendToInbox</code> → debounce timer fires</div>
+      <div class="ipc inbox">inbox</div>
+    </div>
+    <div class="step">
+      <div class="actor refirer">Refirer</div>
+      <div class="arrow">→</div>
+      <div class="action">setTimeout for one refire row elapses</div>
+      <div class="ipc refire">refire</div>
+    </div>
+    <div class="gap">all three call into ↓</div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action"><code>fireWithSuppress(name, trigger)</code> — LoopDetector check (skip if chain depth ≥ 3), then <code>runPlugin</code>, then watcher.suppressOnce on added paths</div>
+    </div>
+  </div>
+  <div class="note">Sources never import <code>runPlugin</code> directly — the callback is the seam. Their <code>set/stop/stats</code> shapes are deliberately identical.</div>
+</div>
+
+<!-- Flow 4 -->
+<div class="flow">
+  <div class="flow-title">④ <code>runPlugin</code> internals — lock, spawn, supervise, promote</div>
+  <div class="flow-steps">
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action">acquire per-plugin lock (skip the fire if already held)</div>
+      <div class="ipc lock">lock</div>
+    </div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action">consume kick (manual) or claim inbox → inflight via atomic rename (watch)</div>
+      <div class="ipc kick">kick</div>
+    </div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action"><code>openRun</code>: create <code>history/&lt;runId&gt;/</code>, write <code>manifest.json</code></div>
+      <div class="ipc runlog">run-log</div>
+    </div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action">write <code>runs/&lt;runId&gt;/input.json</code> ({trigger, env, files, targets, net}) + per-run import map</div>
+    </div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action">spawn Deno with <code>--allow-{read,write,env,net}</code> derived from grants</div>
+      <div class="ipc spawn">spawn</div>
+    </div>
+    <div class="step">
+      <div class="actor plugin">plugin</div>
+      <div class="arrow">→</div>
+      <div class="action">SDK reads input.json + state.json; do work; write .md files to run dir; emit NDJSON on stderr</div>
+    </div>
+    <div class="step">
+      <div class="actor supervisor">supervisor</div>
+      <div class="arrow">→</div>
+      <div class="action">parse stderr: <code>_dither:"progress"</code> / <code>"reschedule"</code> → run-log; other lines → stderr event</div>
+      <div class="ipc runlog">run-log</div>
+    </div>
+    <div class="step">
+      <div class="actor plugin">plugin</div>
+      <div class="arrow">→</div>
+      <div class="action">exit</div>
+    </div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action"><code>planPromotion</code>: validate each .md (source = plugin, collection ∈ grants) → <code>copyAdded</code> into library</div>
+    </div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action">touch needs-reindex marker so the reconciler picks up the new entries</div>
+      <div class="ipc marker">marker</div>
+    </div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action"><code>decideRunOutcome</code> → write refire row (if reschedule requested or retry needed)</div>
+      <div class="ipc refire">refire</div>
+    </div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action"><code>close</code>: write <code>history/&lt;runId&gt;/result.json</code>; clear inflight; <code>rm -rf runs/&lt;runId&gt;/</code>; release lock</div>
+      <div class="ipc lock">lock</div>
+    </div>
+  </div>
+  <div class="note">On any failure path, <code>restoreInflight</code> appends inflight rows back to the inbox (at-least-once). The run dir is always removed in <code>finally</code> so plaintext secrets in <code>input.json</code> don't linger.</div>
+</div>
+
+<!-- Flow 5 -->
+<div class="flow">
+  <div class="flow-title">⑤ Reconciler loop — 1 Hz heartbeat checks markers, runs jobs</div>
+  <div class="flow-steps">
+    <div class="step">
+      <div class="actor reconciler">reconciler</div>
+      <div class="arrow">→</div>
+      <div class="action">tick (1 Hz) or SIGHUP-triggered immediate cycle</div>
+      <div class="ipc signal">signal</div>
+    </div>
+    <div class="step">
+      <div class="actor reconciler">reconciler</div>
+      <div class="arrow">→</div>
+      <div class="action">check needs-reindex marker</div>
+      <div class="ipc marker">marker</div>
+    </div>
+    <div class="step">
+      <div class="actor reconciler">reconciler</div>
+      <div class="arrow">→</div>
+      <div class="action">if present: rename to <code>.processing</code> — coalesces concurrent writers; any new writer lands on a fresh marker file</div>
+      <div class="ipc marker">marker</div>
+    </div>
+    <div class="step">
+      <div class="actor reconciler">reconciler</div>
+      <div class="arrow">→</div>
+      <div class="action">acquire <code>qmd-index</code> lock; <code>runIndexJob</code>; release</div>
+      <div class="ipc lock">lock</div>
+    </div>
+    <div class="step">
+      <div class="actor reconciler">reconciler</div>
+      <div class="arrow">→</div>
+      <div class="action">unlink <code>.processing</code> (any new <code>needs-reindex</code> stays pending for next cycle)</div>
+      <div class="ipc marker">marker</div>
+    </div>
+    <div class="step">
+      <div class="actor reconciler">reconciler</div>
+      <div class="arrow">→</div>
+      <div class="action">if embed-disabled marker absent: acquire <code>qmd-embed</code> lock; run embed loop</div>
+      <div class="ipc marker">marker</div>
+    </div>
+    <div class="step">
+      <div class="actor reconciler">reconciler</div>
+      <div class="arrow">→</div>
+      <div class="action">between every embed iteration: re-check embed-disabled (cancel takes effect within one batch)</div>
+      <div class="ipc marker">marker</div>
+    </div>
+  </div>
+</div>
+
+<!-- Flow 6 -->
+<div class="flow">
+  <div class="flow-title">⑥ <code>dither index cancel</code> / <code>dither index update</code></div>
+  <div class="flow-steps">
+    <div class="step">
+      <div class="actor cli">CLI (cancel)</div>
+      <div class="arrow">→</div>
+      <div class="action">write embed-disabled marker</div>
+      <div class="ipc marker">marker</div>
+    </div>
+    <div class="step">
+      <div class="actor reconciler">reconciler</div>
+      <div class="arrow">→</div>
+      <div class="action">next embed iteration sees marker → exits the loop</div>
+      <div class="ipc marker">marker</div>
+    </div>
+    <div class="gap">later…</div>
+    <div class="step">
+      <div class="actor cli">CLI (update)</div>
+      <div class="arrow">→</div>
+      <div class="action">unlink embed-disabled + touch needs-reindex</div>
+      <div class="ipc marker">marker</div>
+    </div>
+    <div class="step">
+      <div class="actor cli">CLI (update)</div>
+      <div class="arrow">→</div>
+      <div class="action">SIGHUP daemon; tail run-log for reconcile-done</div>
+      <div class="ipc signal">signal</div>
+    </div>
+  </div>
+</div>
+
+<!-- Flow 7 -->
+<div class="flow">
+  <div class="flow-title">⑦ Daemon lifecycle — startup, heartbeat, SIGHUP, shutdown</div>
+  <div class="flow-steps">
+    <div class="step">
+      <div class="actor cli">CLI</div>
+      <div class="arrow">→</div>
+      <div class="action">first run after boot: acquire <code>daemon-start</code> lock (serialises concurrent CLI spawns)</div>
+      <div class="ipc lock">lock</div>
+    </div>
+    <div class="step">
+      <div class="actor cli">CLI</div>
+      <div class="arrow">→</div>
+      <div class="action">fork detached <code>dither daemon run</code>; release lock; exit</div>
+      <div class="ipc spawn">spawn</div>
+    </div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action">write <code>dither.pid</code> ({pid, token, startedAt}); truncate global run-log; clear stale <code>jobs/</code>; restore orphan <code>inflight/</code></div>
+      <div class="ipc snapshot">pid</div>
+    </div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action">start scheduler / watcher / refirer; reconcile once</div>
+    </div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action">1 Hz interval: rewrite <code>status.json</code></div>
+      <div class="ipc snapshot">status</div>
+    </div>
+    <div class="gap">on SIGHUP…</div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action">reload config + grants + refires; scan kicks; trigger reconcile</div>
+      <div class="ipc signal">signal</div>
+    </div>
+    <div class="gap">on SIGTERM / SIGINT…</div>
+    <div class="step">
+      <div class="actor daemon">daemon</div>
+      <div class="arrow">→</div>
+      <div class="action">stop fire sources; drain children (30 s grace); verify <code>{pid,token}</code> matches pidfile; unlink pidfile</div>
+      <div class="ipc signal">signal</div>
+    </div>
+  </div>
+  <div class="note">Shutdown verifies pid+token before unlinking the pidfile — a respawned daemon's file is never clobbered by a slow shutdown of its predecessor.</div>
+</div>
+
+<h2>Signals quick reference</h2>
+<table class="prim-table">
+  <thead>
+    <tr><th>signal</th><th>sender</th><th>handler</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>SIGHUP</code></td><td>CLI (after writing a kick or toggling a marker)</td><td>reload config / grants / refires; scan kicks; reconcile</td></tr>
+    <tr><td><code>SIGTERM</code></td><td>CLI (<code>dither daemon stop</code>) or OS</td><td>graceful shutdown; 30 s child-drain window; unlink pidfile</td></tr>
+    <tr><td><code>SIGINT</code></td><td>terminal (Ctrl-C in foreground)</td><td>same as SIGTERM</td></tr>
+    <tr><td><code>kill(pid, 0)</code></td><td>anyone (liveness probe)</td><td>no signal sent — just an EPERM/ESRCH probe</td></tr>
+  </tbody>
+</table>
+
+<h2>The "kick-and-watch" pattern</h2>
+<div class="note">
+  Many CLI commands follow this shape:
+  <b>(1)</b> snapshot the global run-log byte offset,
+  <b>(2)</b> write a request file (kick or marker),
+  <b>(3)</b> send SIGHUP,
+  <b>(4)</b> follow the log from the pinned offset until a terminal event arrives (reconcile-done, run-close, failure).
+  Pinning the offset closes the race where the daemon emits the event before the follower opens the log.
+  <code>daemonClient.triggerAndWatch()</code> is the canonical implementation; <code>watchReconcile</code> yields a filtered <code>DaemonEvent</code> union and terminates on <code>reconcile-done</code>.
+</div>
+
+<h2>Read in one breath</h2>
+<table class="prim-table">
+  <thead>
+    <tr><th>flow</th><th>primitives used</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>search / get</td>
+      <td><span class="dot snapshot"></span>sqlite (no daemon, no IPC)</td>
+    </tr>
+    <tr>
+      <td>manual plugin run</td>
+      <td><span class="dot kick"></span>kick&nbsp;+&nbsp;<span class="dot signal"></span>SIGHUP&nbsp;+&nbsp;<span class="dot runlog"></span>run-log&nbsp;tail</td>
+    </tr>
+    <tr>
+      <td>scheduled plugin run</td>
+      <td>scheduler → fireWithSuppress → <span class="dot lock"></span>plugin lock → <span class="dot runlog"></span>run-log</td>
+    </tr>
+    <tr>
+      <td>watch plugin run</td>
+      <td>chokidar → <span class="dot inbox"></span>inbox → debounce → fireWithSuppress → claim inbox</td>
+    </tr>
+    <tr>
+      <td>refire</td>
+      <td><span class="dot refire"></span>refire row + setTimeout → fireWithSuppress</td>
+    </tr>
+    <tr>
+      <td>plugin promotion → reindex</td>
+      <td><span class="dot marker"></span>marker (needs-reindex) → reconciler picks up next cycle</td>
+    </tr>
+    <tr>
+      <td>embed cancel / resume</td>
+      <td><span class="dot marker"></span>marker (embed-disabled) toggled by CLI</td>
+    </tr>
+    <tr>
+      <td>daemon stop</td>
+      <td><span class="dot signal"></span>SIGTERM → drain children → unlink <span class="dot snapshot"></span>pidfile</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr>
+<div class="footer">
+  Generated for openindex / dither — IPC landscape snapshot.
+  Source of truth: AGENTS.md (project patterns) + CONTEXT.md (domain language) + ADR&nbsp;0001 (run-log dual scope).
+</div>
+
+</div>
+</body>
+</html>

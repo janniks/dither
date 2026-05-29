@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dither — IPC graph view</title>
+<style>
+  :root {
+    --bg:       #0d1117;
+    --panel:    #161b22;
+    --border:   #30363d;
+    --text:     #c9d1d9;
+    --dim:      #8b949e;
+
+    --lock:     #f0883e;
+    --kick:     #58a6ff;
+    --inbox:    #a371f7;
+    --refire:   #39c5cf;
+    --marker:   #ff7b72;
+    --runlog:   #7ee787;
+    --snapshot: #8b949e;
+    --signal:   #ff79c6;
+    --spawn:    #e3b341;
+
+    --cli:    #58a6ff;
+    --daemon: #f0883e;
+    --plugin: #7ee787;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 2rem 1.5rem 4rem;
+    line-height: 1.55;
+  }
+  .container { max-width: 1380px; margin: 0 auto; }
+  h1 { font-size: 2rem; font-weight: 600; margin: 0 0 0.5rem; }
+  .subtitle { color: var(--dim); margin-bottom: 2rem; max-width: 900px; }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+    padding: 0.75rem 1rem;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 1.5rem;
+    font-size: 0.85rem;
+    color: var(--dim);
+  }
+  .legend-item { display: flex; align-items: center; gap: 0.45rem; }
+  .legend b { color: var(--text); }
+  .swatch { width: 22px; height: 3px; border-radius: 2px; }
+  .swatch.signal   { background: var(--signal); }
+  .swatch.spawn    { background: var(--spawn); }
+  .swatch.kick     { background: var(--kick); }
+  .swatch.inbox    { background: var(--inbox); }
+  .swatch.refire   { background: var(--refire); }
+  .swatch.marker   { background: var(--marker); }
+  .swatch.runlog   { background: var(--runlog); }
+  .swatch.lock     { background: var(--lock); }
+  .swatch.snapshot { background: var(--snapshot); }
+  .swatch.flow     { background: var(--dim); }
+  .swatch.dashed {
+    background: transparent;
+    border-top: 2px dashed var(--dim);
+    width: 22px; height: 2px;
+  }
+
+  .graph {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    overflow-x: auto;
+  }
+  svg.diagram { display: block; width: 100%; height: auto; min-width: 1300px; }
+
+  .note {
+    color: var(--dim);
+    font-size: 0.9rem;
+    margin-top: 1rem;
+    padding: 0.7rem 0.9rem;
+    background: rgba(255,255,255,0.02);
+    border-left: 3px solid var(--border);
+    border-radius: 3px;
+  }
+  .note b { color: var(--text); }
+
+  /* svg node styling via class */
+  .n-rect { stroke-width: 1.5; }
+  .n-text {
+    fill: var(--text);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    text-anchor: middle;
+    dominant-baseline: central;
+  }
+  .n-text.small { font-size: 11px; }
+  .container-rect {
+    fill: rgba(255,255,255,0.025);
+    stroke: var(--border);
+    stroke-dasharray: 5 4;
+    stroke-width: 1;
+  }
+  .container-label {
+    fill: var(--dim);
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .edge { fill: none; stroke-width: 1.6; }
+  .edge.read { stroke-dasharray: 5 4; }
+  .edge-label {
+    fill: var(--dim);
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>dither — IPC graph</h1>
+<div class="subtitle">
+  Companion to <code>ipc-landscape.html</code>. Same primitives and processes —
+  but laid out as a directed graph: who writes to what, who reads from what, who spawns what.
+  Solid lines = writes / in-process calls. Dashed lines = reads. Arrowhead always points at the target.
+  Each line is colored by the primitive it touches.
+</div>
+
+<div class="legend">
+  <div class="legend-item"><span class="swatch flow"></span> in-process call</div>
+  <div class="legend-item"><span class="swatch signal"></span><b>signal</b></div>
+  <div class="legend-item"><span class="swatch spawn"></span><b>spawn</b></div>
+  <div class="legend-item"><span class="swatch kick"></span><b>kick</b></div>
+  <div class="legend-item"><span class="swatch inbox"></span><b>inbox</b></div>
+  <div class="legend-item"><span class="swatch refire"></span><b>refire</b></div>
+  <div class="legend-item"><span class="swatch marker"></span><b>marker</b></div>
+  <div class="legend-item"><span class="swatch runlog"></span><b>run-log</b></div>
+  <div class="legend-item"><span class="swatch lock"></span><b>lock</b></div>
+  <div class="legend-item"><span class="swatch snapshot"></span><b>snapshot / sqlite</b></div>
+  <div class="legend-item"><span class="swatch dashed"></span>read</div>
+</div>
+
+<div class="graph">
+<svg class="diagram" viewBox="0 0 1340 980" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+
+<defs>
+  <marker id="ah-flow"   markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#8b949e"/></marker>
+  <marker id="ah-signal" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#ff79c6"/></marker>
+  <marker id="ah-spawn"  markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#e3b341"/></marker>
+  <marker id="ah-kick"   markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#58a6ff"/></marker>
+  <marker id="ah-inbox"  markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#a371f7"/></marker>
+  <marker id="ah-refire" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#39c5cf"/></marker>
+  <marker id="ah-marker" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#ff7b72"/></marker>
+  <marker id="ah-runlog" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#7ee787"/></marker>
+  <marker id="ah-lock"   markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#f0883e"/></marker>
+  <marker id="ah-snap"   markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#8b949e"/></marker>
+</defs>
+
+<!-- ===== CONTAINERS ===== -->
+<rect class="container-rect" x="240" y="20"  width="780" height="450" rx="10"/>
+<text class="container-label" x="258" y="42">daemon (long-lived)</text>
+
+<rect class="container-rect" x="20"  y="510" width="1300" height="450" rx="10"/>
+<text class="container-label" x="38"  y="532">~/.dither/ — the wire is the filesystem</text>
+
+<!-- ===== NODES: PROCESSES ===== -->
+<!-- CLI -->
+<g transform="translate(40, 215)">
+  <rect class="n-rect" width="160" height="70" rx="6" fill="rgba(0,0,0,0.2)" stroke="#58a6ff" stroke-width="2"/>
+  <text class="n-text" x="80" y="35" fill="#58a6ff" font-weight="600">CLI</text>
+</g>
+
+<!-- Plugin -->
+<g transform="translate(1080, 280)">
+  <rect class="n-rect" width="200" height="70" rx="6" fill="rgba(0,0,0,0.2)" stroke="#7ee787" stroke-width="2"/>
+  <text class="n-text" x="100" y="35" fill="#7ee787" font-weight="600">plugin (Deno)</text>
+</g>
+
+<!-- ===== NODES: DAEMON INTERNALS ===== -->
+<!-- Fire sources row -->
+<g transform="translate(270, 80)">
+  <rect class="n-rect" width="140" height="44" rx="4" fill="rgba(240,136,62,0.10)" stroke="#f0883e"/>
+  <text class="n-text" x="70" y="22">Scheduler</text>
+</g>
+<g transform="translate(440, 80)">
+  <rect class="n-rect" width="140" height="44" rx="4" fill="rgba(240,136,62,0.10)" stroke="#f0883e"/>
+  <text class="n-text" x="70" y="22">Watcher</text>
+</g>
+<g transform="translate(610, 80)">
+  <rect class="n-rect" width="140" height="44" rx="4" fill="rgba(240,136,62,0.10)" stroke="#f0883e"/>
+  <text class="n-text" x="70" y="22">Refirer</text>
+</g>
+
+<!-- The hub -->
+<g transform="translate(320, 170)">
+  <rect class="n-rect" width="380" height="48" rx="4" fill="rgba(240,136,62,0.20)" stroke="#f0883e" stroke-width="2"/>
+  <text class="n-text" x="190" y="24" fill="#f0883e" font-weight="600">fireWithSuppress  ·  LoopDetector</text>
+</g>
+
+<!-- runPlugin -->
+<g transform="translate(380, 270)">
+  <rect class="n-rect" width="260" height="46" rx="4" fill="rgba(240,136,62,0.10)" stroke="#f0883e"/>
+  <text class="n-text" x="130" y="23">runPlugin</text>
+</g>
+
+<!-- Supervisor + Promotion -->
+<g transform="translate(280, 370)">
+  <rect class="n-rect" width="150" height="44" rx="4" fill="rgba(240,136,62,0.10)" stroke="#f0883e"/>
+  <text class="n-text" x="75" y="22">Supervisor</text>
+</g>
+<g transform="translate(460, 370)">
+  <rect class="n-rect" width="150" height="44" rx="4" fill="rgba(240,136,62,0.10)" stroke="#f0883e"/>
+  <text class="n-text" x="75" y="22">Promotion</text>
+</g>
+
+<!-- Reconciler stack (right column inside daemon) -->
+<g transform="translate(830, 170)">
+  <rect class="n-rect" width="170" height="48" rx="4" fill="rgba(240,136,62,0.18)" stroke="#f0883e" stroke-width="2"/>
+  <text class="n-text" x="85" y="24" fill="#f0883e" font-weight="600">Reconciler</text>
+</g>
+<g transform="translate(830, 240)">
+  <rect class="n-rect" width="170" height="36" rx="4" fill="rgba(240,136,62,0.07)" stroke="#f0883e"/>
+  <text class="n-text small" x="85" y="18">runIndexJob</text>
+</g>
+<g transform="translate(830, 290)">
+  <rect class="n-rect" width="170" height="36" rx="4" fill="rgba(240,136,62,0.07)" stroke="#f0883e"/>
+  <text class="n-text small" x="85" y="18">runEmbedJob</text>
+</g>
+
+<!-- ===== NODES: FILESYSTEM ===== -->
+
+<!-- Row 1: IPC channels -->
+<g transform="translate(40, 570)">
+  <rect class="n-rect" width="150" height="46" rx="4" fill="rgba(88,166,255,0.10)" stroke="#58a6ff"/>
+  <text class="n-text" x="75" y="23">kicks/</text>
+</g>
+<g transform="translate(210, 570)">
+  <rect class="n-rect" width="170" height="46" rx="4" fill="rgba(163,113,247,0.10)" stroke="#a371f7"/>
+  <text class="n-text" x="85" y="23">inboxes/</text>
+</g>
+<g transform="translate(400, 570)">
+  <rect class="n-rect" width="150" height="46" rx="4" fill="rgba(57,197,207,0.10)" stroke="#39c5cf"/>
+  <text class="n-text" x="75" y="23">refires/</text>
+</g>
+<g transform="translate(570, 570)">
+  <rect class="n-rect" width="150" height="46" rx="4" fill="rgba(255,123,114,0.14)" stroke="#ff7b72"/>
+  <text class="n-text" x="75" y="23">markers/</text>
+</g>
+<g transform="translate(740, 570)">
+  <rect class="n-rect" width="150" height="46" rx="4" fill="rgba(240,136,62,0.10)" stroke="#f0883e"/>
+  <text class="n-text" x="75" y="23">locks/</text>
+</g>
+<g transform="translate(910, 570)">
+  <rect class="n-rect" width="180" height="46" rx="4" fill="rgba(126,231,135,0.10)" stroke="#7ee787"/>
+  <text class="n-text" x="90" y="23">run-log.jsonl</text>
+</g>
+<g transform="translate(1110, 570)">
+  <rect class="n-rect" width="190" height="46" rx="4" fill="rgba(126,231,135,0.10)" stroke="#7ee787"/>
+  <text class="n-text" x="95" y="23">history/&lt;runId&gt;/</text>
+</g>
+
+<!-- Row 2: snapshots -->
+<g transform="translate(40, 650)">
+  <rect class="n-rect" width="150" height="44" rx="4" fill="rgba(139,148,158,0.10)" stroke="#8b949e"/>
+  <text class="n-text" x="75" y="22">status.json</text>
+</g>
+<g transform="translate(210, 650)">
+  <rect class="n-rect" width="170" height="44" rx="4" fill="rgba(139,148,158,0.10)" stroke="#8b949e"/>
+  <text class="n-text" x="85" y="22">dither.pid</text>
+</g>
+<g transform="translate(400, 650)">
+  <rect class="n-rect" width="150" height="44" rx="4" fill="rgba(139,148,158,0.10)" stroke="#8b949e"/>
+  <text class="n-text" x="75" y="22">env.json</text>
+</g>
+<g transform="translate(570, 650)">
+  <rect class="n-rect" width="150" height="44" rx="4" fill="rgba(139,148,158,0.10)" stroke="#8b949e"/>
+  <text class="n-text" x="75" y="22">config.json</text>
+</g>
+<g transform="translate(740, 650)">
+  <rect class="n-rect" width="170" height="44" rx="4" fill="rgba(139,148,158,0.10)" stroke="#8b949e"/>
+  <text class="n-text" x="85" y="22">qmd-index.sqlite</text>
+</g>
+<g transform="translate(930, 650)">
+  <rect class="n-rect" width="160" height="44" rx="4" fill="rgba(163,113,247,0.10)" stroke="#a371f7"/>
+  <text class="n-text" x="80" y="22">inflight/</text>
+</g>
+<g transform="translate(1110, 650)">
+  <rect class="n-rect" width="190" height="44" rx="4" fill="rgba(139,148,158,0.10)" stroke="#8b949e"/>
+  <text class="n-text" x="95" y="22">jobs/, runs/</text>
+</g>
+
+<!-- ===== EDGES ===== -->
+
+<!-- ----- Process / signal / spawn ----- -->
+
+<!-- CLI → daemon: signal (SIGHUP/SIGTERM) -->
+<path class="edge" d="M 200 240 C 220 240, 222 195, 238 194" stroke="#ff79c6" marker-end="url(#ah-signal)"/>
+<text class="edge-label" x="212" y="180">SIGHUP / SIGTERM</text>
+
+<!-- CLI → daemon: spawn (autospawn if dead) -->
+<path class="edge" d="M 200 270 C 230 285, 232 270, 238 244" stroke="#e3b341" marker-end="url(#ah-spawn)"/>
+<text class="edge-label" x="160" y="305">autospawn daemon</text>
+
+<!-- Inside daemon: Scheduler → fireWithSuppress -->
+<path class="edge" d="M 340 124 L 405 168" stroke="#8b949e" marker-end="url(#ah-flow)"/>
+<!-- Watcher → fireWithSuppress -->
+<path class="edge" d="M 510 124 L 510 168" stroke="#8b949e" marker-end="url(#ah-flow)"/>
+<!-- Refirer → fireWithSuppress -->
+<path class="edge" d="M 680 124 L 615 168" stroke="#8b949e" marker-end="url(#ah-flow)"/>
+
+<!-- fireWithSuppress → runPlugin -->
+<path class="edge" d="M 510 218 L 510 268" stroke="#8b949e" marker-end="url(#ah-flow)"/>
+
+<!-- runPlugin → Supervisor -->
+<path class="edge" d="M 440 316 L 380 368" stroke="#8b949e" marker-end="url(#ah-flow)"/>
+<!-- runPlugin → Promotion -->
+<path class="edge" d="M 580 316 L 555 368" stroke="#8b949e" marker-end="url(#ah-flow)"/>
+
+<!-- runPlugin → plugin: spawn -->
+<path class="edge" d="M 640 293 L 1078 314" stroke="#e3b341" marker-end="url(#ah-spawn)"/>
+<text class="edge-label" x="800" y="285">spawn Deno (per fire)</text>
+
+<!-- plugin → Supervisor: stderr (dashed, read of plugin's output) -->
+<path class="edge read" d="M 1080 340 C 700 460, 500 460, 360 414" stroke="#8b949e" marker-end="url(#ah-flow)"/>
+<text class="edge-label" x="700" y="475">stderr (NDJSON control + raw lines)</text>
+
+<!-- ----- CLI writes/reads ----- -->
+
+<!-- CLI → kicks -->
+<path class="edge" d="M 120 285 C 120 460, 110 540, 110 568" stroke="#58a6ff" marker-end="url(#ah-kick)"/>
+<text class="edge-label" x="55" y="430">write kick</text>
+
+<!-- CLI → markers (cancel / update) -->
+<path class="edge" d="M 145 285 C 200 400, 500 530, 640 568" stroke="#ff7b72" marker-end="url(#ah-marker)"/>
+<text class="edge-label" x="365" y="430">dither index cancel / update</text>
+
+<!-- CLI ← run-log (tail) -->
+<path class="edge read" d="M 905 590 C 600 720, 280 740, 195 270" stroke="#7ee787" marker-end="url(#ah-runlog)"/>
+<text class="edge-label" x="500" y="760">tail run-log from pinned offset</text>
+
+<!-- CLI ← qmd-index (search / get direct read) -->
+<path class="edge read" d="M 740 695 C 500 820, 210 820, 195 285" stroke="#8b949e" marker-end="url(#ah-snap)"/>
+<text class="edge-label" x="420" y="855">dither search / get — direct sqlite</text>
+
+<!-- CLI ← status (status command) -->
+<path class="edge read" d="M 115 650 L 100 290" stroke="#8b949e" marker-end="url(#ah-snap)"/>
+<text class="edge-label" x="20" y="480">status cmd</text>
+
+<!-- ----- Daemon writes ----- -->
+
+<!-- daemon → status (1Hz) -->
+<path class="edge" d="M 254 458 C 220 530, 190 620, 165 648" stroke="#8b949e" marker-end="url(#ah-snap)"/>
+<text class="edge-label" x="180" y="540">1 Hz heartbeat</text>
+
+<!-- daemon → pid (startup) -->
+<path class="edge" d="M 290 458 C 290 530, 290 620, 290 648" stroke="#8b949e" marker-end="url(#ah-snap)"/>
+<text class="edge-label" x="300" y="555">pid on startup</text>
+
+<!-- ----- Watcher → inboxes ----- -->
+<path class="edge" d="M 510 124 C 510 200, 320 470, 290 568" stroke="#a371f7" marker-end="url(#ah-inbox)"/>
+<text class="edge-label" x="370" y="490">chokidar → append</text>
+
+<!-- ----- runPlugin → inboxes (claim via rename) and → refires ----- -->
+<!-- runPlugin → inboxes (claim) -->
+<path class="edge" d="M 460 316 C 400 420, 320 530, 280 568" stroke="#a371f7" marker-end="url(#ah-inbox)"/>
+<text class="edge-label" x="290" y="540">claim → inflight</text>
+
+<!-- runPlugin → refires (via decideRunOutcome) -->
+<path class="edge" d="M 520 316 C 500 430, 480 530, 470 568" stroke="#39c5cf" marker-end="url(#ah-refire)"/>
+<text class="edge-label" x="510" y="500">decideRunOutcome</text>
+
+<!-- ----- Promotion → markers (touch needs-reindex) ----- -->
+<path class="edge" d="M 560 414 C 600 470, 645 540, 650 568" stroke="#ff7b72" marker-end="url(#ah-marker)"/>
+<text class="edge-label" x="700" y="490">touch needs-reindex</text>
+
+<!-- ----- Reconciler → markers (consume / rename / unlink) ----- -->
+<path class="edge" d="M 870 218 C 800 380, 720 520, 685 568" stroke="#ff7b72" marker-end="url(#ah-marker)"/>
+<text class="edge-label" x="820" y="430">read · rename · unlink</text>
+
+<!-- ----- Reconciler → locks (qmd-index / qmd-embed theme) ----- -->
+<path class="edge" d="M 915 326 C 880 400, 820 520, 815 568" stroke="#f0883e" marker-end="url(#ah-lock)"/>
+<text class="edge-label" x="858" y="490">acquire qmd theme</text>
+
+<!-- ----- runPlugin → locks (per-plugin) ----- -->
+<path class="edge" d="M 620 316 C 700 430, 780 520, 800 568" stroke="#f0883e" marker-end="url(#ah-lock)"/>
+<text class="edge-label" x="710" y="460">acquire plugin</text>
+
+<!-- ----- Supervisor / runPlugin → run-log + history ----- -->
+<path class="edge" d="M 615 316 C 800 400, 970 520, 985 568" stroke="#7ee787" marker-end="url(#ah-runlog)"/>
+<text class="edge-label" x="900" y="500">append events</text>
+
+<path class="edge" d="M 625 316 C 900 400, 1170 520, 1195 568" stroke="#7ee787" marker-end="url(#ah-runlog)"/>
+<text class="edge-label" x="1080" y="510">per-run journal</text>
+
+<!-- ----- plugin → runs (writes .md, state) ----- -->
+<path class="edge" d="M 1180 348 C 1230 460, 1230 620, 1205 648" stroke="#8b949e" marker-end="url(#ah-snap)"/>
+<text class="edge-label" x="1260" y="500" text-anchor="middle">write .md to runs/</text>
+
+<!-- ----- Reconciler → jobs ----- -->
+<path class="edge" d="M 970 326 C 1030 460, 1140 620, 1165 648" stroke="#8b949e" marker-end="url(#ah-snap)"/>
+<text class="edge-label" x="1110" y="500">inflight snapshot</text>
+
+</svg>
+</div>
+
+<div class="note">
+  <b>How to read it.</b> Boxes are the entities — processes at top (CLI · daemon · plugin), filesystem primitives at bottom (each in its own color). Lines are interactions. Follow any colored line from its source to its arrowhead to see one piece of the system. Solid = write or in-process call. Dashed = read.
+</div>
+
+<div class="note">
+  <b>The funnel.</b> <code>Scheduler</code>, <code>Watcher</code>, <code>Refirer</code> all funnel into <code>fireWithSuppress</code>. Anything that ever runs a plugin goes through that one hub — which is also where <code>LoopDetector</code> halts chains that hit depth ≥ 3.
+</div>
+
+<div class="note">
+  <b>The split brain.</b> The daemon has two engines: the <em>fire path</em> (Scheduler/Watcher/Refirer → fireWithSuppress → runPlugin → spawn Deno) for plugin work, and the <em>Reconciler</em> (1 Hz, marker-driven) for qmd index/embed jobs. They share only the run-log and the lock primitives.
+</div>
+
+<div class="note">
+  <b>The no-daemon paths.</b> <code>dither search</code>, <code>dither get</code>, <code>dither status</code> read sqlite / status.json directly in the CLI process — those flows never touch the daemon (only dashed gray lines from CLI to <code>qmd-index.sqlite</code> and <code>status.json</code>).
+</div>
+
+</div>
+</body>
+</html>
