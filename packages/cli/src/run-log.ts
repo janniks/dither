@@ -111,11 +111,17 @@ async function appendRun(runId: string, event: RunEventInput): Promise<void> {
 // to rotate, race on unlink/rename, and move a freshly-written event into
 // .old. The queue funnels everything per-path so each step (size check,
 // rotate, open, write, close) completes before the next caller starts.
+//
+// Module-scoped state — singleton by design. ADR 0001 keeps the Run-log
+// seam as one module; the production model is one daemon per process,
+// matching the `home.ts` pattern. `truncateGlobal()` clears both maps on
+// daemon startup so a fresh in-process daemon (tests, mainly) doesn't
+// inherit stale entries from a previous run.
 const queues = new Map<string, Promise<void>>();
 
 // Tracked-size cache. Filled lazily on first write per path (one async
 // stat, ENOENT-tolerant). Kept in sync after each write and reset on
-// rotate. Invalidated by `truncateGlobal`.
+// rotate. Cleared by `truncateGlobal` — see the note above `queues`.
 const sizes = new Map<string, number>();
 
 async function appendAt(path: string, event: Partial<LogEvent>): Promise<void> {
@@ -173,7 +179,9 @@ export async function truncateGlobal(): Promise<void> {
   if (existsSync(path)) await truncate(path, 0);
   const oldPath = `${path}.old`;
   if (existsSync(oldPath)) await unlink(oldPath);
-  sizes.delete(path);
+  // Clear both module-level caches — see the note above `queues`.
+  queues.clear();
+  sizes.clear();
 }
 
 /** Read the entire global Run-log. `tailLines` caps the tail. */

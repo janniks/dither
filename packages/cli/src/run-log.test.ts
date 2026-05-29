@@ -48,6 +48,25 @@ describe("run-log", () => {
       expect(existsSync(`${runLogPath()}.old`)).toBe(false);
     });
 
+    it("truncateGlobal clears the size cache so a follow-up append doesn't spuriously rotate", async () => {
+      const { ROTATION_THRESHOLD_BYTES, appendGlobal, truncateGlobal } =
+        await import("./run-log");
+      const { runLogPath } = await import("./home");
+      await mkdir(home, { recursive: true });
+      // Plant a near-threshold body so the size cache populates with a
+      // rotation-near value on the first append.
+      writeFileSync(runLogPath(), "x".repeat(ROTATION_THRESHOLD_BYTES - 50));
+      await appendGlobal({ kind: "rotate" } as never);
+      expect(existsSync(`${runLogPath()}.old`)).toBe(true);
+
+      await truncateGlobal();
+      // After truncate the .old file is gone AND the cache is cleared —
+      // an append on the now-empty file must not see a stale cached size
+      // and trigger a spurious rotation.
+      await appendGlobal({ kind: "post-truncate" } as never);
+      expect(existsSync(`${runLogPath()}.old`)).toBe(false);
+    });
+
     it("rotates to .old when an append would exceed the 1 MB threshold", async () => {
       const { ROTATION_THRESHOLD_BYTES, appendGlobal } = await import("./run-log");
       const { runLogPath } = await import("./home");

@@ -46,9 +46,9 @@ Rewrite the 3-level nested ternary with embedded `(() => { throw … })()` IIFE 
 `truncateGlobal()` currently clears `sizes` but not `queues` (audit finding). Add `queues.clear()`. Add a docstring noting the singleton state is deliberate and matches the `home.ts` precedent for a single-process-per-daemon CLI.
 
 **Acceptance:**
-- [ ] `truncateGlobal()` clears both `queues` and `sizes`
-- [ ] Docstring on the module-level state explains the singleton-by-design rationale
-- [ ] `run-log.test.ts` passes; a new or extended test asserts both maps clear
+- [x] `truncateGlobal()` clears both `queues` and `sizes`
+- [x] Docstring on the module-level state explains the singleton-by-design rationale
+- [x] `run-log.test.ts` passes; a new or extended test asserts both maps clear
 
 ---
 
@@ -184,4 +184,4 @@ Two coordinated moves in one commit:
 
 |  commit  |  summary  |
 |----------|-----------|
-|          |           |
+| `a58e932` | phase 1 — promotion.ts IIFE rewritten as early-throw + 2-level ternary |
