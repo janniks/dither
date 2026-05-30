@@ -1,0 +1,49 @@
+%% openindex plugin-run lifecycle — MANUAL kick (dither plugin run twitter)
+%% Converted from sequenceDiagram. Edges labelled 1..N for temporal order.
+
+flowchart LR
+  CLI([CLI]):::actor
+  Daemon([daemon]):::actor
+  Fire([fireWithSuppress]):::actor
+  RunPlugin([runPlugin]):::actor
+  Plugin([plugin Deno]):::actor
+  Supervisor([supervisor]):::actor
+  Promotion([promotion]):::actor
+
+  Kicks(kicks):::kick
+  Locks(locks):::lock
+  Inboxes(inboxes):::inbox
+  Markers(markers):::marker
+  Refires(refires):::refire
+  RunLog(run-log + history):::runlog
+
+  CLI -->|1 writeKick + pin offset| Kicks
+  CLI -.->|2 SIGHUP| Daemon
+  Daemon -->|3 scanKicks consume| Kicks
+  Daemon -->|4 fireWithSuppress| Fire
+  Fire -->|5 acquire lock| Locks
+  Fire -->|6 notify run-started| RunLog
+  Fire -->|7 call runPlugin| RunPlugin
+  RunPlugin -->|8 openRun manifest| RunLog
+  RunPlugin -->|9 write input.json| RunPlugin
+  RunPlugin -->|10 spawn Deno| Plugin
+  Plugin -.->|11 stderr NDJSON| Supervisor
+  Supervisor -->|12 append events| RunLog
+  Plugin -->|13 exit| RunPlugin
+  RunPlugin -->|14 planPromotion + copyAdded| Promotion
+  Promotion -->|15 touch needs-reindex| Markers
+  RunPlugin -->|16 decideRunOutcome| Refires
+  RunPlugin -->|17 close result.json + rm runs| RunLog
+  Fire -->|18 release lock| Locks
+  Fire -->|19 notify run-ended| RunLog
+  CLI -->|20 tail until terminal| RunLog
+
+  classDef actor fill:#7ee787
+  classDef kick fill:#58a6ff
+  classDef lock fill:#f0883e
+  classDef inbox fill:#a371f7
+  classDef marker fill:#ff7b72
+  classDef refire fill:#39c5cf
+  classDef runlog fill:#7ee787
+
+  %% notes: {"Daemon":"SIGUSR1 actually drives kick drain in code; SIGHUP triggers reload+reconcile.","Fire":"Per-plugin Lock is the single arbiter. notify() callback writes status on lock-acquire and lock-release (phase 5).","RunPlugin":"runs/<runId>/ is rm-rf'd in finally so plaintext secrets in input.json don't linger.","Promotion":"Validates source=plugin and collection in grants before any file moves. Fail-closed.","Refires":"Plugin can request reschedule via SDK; decideRunOutcome also schedules retries on failure."}

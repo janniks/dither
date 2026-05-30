@@ -1,0 +1,45 @@
+%% openindex qmdReconcile cycle — packages/cli/src/daemon-jobs.ts:207-258
+%% Post-phase-6: marker claim via markers.claimReindex. Converted from stateDiagram-v2.
+
+flowchart TB
+  Idle((idle)) -->|1Hz tick or SIGHUP| Started(reconcile-started):::evt
+  Started --> OpenStore{openStore}:::guard
+  OpenStore -->|null - no library| DoneNoLib(reconcile-done reason no-library):::evt
+  OpenStore -->|ok| Claim{claimReindex - atomic rename}:::guard
+
+  Claim -->|claimed| RunIndex(runIndexJob reason needs-reindex-marker):::job
+  Claim -->|not claimed| FreshCheck{fresh library and zero docs}:::guard
+
+  FreshCheck -->|yes| FirstPass(runIndexJob reason first-pass):::job
+  FreshCheck -->|no| CheckEmbed{readMarkerState embedDisabled}:::guard
+
+  RunIndex --> AcqIndex{acquireTheme index}:::guard
+  AcqIndex -->|busy| SkipIndex(job-skipped lock-busy):::evt
+  AcqIndex -->|ok| IndexJobBody(index job - per-progress):::job
+  IndexJobBody --> ReleaseClaim(releaseReindexClaim unlink processing):::work
+  SkipIndex --> CheckEmbed
+  ReleaseClaim --> CheckEmbed
+
+  FirstPass --> CheckEmbed
+
+  CheckEmbed -->|disabled| Done(reconcile-done):::evt
+  CheckEmbed -->|enabled| EmbedGate{needsEmbedding gt 0}:::guard
+  EmbedGate -->|no| Done
+  EmbedGate -->|yes| AcqEmbed{acquireTheme embed}:::guard
+  AcqEmbed -->|busy| SkipEmbed(job-skipped lock-busy):::evt
+  AcqEmbed -->|ok| EmbedLoop(embedLoop - per-iteration recheck marker):::job
+  EmbedLoop --> Done
+  SkipEmbed --> Done
+
+  Done --> Idle
+  DoneNoLib --> Idle
+
+  Started -.->|exception| Failed(reconcile-failed):::evt
+  Failed --> Done
+
+  classDef evt fill:#7ee787
+  classDef guard fill:#e3b341
+  classDef job fill:#f0883e
+  classDef work fill:#39c5cf
+
+  %% notes: {"Claim":"Atomic rename of needs-reindex to .processing so any concurrent writer lands on a fresh marker.","ReleaseClaim":"Unlinks the .processing file. Only on the claim branch, not first-pass.","CheckEmbed":"Reads markers/embed-disabled (existsSync).","EmbedLoop":"Between every iteration, re-checks readMarkerState().embedDisabled so dither index cancel takes effect within one batch.","Failed":"reconcile-failed AND reconcile-done both fire for the same cycleId. UI consumers see the bookend pair."}

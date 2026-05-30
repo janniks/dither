@@ -1,0 +1,60 @@
+%% openindex newcomer "you are here" map. Converted from mindmap to flowchart.
+
+flowchart LR
+  Root([Openindex Newcomer Map]):::root
+
+  Root --> Arch[1 - system at a glance]:::cat
+  Arch --> arch_diag(codebase-architecture.mmd)
+  Arch --> arch_land(notes/ipc-landscape.html)
+  Arch --> arch_graph(notes/ipc-graph.html)
+  Arch --> arch_ctx(CONTEXT.md)
+
+  Root --> IPC[2 - IPC primitives]:::cat
+  IPC --> ipc_diag(codebase-ipc-primitives.mmd)
+  IPC --> ipc_dom(codebase-domain.mmd)
+  IPC --> ipc_ctx(CONTEXT.md wire section)
+  IPC --> ipc_html(notes/ipc-graph.html)
+
+  Root --> Run[3 - plugin run end-to-end]:::cat
+  Run --> run_diag(codebase-plugin-run-sequence.mmd)
+  Run --> run_src(packages/cli/src/plugin-run.ts)
+  Run --> run_dae(packages/cli/src/daemon.ts fireWithSuppress)
+
+  Root --> Rec[4 - reconciler engine]:::cat
+  Rec --> rec_diag(codebase-reconciler.mmd)
+  Rec --> rec_src(packages/cli/src/daemon-jobs.ts)
+  Rec --> rec_mark(packages/cli/src/markers.ts)
+
+  Root --> Funnel[5 - fire-source funnel]:::cat
+  Funnel --> fun_diag(codebase-fire-funnel.mmd)
+  Funnel --> fun_sched(packages/cli/src/scheduler.ts)
+  Funnel --> fun_watch(packages/cli/src/watcher.ts)
+  Funnel --> fun_ref(packages/cli/src/refirer.ts)
+
+  Root --> Locks[6 - locks]:::cat
+  Locks --> lock_diag(codebase-locks.mmd)
+  Locks --> lock_src(packages/cli/src/locks.ts)
+
+  Root --> CLI[7 - CLI surface]:::cat
+  CLI --> cli_diag(codebase-cli-commands.mmd)
+  CLI --> cli_main(packages/cli/src/main.ts)
+  CLI --> cli_cmds(packages/cli/src/commands/)
+
+  Root --> FS[8 - on-disk layout]:::cat
+  FS --> fs_diag(codebase-filesystem.mmd)
+  FS --> fs_land(notes/ipc-landscape.html disk section)
+  FS --> fs_home(packages/cli/src/home.ts)
+
+  Root --> Vocab[9 - vocabulary]:::cat
+  Vocab --> vocab_diag(codebase-domain.mmd)
+  Vocab --> vocab_ctx(CONTEXT.md)
+
+  Root --> Style[10 - style and patterns]:::cat
+  Style --> style_agents(AGENTS.md)
+  Style --> style_audit(notes/p1-code-conventions-audit.md)
+  Style --> style_adr(docs/adr/0001-run-log-dual-scope.md)
+
+  classDef root fill:#e3b341
+  classDef cat fill:#58a6ff
+
+  %% notes: {"Arch":"Start here if you want one-screen orientation.","IPC":"The 6 file-based primitives + Signal. The 'wire' between processes.","Run":"Walk through a manual plugin run from kick to promotion.","Rec":"The daemon's other engine: qmd reconcile loop (separate from plugin runs).","Funnel":"Three fire sources funnelling into fireWithSuppress.","Locks":"Mutex primitive with O_EXCL + PID body + stale-reclaim.","CLI":"Every dither command and what it touches.","FS":"home/.dither layout colour-coded by primitive.","Vocab":"Domain glossary as a graph - terms and relationships.","Style":"AGENTS.md is the style guide. The audit shows current drift."}

@@ -1,0 +1,75 @@
+%% openindex domain language — relationships between defined terms in CONTEXT.md
+%% Source of truth: CONTEXT.md (post-phase-4).
+
+flowchart LR
+  subgraph content[content]
+    Library(Library):::content
+    Collection(Collection):::content
+    Entry(Entry):::content
+    Grant(Grant):::content
+  end
+
+  subgraph lifecycle[plugin lifecycle]
+    Plugin(Plugin):::plug
+    Run(Run):::plug
+    Promotion(Promotion):::plug
+  end
+
+  subgraph daemon_grp[daemon]
+    Daemon(Daemon):::dae
+    Job(Job):::dae
+    qmd(qmd):::dae
+    Indexing(Indexing):::dae
+    Embedding(Embedding):::dae
+  end
+
+  subgraph wire[daemon - CLI wire]
+    Lock(Lock):::lock
+    Kick(Kick):::kick
+    Refire(Refire):::refire
+    Inbox(Inbox):::inbox
+    Marker(Marker):::marker
+    RunLog(Run-log):::runlog
+    Signal(Signal):::signal
+  end
+
+  Library -->|contains| Collection
+  Collection -->|contains| Entry
+  Plugin -->|declares| Grant
+  Grant -->|authorises writes to| Collection
+  Plugin -->|executes as| Run
+  Run -->|produces via Promotion| Entry
+  Promotion -->|stages into| Collection
+
+  Run -->|writes per-run scope| RunLog
+  Daemon -->|writes global scope| RunLog
+
+  Daemon -->|dispatches| Job
+  Job -->|acquires| Lock
+  Job -->|performs| Indexing
+  Job -->|performs| Embedding
+  Indexing -->|scans| Library
+  Indexing --> qmd
+  Embedding --> qmd
+
+  Kick -->|fires| Run
+  Refire -->|fires| Run
+  Inbox -->|feeds| Run
+  Marker -.->|lazy form of| Signal
+  Signal -->|reload + reconcile| Daemon
+  Daemon -->|consumes| Kick
+  Daemon -->|claims| Inbox
+  Daemon -->|holds timer for| Refire
+
+  classDef content fill:#7ee787
+  classDef plug fill:#7ee787
+  classDef dae fill:#f0883e
+  classDef lock fill:#f0883e
+  classDef kick fill:#58a6ff
+  classDef refire fill:#39c5cf
+  classDef inbox fill:#a371f7
+  classDef marker fill:#ff7b72
+  classDef runlog fill:#7ee787
+  classDef signal fill:#ff79c6
+
+  %% notes: {"Library":"User-configured root directory holding all collected markdown.","Collection":"Named subdirectory under Library grouping markdown of a kind.","Entry":"Single markdown file inside a Collection.","Grant":"Glob+collection pair authorising a Plugin to write to specific paths.","Plugin":"User-installed module importing external content as markdown.","Run":"One execution of a Plugin (sortable runId).","Promotion":"Moving a staged file into a Collection.","Daemon":"Single long-lived dither process.","Job":"Unit of slow qmd work: index, embed, or model-download.","Marker":"Lazy form of Signal. needs-reindex (request) and embed-disabled (state).","RunLog":"Two scopes (global + per-Run), one module - ADR 0001.","Signal":"POSIX SIGHUP/SIGTERM/SIGINT."}

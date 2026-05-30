@@ -1,0 +1,48 @@
+%% openindex / dither — CLI command tree
+%% All command files now `command-<name>.ts` (phase 7).
+
+flowchart TB
+  root([dither])
+
+  root --> init(init):::ro
+  root --> search(search):::ro
+  root --> get(get):::ro
+  root --> status(status):::ro
+  root --> env(env)
+  root --> daemon(daemon):::dctl
+  root --> index(index):::marker
+  root --> collection(collection):::ro
+  root --> plugin(plugin):::plug
+
+  env --> env_set(set)
+  env --> env_get(get)
+  env --> env_unset(unset)
+  env --> env_list(list)
+
+  daemon --> d_start(start):::dctl
+  daemon --> d_stop(stop):::dctl
+  daemon --> d_status(status):::dctl
+  daemon --> d_reload(reload):::dctl
+  daemon --> d_logs(logs):::dctl
+  daemon --> d_run(run):::dctl
+
+  index --> i_update(update):::marker
+  index --> i_cancel(cancel):::marker
+
+  collection --> c_add(add)
+  collection --> c_list(list)
+  collection --> c_remove(remove)
+
+  plugin --> p_install(install):::plug
+  plugin --> p_run(run):::plug
+  plugin --> p_runs(runs):::plug
+  plugin --> p_list(list):::plug
+  plugin --> p_remove(remove):::plug
+  plugin --> p_oauth(oauth):::plug
+
+  classDef ro fill:#39c5cf
+  classDef dctl fill:#f0883e
+  classDef plug fill:#7ee787
+  classDef marker fill:#ff7b72
+
+  %% notes: {"search":"Direct qmd read; no daemon.","get":"Direct qmd read; no daemon.","status":"Reads status.json directly; pid + kill(0) for liveness.","i_update":"Clears embed-disabled marker, writes needs-reindex, SIGHUP.","i_cancel":"Writes embed-disabled marker.","p_run":"writeKick + SIGHUP + tail run-log.","p_install":"installPlugin + handleProtectedInstall + ensureDaemonForPlugin.","d_reload":"SIGHUP to daemon.","d_stop":"SIGTERM with 30s child-drain."}

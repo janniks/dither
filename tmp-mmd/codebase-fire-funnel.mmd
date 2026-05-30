@@ -1,0 +1,52 @@
+%% Fire-source funnel: three sources, identical set/stop/stats shape, one choke point.
+%% Source: packages/cli/src/daemon.ts:75-134 (post-phase-5: takes notify param).
+
+flowchart TB
+  subgraph triggers[external triggers]
+    cron(croner tick):::trig
+    fs_event(chokidar event):::trig
+    refire_timer(setTimeout):::trig
+  end
+
+  subgraph sources[fire sources - set / stop / stats]
+    Scheduler(Scheduler):::source
+    Watcher(Watcher):::source
+    Refirer(Refirer):::source
+  end
+
+  subgraph hub[choke point]
+    Fire{fireWithSuppress}:::choke
+    Loop{LoopDetector}:::choke
+  end
+
+  subgraph downstream[per-fire work]
+    Acquire(acquire Lock):::work
+    RunPlugin(runPlugin):::work
+    Release(release Lock):::work
+  end
+
+  Notify(notify - writeStatus):::notify
+
+  cron --> Scheduler
+  fs_event --> Watcher
+  refire_timer --> Refirer
+
+  Scheduler -->|onFire| Fire
+  Watcher -->|onFire| Fire
+  Refirer -->|onFire| Fire
+
+  Fire --> Loop
+  Loop -->|halt depth >= 3| Notify
+  Loop -->|fire| Acquire
+  Acquire --> Notify
+  Acquire --> RunPlugin
+  RunPlugin --> Release
+  Release --> Notify
+
+  classDef trig fill:#e3b341
+  classDef source fill:#58a6ff
+  classDef choke fill:#ff7b72
+  classDef work fill:#7ee787
+  classDef notify fill:#ff79c6
+
+  %% notes: {"Loop":"Chain depth >= 3 = halt. recentHalts ring (cap 16).","Acquire":"Per-plugin Lock. Single arbiter for 'is this plugin running'.","Notify":"Event-driven status write callback (phase 5). Called at halt, lock-acquired, lock-released.","RunPlugin":"Spawns Deno, supervises stderr, promotes on clean exit."}

@@ -1,0 +1,51 @@
+%% openindex / dither — home/.dither layout
+%% Post-phase-6: markers moved into markers/ subdir. Post-phase-5: status.json event-driven.
+
+flowchart TB
+  root[home/.dither]
+
+  root --> pid(dither.pid):::snap
+  root --> status(status.json):::snap
+  root --> env(env.json):::snap
+  root --> config(config.json):::snap
+  root --> runlog(run-log.jsonl):::runlog
+  root --> qmd(qmd-index.sqlite)
+  root --> markers(markers):::marker
+  root --> locks(locks):::lock
+  root --> kicks(kicks):::kick
+  root --> inboxes(inboxes):::inbox
+  root --> inflight(inflight):::inbox
+  root --> refires(refires):::refire
+  root --> history(history):::runlog
+  root --> runs(runs)
+  root --> jobs(jobs):::snap
+  root --> plugins(plugins)
+  root --> grants(grants)
+  root --> bin(bin)
+  root --> logs(logs)
+
+  markers --> needs_reindex(needs-reindex):::marker
+  markers --> embed_disabled(embed-disabled):::marker
+
+  locks --> plugin_lock(plugin.lock):::lock
+  locks --> qmd_dl(qmd-download.lock):::lock
+  locks --> qmd_idx(qmd-index.lock):::lock
+  locks --> qmd_emb(qmd-embed.lock):::lock
+  locks --> daemon_start(daemon-start.lock):::lock
+
+  history --> hist_runid(runId)
+  hist_runid --> manifest(manifest.json):::snap
+  hist_runid --> events(events.jsonl):::runlog
+  hist_runid --> result(result.json):::snap
+
+  runs --> run_runid(runId scratch)
+
+  classDef lock fill:#f0883e
+  classDef kick fill:#58a6ff
+  classDef inbox fill:#a371f7
+  classDef refire fill:#39c5cf
+  classDef marker fill:#ff7b72
+  classDef runlog fill:#7ee787
+  classDef snap fill:#8b949e
+
+  %% notes: {"pid":"Daemon identity: pid, token, startedAt.","status":"1Hz heartbeat removed in phase 5. Event-driven; lastUpdated field.","env":"Global env values referenced by grants.envRefs.","config":"Install config: schema.version, library.path.","runlog":"Global event stream. Truncated on daemon start.","qmd":"The actual qmd database. Not an IPC primitive.","needs_reindex":"Request marker; daemon claims via rename to .processing.","embed_disabled":"State marker; persists until explicit clear.","plugin_lock":"Per-plugin exclusion during run.","qmd_idx":"Was 'lock theme' before phase 4. Just a named lock.","daemon_start":"Single-spawn guard.","kicks":"CLI to daemon - run plugin X now.","inboxes":"Watcher to daemon NDJSON queue.","inflight":"Claimed-but-unfinished inbox rows (restored on crash).","refires":"Reschedule + retry state.","manifest":"Run identity, plus childPid post-spawn.","events":"Per-run journal.","result":"Terminal status; tmp+rename.","run_runid":"Ephemeral scratch; rm -rf in finally.","jobs":"qmd job inflight snapshot.","plugins":"Installed plugin code + state subdir.","grants":"Consented permissions per plugin.","bin":"Managed Deno binary.","logs":"daemon.log."}

@@ -1,0 +1,64 @@
+%% openindex IPC primitives — who writes / reads each
+%% Sources: CONTEXT.md "Daemon - CLI wire", notes/ipc-graph.html.
+
+flowchart LR
+  subgraph actors[actors]
+    CLI([CLI]):::cliColor
+    Daemon([daemon]):::dae
+    Scheduler(Scheduler):::dae
+    Watcher(Watcher):::dae
+    Refirer(Refirer):::dae
+    Promotion(Promotion):::dae
+    Reconciler(Reconciler):::dae
+    Plugin([plugin]):::plug
+  end
+
+  subgraph primitives[home/.dither]
+    Locks(locks):::lock
+    Kicks(kicks):::kick
+    Inboxes(inboxes):::inbox
+    Refires(refires):::refire
+    Markers(markers):::marker
+    RunLog(run-log + history):::runlog
+    Signal((SIGHUP / TERM / INT)):::signal
+  end
+
+  CLI -->|write| Kicks
+  Daemon -->|consume on SIGHUP| Kicks
+
+  Watcher -->|append NDJSON| Inboxes
+  Daemon -->|claim rename to inflight| Inboxes
+  Daemon -->|restoreInflight on failure| Inboxes
+
+  Refirer -->|read on reload| Refires
+  Daemon -->|decideRunOutcome write| Refires
+
+  Promotion -->|touch needs-reindex| Markers
+  CLI -->|cancel writes embed-disabled| Markers
+  CLI -->|update clears embed-disabled| Markers
+  Reconciler -->|claim rename unlink| Markers
+
+  Daemon -->|acquire per-plugin| Locks
+  Reconciler -->|acquire qmd-index / embed / download| Locks
+  CLI -->|status theme read| Locks
+
+  Daemon -->|append global| RunLog
+  Plugin -.->|stderr NDJSON| Daemon
+  Daemon -->|append per-run| RunLog
+  CLI -->|tail from pinned offset| RunLog
+
+  CLI -.->|send| Signal
+  Signal -.->|reload + reconcile| Daemon
+
+  classDef cliColor fill:#58a6ff
+  classDef dae fill:#f0883e
+  classDef plug fill:#7ee787
+  classDef lock fill:#f0883e
+  classDef kick fill:#58a6ff
+  classDef inbox fill:#a371f7
+  classDef refire fill:#39c5cf
+  classDef marker fill:#ff7b72
+  classDef runlog fill:#7ee787
+  classDef signal fill:#ff79c6
+
+  %% notes: {"Locks":"O_EXCL with PID body. Bounded retry on EEXIST with isPidAlive probe.","Kicks":"Per-plugin JSON. CLI writes, daemon scans on SIGHUP, consumes after fire.","Inboxes":"Per-plugin NDJSON. At-least-once via atomic rename to inflight.","Refires":"Kick + retry state. fireAt, attempts, suspended.","Markers":"Lazy form of Signal. Stored under home/.dither/markers/ (phase 6).","RunLog":"ADR 0001 - one module, two scopes. Followers poll+stat.","Signal":"POSIX. SIGHUP = reload + reconcile. TERM/INT = graceful shutdown."}

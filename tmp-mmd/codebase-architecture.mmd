@@ -1,0 +1,92 @@
+%% openindex / dither — system architecture
+%% 3 process roles; 3 fire sources funnel into fireWithSuppress; FS is the wire.
+
+flowchart TB
+  subgraph User[user]
+    Shell([shell])
+  end
+
+  subgraph CLI[CLI process]
+    CliCmd(dither cmd)
+    Search(search)
+    Get(get)
+    Status(status)
+  end
+
+  subgraph Daemon[daemon - long lived]
+    Scheduler(Scheduler):::source
+    Watcher(Watcher):::source
+    Refirer(Refirer):::source
+    Fire{fireWithSuppress}:::hub
+    Loop{LoopDetector}:::hub
+    RunPlugin(runPlugin)
+    Reconciler(qmdReconcile):::reconciler
+    IndexJob(runIndexJob):::reconciler
+    EmbedJob(runEmbedJob):::reconciler
+  end
+
+  subgraph Plugin[plugin - Deno subprocess]
+    Deno(plugin code):::plugin
+  end
+
+  subgraph FS[home/.dither]
+    Locks(locks):::lock
+    Kicks(kicks):::kick
+    Inboxes(inboxes):::inbox
+    Refires(refires):::refire
+    Markers(markers):::marker
+    History(history):::runlog
+    RunLog(run-log.jsonl):::runlog
+    Qmd(qmd-index.sqlite)
+    Status_json(status.json)
+    Pid(dither.pid)
+  end
+
+  Shell --> CliCmd
+  CliCmd -.->|SIGHUP / SIGTERM| Daemon
+  CliCmd ==>|autospawn if dead| Daemon
+  Search --> Qmd
+  Get --> Qmd
+  Status --> Status_json
+
+  CliCmd --> Kicks
+  Daemon --> Kicks
+
+  Scheduler --> Fire
+  Watcher --> Fire
+  Refirer --> Fire
+  Watcher --> Inboxes
+  Fire --> Loop
+  Loop --> RunPlugin
+  RunPlugin --> Locks
+  RunPlugin --> Inboxes
+  RunPlugin --> Refires
+  RunPlugin --> Markers
+  RunPlugin --> History
+  RunPlugin --> RunLog
+  RunPlugin ==>|spawn Deno| Deno
+
+  Reconciler --> Markers
+  Reconciler --> IndexJob
+  Reconciler --> EmbedJob
+  IndexJob --> Locks
+  IndexJob --> Qmd
+  EmbedJob --> Locks
+  EmbedJob --> Qmd
+
+  Daemon --> Status_json
+  Daemon --> Pid
+  Daemon --> RunLog
+
+  classDef source fill:#f0883e
+  classDef hub fill:#e3b341
+  classDef reconciler fill:#f0883e
+  classDef plugin fill:#7ee787
+  classDef lock fill:#f0883e
+  classDef kick fill:#58a6ff
+  classDef inbox fill:#a371f7
+  classDef refire fill:#39c5cf
+  classDef marker fill:#ff7b72
+  classDef runlog fill:#7ee787
+
+  %% notes: {"Fire":"Single choke point for Scheduler/Watcher/Refirer/kicks. LoopDetector halts chain depth >= 3.","RunPlugin":"Per-plugin lock, spawn Deno, supervise stderr, promote, write needs-reindex marker.","Reconciler":"Daemon's index loop. 1Hz tick or SIGHUP. Checks markers, dispatches jobs.","Markers":"Lazy form of Signal. needs-reindex (request) and embed-disabled (state).","RunLog":"ADR 0001: one module, two scopes (global + per-Run).","Status_json":"Event-driven since phase 5. lastUpdated timestamp."}
