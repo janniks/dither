@@ -196,6 +196,22 @@ export interface ReconcileSummary {
 }
 
 /**
+ * Child-process entrypoint for `dither daemon reconcile`. Runs the full
+ * qmd reconcile (openStore → index → embed) in its own process so the
+ * daemon's event loop never blocks on native qmd code. Phase 1 keeps the
+ * journal-writing behavior identical — it just delegates to qmdReconcile,
+ * which still writes `jobs/` + `appendGlobal` directly. Phase 2 swaps that
+ * for an NDJSON-on-stderr sink so the daemon stays the sole journal writer.
+ *
+ * Sets process.title so the worker is legible in `ps` separate from the
+ * daemon main loop.
+ */
+export async function runReconcileChild(): Promise<ReconcileSummary> {
+  process.title = "dither daemon reconcile";
+  return qmdReconcile();
+}
+
+/**
  * Top-level reconciler. Emits a `reconcile-started` event, runs all
  * jobs implied by the current state, emits `reconcile-done`. Returns a
  * summary of what ran. Always safe to call concurrently with other

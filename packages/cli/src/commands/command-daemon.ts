@@ -11,6 +11,7 @@ import {
   formatProbeReason,
 } from "../daemon-control";
 import { runDaemon } from "../daemon";
+import { runReconcileChild } from "../daemon-jobs";
 import { formatRelTime } from "../relative-time";
 
 const PREVIEW_LIMIT = 4;
@@ -197,6 +198,20 @@ const runSubcommand = defineCommand({
   },
 });
 
+const reconcileSubcommand = defineCommand({
+  meta: {
+    name: "reconcile",
+    description: "(internal) Run one qmd reconcile (index + embed) in this process.",
+    hidden: true,
+  },
+  // Like `run`: no assertInitialized() — this is the child the daemon
+  // spawns (Phase 3) after init was already checked. Hand-invoked without
+  // a library, qmdReconcile exits clean on the no-library path.
+  async run() {
+    await runReconcileChild();
+  },
+});
+
 export const daemonCommand = defineCommand({
   meta: {
     name: "daemon",
@@ -209,5 +224,6 @@ export const daemonCommand = defineCommand({
     reload: reloadSubcommand,
     logs: logsSubcommand,
     run: runSubcommand,
+    reconcile: reconcileSubcommand,
   },
 });

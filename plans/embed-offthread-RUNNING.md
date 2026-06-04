@@ -1,0 +1,299 @@
+# Plan: Off-thread qmd reconcile (index + embed in a child)
+
+> Source: in-conversation design (2026-06-04). Spec TBD.
+
+## Intent
+
+**Problem.** The daemon runs `qmdReconcile` (index + embed) inline on its
+main thread — `daemon.ts` `fireQmdReconcile` (`daemon.ts:343-365`) awaits
+`qmdReconcile` (`daemon-jobs.ts:207`). Embedding can take minutes (model
+download ~333MB, then per-chunk embed). While it runs, the daemon's
+event loop is busy in native qmd code (`better-sqlite3`,
+`node-llama-cpp`, `sqlite-vec`), so user-impacting work — firing,
+scheduling, refiring, watch-debounce — stalls behind it.
+
+**Approach.**
+
+- Move the **whole** `qmdReconcile` (index + embed) into a **child
+  process** that mirrors the existing daemon self-spawn pattern
+  (`daemon-control.ts:166-181`). New hidden subcommand `daemon reconcile`,
+  sibling to the hidden `daemon run` (`command-daemon.ts:185-198`).
+- Child opens its own `openStore`, runs `store.update` then `embedLoop`,
+  streams NDJSON progress on stderr (reuse the `_dither` convention from
+  `supervisor.ts:52-77`). Daemon parses it and stays the **sole** writer
+  of `jobs/` + `appendGlobal` (single-writer invariant, same as plugin
+  runs journal via the daemon).
+- The reconcile child runs **fully concurrent** with plugin-run children.
+  No "pause embed during a user run" courtesy — there's no DB-writer
+  conflict (plugins write `.md`; only the reconcile child writes the qmd
+  sqlite index).
+- The child **holds the qmd lock** (its own PID in the lock body), not the
+  daemon — see Phase 4 rationale.
+
+**Why child, not worker_threads.** qmd is native-addon-heavy: the sqlite
+handle is thread-local, the llama model has global C++ state, nothing is
+shareable across threads. A child gets clean isolation and keeps qmd
+natives entirely out of the daemon's address space — the daemon main
+thread never loads them.
+
+## Architectural decisions
+
+- **No new IPC shape.** The reconcile child is just another supervised
+  child over stderr NDJSON — same shape as `supervise` (`supervisor.ts:79`).
+- **Daemon owns the journal.** Child emits intent; daemon translates to
+  `appendGlobal` + `jobs/<id>.json`. The child writes no run-log, no
+  `jobs/`. Keeps `readJobsSnapshot` (`daemon-jobs.ts:119`) unchanged.
+- **Lock honesty: holder PID == worker PID.** Move `acquireTheme` into the
+  child so liveness tracks the real worker; a daemon crash can't strand a
+  lock that a second embedder then reclaims while the orphan still writes.
+- **`coalesce` stays.** `fireQmdReconcile` inflight/queued (`daemon.ts:336-365`)
+  is kept verbatim — it now guards spawn-and-supervise instead of an
+  inline await. Still prevents double-spawn.
+- **Commit hygiene.** Each phase stages only files it touches by explicit
+  path. Never `git add -A` / `.` — untracked `notes/plugin-*.md` live in
+  the worktree.
+
+---
+
+## Phase 1: Child-runnable entrypoint + hidden `daemon reconcile`
+
+End-to-end: the qmd reconcile body becomes a function invocable as its own
+process, provable standalone before any daemon wiring.
+
+- Add `runReconcileChild()` — moves the `qmdReconcile` body
+  (`daemon-jobs.ts:207-258`): `openStore` → optional index → optional
+  embed. Keep `claimReindex` / first-pass / `embedDisabled` gating logic
+  identical.
+- `withTruncationFilter` patches in-process `console.warn`
+  (`progress.ts:159-178`) — it MUST run where embed runs, so it moves into
+  the child path. Child computes the truncation count, folds it into its
+  summary.
+- Register hidden `reconcile` subcommand in `command-daemon.ts` mirroring
+  the hidden `run` (`command-daemon.ts:185-198`, `hidden: true`, no
+  `assertInitialized`). It calls `runReconcileChild()` then exits.
+- This phase: child still writes `appendGlobal` + `jobs/` directly (so it
+  works standalone). Phase 3 strips that out and routes through the daemon.
+
+**Acceptance:**
+- [x] `dither daemon reconcile` invoked by hand opens the store, indexes,
+      exits 0 (or exits 0 on no-library / no-work). Embed half gated off in
+      test to avoid the ~333MB model download (no existing test embeds for
+      real either); clean-exit + index paths proven.
+- [ ] `withTruncationFilter` no longer referenced from the daemon main
+      thread; lives only on the child path. → **deferred to P3/P5**: private
+      helper inside `embedLoop`, never referenced from the daemon module, but
+      `embedLoop` still runs inline until P3 spawns the child.
+- [x] Subcommand hidden in help; `assertInitialized` omitted (matches `run`).
+- [x] Standalone test: invoke `runReconcileChild()` against a tmp library
+      with real qmd, assert index counts (real impl, no mocks). Embed counts
+      deferred (download).
+
+---
+
+## Phase 2: Child emits NDJSON progress on stderr
+
+End-to-end: define the child→daemon message shapes; child stops writing
+journal/jobs and instead streams its intent.
+
+- Reuse the `_dither` envelope (`supervisor.ts:52`). Message kinds the
+  child emits (one JSON object per stderr line):
+  - `{_dither:"job-started", type, reason?}` — type ∈
+    `model-download|indexing|embedding`.
+  - `{_dither:"job-progress", type, current, total}` — debounced in the
+    child (100ms, mirror `runJobWithLock` `PROGRESS_DEBOUNCE_MS`,
+    `daemon-jobs.ts:387-402`).
+  - `{_dither:"job-done", type, ...summary}` — embedding summary carries
+    `chunks, truncated, iterations, durationMs`; indexing carries
+    `filesIndexed, filesTotal`; model-download carries `durationMs`.
+  - `{_dither:"job-skipped", type, reason}` — lock-busy (Phase 4).
+  - `{_dither:"reconcile-done", jobsRun, reason?}` on clean finish.
+- Child still owns the optimistic model-download bracket logic
+  (`daemon-jobs.ts:316-357`): emit `model-download` job-started, close it
+  on first embed progress or at end.
+- Jobs need IDs: have the **daemon** mint the `jobId` (it's the journal
+  writer). Child references jobs by `type` (only one job per type runs in
+  a single reconcile); daemon maps type→jobId for the lifetime of the
+  cycle. This keeps jobId allocation with the journal owner.
+- Non-`_dither` stderr lines from the child = real diagnostics → daemon
+  journals as `{kind:"stderr"}` (same as `supervisor.ts:117`).
+
+**Acceptance:**
+- [ ] Message shapes documented in-file (short comment block on the child
+      emitter).
+- [ ] Child emits started/progress/done for a real index + embed run;
+      asserted by capturing the child's stderr in a standalone test.
+- [ ] Model-download bracket emitted even when nothing to embed (close-anyway
+      path preserved, cf. `daemon-jobs.ts:356`).
+- [ ] No `appendGlobal` / `jobs/` writes from the child (grep clean).
+
+---
+
+## Phase 3: Daemon spawns + supervises the reconcile child
+
+End-to-end: `fireQmdReconcile` spawns `daemon reconcile`, parses its
+stderr, and is the sole writer of `jobs/` + `appendGlobal`.
+
+- New `superviseReconcile()` (or extend `supervisor.ts`): spawn
+  `process.execPath [argv1, "daemon", "reconcile"]` (mirror
+  `daemon-control.ts:170-174`), `stdio:["ignore","ignore","pipe"]`,
+  `env:{...process.env, DITHER_DAEMON:"1"}`.
+- Line-buffer stderr (reuse `supervisor.ts:123-134` buffering). For each
+  `_dither` message, the daemon does what `daemon-jobs.ts` did inline:
+  - `job-started` → mint jobId, `markJobStarted`, `appendGlobal job-started`.
+  - `job-progress` → `markJobProgress` + `appendGlobal job-progress`.
+  - `job-done` → `markJobEnded` + `appendGlobal job-done`.
+  - `job-skipped` → `appendGlobal job-skipped`.
+  - `reconcile-done` → emit `reconcile-done` after child close.
+- `fireQmdReconcile` (`daemon.ts:343-365`): the `inflight`/`queued`
+  coalescing stays; `inflight` now resolves when the child process closes,
+  not when an inline promise settles. Keep `REFIRE_MIN_MS` debounce and
+  the `needsReindexPath` re-fire check (`daemon.ts:359-363`).
+- `reconcile-started` is emitted by the **daemon** at spawn time (it owns
+  the cycleId), before/around the spawn — preserves the
+  started/done bookend that watchers depend on (`daemon-jobs.ts:210`,
+  init watch, `dither status`).
+- Track the child PID on the daemon (a `reconcileChild` ref) for Phase 4
+  shutdown.
+
+**Acceptance:**
+- [ ] Daemon main thread no longer imports/loads qmd natives (no
+      `openStore` / `embedLoop` on the daemon path; verify by import graph).
+- [ ] `dither status` shows index + embed jobs identically to before
+      (same `jobs/` files, same log events) — driven by the child now.
+- [ ] Concurrent: a plugin fire issued during an in-progress reconcile
+      runs without waiting (test: kick a fast plugin mid-embed, assert it
+      completes while embed still running).
+- [ ] `fireQmdReconcile` coalescing: two rapid triggers spawn one child,
+      queue one follow-up (existing inflight/queued behavior preserved).
+- [ ] daemon-jobs / daemon tests pass.
+
+---
+
+## Phase 4: Lock ownership → child; shutdown drain; SIGHUP
+
+End-to-end: the qmd lock moves to the child, and the daemon drains/kills
+the reconcile child on shutdown.
+
+- **Lock ownership decision (RECOMMENDED: child holds the lock).**
+  Today `acquireTheme` writes the daemon's PID. If the daemon crashes
+  mid-embed, a respawned daemon could reclaim the (now stale-by-PID) lock
+  and spawn a SECOND embedder while the orphaned child still writes the
+  sqlite index → double-writer. Moving `acquireTheme("index"|"embed")`
+  into the child makes the lock honest: holder PID == the process doing
+  the work, so reclaim only happens when the worker truly dies.
+  - Child acquires the theme lock at the start of each phase
+    (`locks.ts:169`), releases at end. If `acquireTheme` returns null
+    (busy → another reconcile child is live), child emits `job-skipped`
+    and proceeds to the next phase / exits clean. Small startup race is
+    benign: at most one child wins each theme.
+  - `statusAll()` cross-check in `reduceJobsSnapshot` (`daemon-jobs.ts:179-184`)
+    still works — it just reads whatever live PID holds the lock.
+- **Shutdown.** `shutdown()` (`daemon.ts:379-395`) currently drains only
+  plugin children via `readRunningPlugins`. Add: if a reconcile child is
+  live, `SIGTERM` it and wait (bounded by the same `SHUTDOWN_GRACE_MS`,
+  `daemon.ts:28`). Child releases its lock on SIGTERM (release in a
+  `finally`), so no stale lock survives a clean stop.
+- **SIGHUP.** `onHup` (`daemon.ts:397-407`) still calls `fireQmdReconcile`
+  — now spawns the child. Unchanged call site.
+
+**Acceptance:**
+- [ ] Theme lock body holds the **child's** PID during reconcile (assert
+      by reading `themeLockPath("embed")` mid-run).
+- [ ] Daemon crash mid-embed → orphan child finishes/holds lock; a fresh
+      daemon does NOT spawn a second embedder for the same theme (the live
+      child's lock blocks it → `job-skipped`).
+- [ ] `dither daemon stop` mid-reconcile: child receives SIGTERM, releases
+      lock, daemon exits within grace; no stale `qmd-embed.lock` left.
+- [ ] SIGHUP during idle still triggers a reconcile child.
+
+---
+
+## Phase 5: Cancellation + model-download end-to-end; delete dead inline path
+
+End-to-end: `dither index cancel` cancels the in-child embed; the dead
+inline qmd job runners are removed from the daemon module.
+
+- **Cancellation.** `dither index cancel` writes the `embed-disabled`
+  marker (`markers.ts:120-124`). `embedLoop`'s `shouldCancel` checks
+  `readMarkerState().embedDisabled` between iterations
+  (`progress.ts:128-129`, wired at `daemon-jobs.ts:354`). Since the marker
+  is a file, the child reads it directly — confirm the child's embed loop
+  still exits cleanly between iterations (current batch finishes, no new
+  iterations queued).
+- **Model download.** First-run ~333MB fetch happens inside the child's
+  first `store.embed`. The optimistic `model-download` job-started/done
+  bracket now rides the child→daemon stream (Phase 2). Verify the daemon
+  renders the download phase distinctly in `dither status`.
+- **Delete dead code.** Remove the now-unused inline runners from
+  `daemon-jobs.ts`: `runIndexJob`, `runEmbedJob`, `runJobWithLock`, and
+  the `qmdReconcile` body (kept logic now lives in the child). Keep
+  `readJobsSnapshot`, `reduceJobsSnapshot`, `clearInflightJobs`,
+  `markJob*`, and the `Job`/`Snapshot` types — the daemon still writes
+  `jobs/` from the parsed stream.
+
+**Acceptance:**
+- [ ] `dither index cancel` mid-embed stops the child's loop between
+      iterations; lock released; `dither status` shows no live embed.
+- [ ] First-run download events appear in the log via the child stream
+      (test or manual against a clean model cache).
+- [ ] `daemon-jobs.ts` no longer references `openStore` / `embedLoop` /
+      `acquireTheme`; only the journal-writing surface remains.
+- [ ] Full daemon + daemon-jobs + daemon-client test suites pass.
+
+---
+
+## Phase 6 (follow-on, lighter): kick/lock/journal state must not lie
+
+End-to-end: the "is it running?" model stops contradicting itself once an
+embed child PID is in play. Full design deferred — this phase scopes the
+inconsistency, not a rewrite.
+
+- Today `plugin run` pre-check treats kick-existence OR held-lock as
+  "already running" (`command-plugin-run.ts:230`), but `tailRun`
+  (`command-plugin-run.ts:114`) waits silently and `plugin runs` can still
+  say "no runs yet" — the three surfaces can disagree.
+- Account for the reconcile child: it holds a `qmd-*` lock, not a
+  per-plugin lock, so it must NOT make a plugin look "running". Verify
+  `readRunningPlugins` (`daemon.ts:170-193`) and `isLockHeld`
+  (`locks.ts:132`) only ever see `<plugin>.lock`, never `qmd-*.lock`
+  (they filter `.lock` suffix but not the `qmd-` prefix — confirm/guard).
+- CLI should own and clear its own kick on Ctrl-C so a interrupted `run`
+  doesn't leave a stale kick that reads as "already running"
+  (`clearKick`, `kicks.ts:63`).
+
+**Acceptance:**
+- [ ] A live reconcile child never makes any plugin report as running in
+      `dither status` or block `dither plugin run`.
+- [ ] `plugin run` + `plugin runs` + status agree on running-ness in the
+      kick→fire→done window (no "already running" coexisting with "no runs
+      yet").
+- [ ] Ctrl-C during a foreground `plugin run` clears the kick it wrote.
+- [ ] (Note: a fuller kick/lock/journal unification can be a later pass.)
+
+---
+
+## Open questions
+
+- **jobId ownership** (Phase 2): daemon-mints vs child-mints. Plan assumes
+  daemon mints (it's the journal writer, one job per type per cycle). If a
+  cycle ever needs >1 job of the same type, revisit.
+- **`reconcile-failed` semantics** (Phase 3/4): on child non-zero exit, the
+  daemon logs `reconcile-failed` and lets the next trigger re-run. Confirm
+  no partial `jobs/` file is left for the failed type (daemon `markJobEnded`
+  on child close regardless of exit code).
+- **Phase 6 depth**: scope here is just "don't lie about reconcile child as
+  a plugin". The broader kick/lock/journal unification may warrant its own
+  spec.
+
+---
+
+## Phase log
+
+| commit | summary |
+|--|--|
+| P1 | `runReconcileChild()` + hidden `daemon reconcile` subcommand; standalone real-qmd index test (15 pass, typecheck clean) |
+|  |  |
+|  |  |
+|  |  |
+|  |  |
+|  |  |
