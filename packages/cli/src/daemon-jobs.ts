@@ -211,7 +211,21 @@ export async function runReconcileChild(
   emit?: (line: string) => void,
 ): Promise<ReconcileSummary> {
   process.title = "dither daemon reconcile";
-  return qmdReconcile(stderrSink(emit));
+  // Graceful stop on `dither daemon stop`: the daemon SIGTERMs us. A JS
+  // handler can't interrupt a mid-batch native `store.embed()` (node-llama-cpp
+  // blocks the event loop until the batch returns), so we set a flag that the
+  // index/embed loop checks between iterations — same seam as the
+  // embed-disabled marker. The in-flight batch finishes, then the loop exits
+  // and `runJobWithLock`'s finally releases the theme lock, so a clean stop
+  // never strands a `qmd-*.lock`. A hard kill is the backstop: the lock body
+  // holds our PID, so the next acquirer reclaims it via `isPidAlive`.
+  let stopped = false;
+  const stop = (): void => {
+    stopped = true;
+  };
+  process.on("SIGTERM", stop);
+  process.on("SIGINT", stop);
+  return qmdReconcile(stderrSink(emit), () => stopped);
 }
 
 /**
@@ -223,7 +237,10 @@ export async function runReconcileChild(
  * Watchers (init's foreground watch, `dither status`) use the
  * `reconcile-started` / `reconcile-done` pair as session bookends.
  */
-export async function qmdReconcile(sink: ReconcileSink = journalSink()): Promise<ReconcileSummary> {
+export async function qmdReconcile(
+  sink: ReconcileSink = journalSink(),
+  shouldStop: () => boolean = () => false,
+): Promise<ReconcileSummary> {
   const startedAt = Date.now();
   const cycleId = randomUUID();
   await sink.reconcileStarted(cycleId);
@@ -256,10 +273,12 @@ export async function qmdReconcile(sink: ReconcileSink = journalSink()): Promise
     }
 
     // Step 2: chunks need embedding, AND user hasn't cancelled embed.
-    if (!readMarkerState().embedDisabled) {
+    // A SIGTERM between the index and embed legs skips embedding entirely —
+    // the shutdown drain wants us to exit, not start a fresh multi-minute job.
+    if (!shouldStop() && !readMarkerState().embedDisabled) {
       const status = await store.getStatus();
       if (status.needsEmbedding > 0) {
-        const ran = await runEmbedJob(sink, store);
+        const ran = await runEmbedJob(sink, store, shouldStop);
         if (ran) jobsRun++;
       }
     }
@@ -317,6 +336,7 @@ async function runIndexJob(
 async function runEmbedJob(
   sink: ReconcileSink,
   store: NonNullable<Awaited<ReturnType<typeof openStore>>>,
+  shouldStop: () => boolean = () => false,
 ): Promise<boolean> {
   const handle = await acquireTheme("embed");
   if (handle === null) {
@@ -345,10 +365,11 @@ async function runEmbedJob(
         emit(embedded, total);
       },
       // Cancellation hand-off: `dither index cancel` writes the
-      // embed-disabled marker. Between iterations the loop checks it
-      // and exits early — current store.embed() batch still completes,
-      // but no further iterations are queued.
-      () => readMarkerState().embedDisabled,
+      // embed-disabled marker; a clean `daemon stop` SIGTERMs the child
+      // (shouldStop). Between iterations the loop checks both and exits
+      // early — current store.embed() batch still completes, but no
+      // further iterations are queued, then runJobWithLock releases the lock.
+      () => shouldStop() || readMarkerState().embedDisabled,
     );
     // Edge: nothing to embed → onProgress never fired → close download anyway.
     await closeDownload();

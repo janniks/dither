@@ -19,6 +19,7 @@ import { clearInflightJobs } from "./daemon-jobs";
 import { superviseReconcile } from "./reconcile-supervisor";
 import { needsReindexPath } from "./markers";
 import type { ChildProcess } from "node:child_process";
+import { spawn as nodeSpawn } from "node:child_process";
 
 /**
  * Long-lived daemon process. The status snapshot is event-driven — written
@@ -237,7 +238,7 @@ async function writeStatusSnapshot(
  * Returns a promise that resolves when the daemon exits cleanly (SIGTERM
  * received and shutdown completes within the grace window).
  */
-export async function runDaemon(): Promise<void> {
+export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   const state: DaemonState = {
     token: randomUUID(),
     startedAt: new Date().toISOString(),
@@ -354,7 +355,7 @@ export async function runDaemon(): Promise<void> {
       return;
     }
     lastStart = Date.now();
-    const sup = superviseReconcile();
+    const sup = superviseReconcile(spawn);
     // Tracked so Phase 4's shutdown can SIGTERM an in-flight reconcile.
     reconcileChild = sup.child;
     inflight = sup.done
@@ -390,11 +391,22 @@ export async function runDaemon(): Promise<void> {
     scheduler.stop();
     watcher.stop();
     refirer.stop();
-    // Wait for in-flight plugin children (manual or scheduled) to finish.
+    // Signal the in-flight reconcile child (if any) up front so it can wind
+    // down its embed loop between iterations while plugin children drain. Its
+    // SIGTERM handler sets a stop flag; the current native batch finishes,
+    // then runJobWithLock's finally releases the theme lock — no stale
+    // qmd-*.lock survives a clean stop. Backstop: a hard kill leaves a
+    // PID-stamped lock the next acquirer reclaims via isPidAlive.
+    const child = reconcileChild;
+    if (child && child.exitCode === null) child.kill("SIGTERM");
+    // Single grace budget for BOTH plugin children and the reconcile child —
+    // no second 30s wait stacked on top. Exit the loop once nothing is left
+    // running and the reconcile child has closed (or grace elapses).
     const start = Date.now();
     while (Date.now() - start < SHUTDOWN_GRACE_MS) {
       const running = await readRunningPlugins();
-      if (running.length === 0) break;
+      const reconcileLive = reconcileChild !== null && reconcileChild.exitCode === null;
+      if (running.length === 0 && !reconcileLive) break;
       await new Promise((r) => setTimeout(r, 250));
     }
     await appendGlobal({ kind: "daemon-stopped", pid: process.pid }).catch(() => undefined);

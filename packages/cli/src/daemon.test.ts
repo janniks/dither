@@ -2,6 +2,34 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { EventEmitter } from "node:events";
+
+/**
+ * Minimal ChildProcess stand-in for the reconcile child. The supervisor only
+ * touches `.stderr` (a readable-ish emitter), `.on("error"|"close")`, and the
+ * shutdown path reads `.exitCode` + calls `.kill`. We model SIGTERM as the
+ * graceful path: the real child finishes its current native batch, then exits
+ * — here, killing ends stderr and emits `close(0)`, flipping `exitCode` to 0.
+ */
+function fakeReconcileChild() {
+  const stderr = new EventEmitter() as EventEmitter & { setEncoding(): void };
+  stderr.setEncoding = () => undefined;
+  const child = new EventEmitter() as EventEmitter & {
+    stderr: typeof stderr;
+    exitCode: number | null;
+    kill: ReturnType<typeof vi.fn>;
+  };
+  child.stderr = stderr;
+  child.exitCode = null;
+  child.kill = vi.fn((sig?: NodeJS.Signals) => {
+    void sig;
+    child.exitCode = 0;
+    stderr.emit("end");
+    child.emit("close", 0);
+    return true;
+  });
+  return child;
+}
 
 describe("daemon lifecycle (in-process)", () => {
   let home: string;
@@ -43,6 +71,38 @@ describe("daemon lifecycle (in-process)", () => {
     // Send SIGTERM to ourselves; the daemon registered a handler.
     process.kill(process.pid, "SIGTERM");
     await exited;
+    expect(existsSync(pidPath)).toBe(false);
+  }, 15_000);
+
+  it("SIGTERMs the live reconcile child on shutdown and exits within grace", async () => {
+    const { runDaemon } = await import("./daemon");
+
+    // Inject a fake spawn so the daemon supervises a controllable reconcile
+    // child instead of forking a real `daemon reconcile` process.
+    const child = fakeReconcileChild();
+    const spawn = vi.fn(() => child);
+
+    const exited = runDaemon(spawn as unknown as typeof import("node:child_process").spawn);
+
+    // Wait until the daemon has spawned + is supervising the child (pid file up).
+    const pidPath = join(home, "dither.pid");
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      if (existsSync(pidPath) && spawn.mock.calls.length > 0) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(child.exitCode).toBeNull();
+
+    // Clean stop: shutdown must SIGTERM the child and complete well within the
+    // 30s grace (the child closes immediately on kill in this stub).
+    const stopStart = Date.now();
+    process.kill(process.pid, "SIGTERM");
+    await exited;
+
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(child.exitCode).toBe(0);
+    expect(Date.now() - stopStart).toBeLessThan(5000);
     expect(existsSync(pidPath)).toBe(false);
   }, 15_000);
 

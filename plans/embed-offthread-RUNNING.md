@@ -214,15 +214,38 @@ the reconcile child on shutdown.
 - **SIGHUP.** `onHup` (`daemon.ts:397-407`) still calls `fireQmdReconcile`
   — now spawns the child. Unchanged call site.
 
+**Lock ownership — already child-held as of P3.** `acquireTheme` is called
+only inside `runIndexJob`/`runEmbedJob` (`daemon-jobs.ts`), which run inside
+`qmdReconcile` → `runReconcileChild`, invoked solely by the `daemon
+reconcile` subcommand — a separate child process. `daemon.ts` imports only
+`clearInflightJobs` and never touches `acquireTheme`. So "move lock to child"
+was structurally done in P3; P4 just locks the invariant in with a test and
+adds the shutdown drain + child SIGTERM handling (the real new work).
+
 **Acceptance:**
-- [ ] Theme lock body holds the **child's** PID during reconcile (assert
-      by reading `themeLockPath("embed")` mid-run).
-- [ ] Daemon crash mid-embed → orphan child finishes/holds lock; a fresh
-      daemon does NOT spawn a second embedder for the same theme (the live
-      child's lock blocks it → `job-skipped`).
-- [ ] `dither daemon stop` mid-reconcile: child receives SIGTERM, releases
-      lock, daemon exits within grace; no stale `qmd-embed.lock` left.
-- [ ] SIGHUP during idle still triggers a reconcile child.
+- [x] Theme lock body holds the **child's** PID during reconcile — asserted via
+      the **index** leg (`reconcile-child.test.ts`: read `themeLockPath("index")`
+      on the first indexing `job-progress`; body === the reconcile process pid).
+      Embed leg skipped (model download); index acquires a theme lock the same way.
+- [~] Daemon crash mid-embed → orphan holds lock; fresh daemon does NOT spawn a
+      second embedder. Structurally guaranteed: the lock body holds the child's
+      PID, so `acquireTheme` only reclaims when `isPidAlive` says the worker is
+      truly dead → a live orphan blocks the new child → `job-skipped`. No
+      dedicated crash-sim test (needs a real mid-embed / model download); carried
+      with the embed end-to-end to P5.
+- [x] `dither daemon stop` mid-reconcile: child receives SIGTERM, releases lock,
+      daemon exits within grace; no stale `qmd-embed.lock`. **Graceful path**:
+      child SIGTERM handler sets a stop flag the index/embed loop checks between
+      iterations (same seam as the embed-disabled marker); the in-flight native
+      batch finishes, then `runJobWithLock`'s finally releases the theme lock.
+      Shutdown drains the child inside the SAME `SHUTDOWN_GRACE_MS` budget (signal
+      up front, one shared wait loop). Tested via injectable spawn
+      (`daemon.test.ts`): shutdown SIGTERMs the live child and exits well within
+      grace. Caveat: `store.embed()` is a BLOCKING node-llama-cpp call — a JS
+      handler can't interrupt mid-batch; worst case (hard kill) the PID-stamped
+      lock is reclaimable via `isPidAlive`.
+- [x] SIGHUP during idle still triggers a reconcile child — `onHup` →
+      `fireQmdReconcile` → `superviseReconcile` (spawn) unchanged; verified.
 
 ---
 
@@ -312,6 +335,6 @@ inconsistency, not a rewrite.
 | P1 | `runReconcileChild()` + hidden `daemon reconcile` subcommand; standalone real-qmd index test (15 pass, typecheck clean) |
 | P2 | sink seam (`reconcile-sink.ts` journal/stderr) + NDJSON protocol (`reconcile-protocol.ts` + `parseReconcile`); child streams stderr, daemon-inline journal unchanged (17 pass, daemon-jobs.test unmodified) |
 | P3 | `reconcile-supervisor.ts` (`superviseReconcile` + testable `reconcileHandler`); daemon spawns `daemon reconcile`, parses NDJSON, sole journal writer; `fireQmdReconcile` rewired (coalescing kept); `reconcile` subcommand dynamic-imports `runReconcileChild`. Functional qmd-off-thread met; import-graph clean deferred to P5. Child PID tracked on `reconcileChild` for P4. Typecheck clean; reconcile-supervisor unit test (3 pass), zero new failures |
-|  |  |
+| P4 | Lock confirmed child-held (no move needed — done structurally in P3); lock-body-holds-child-PID test via index leg (`reconcile-child.test.ts`). Child SIGTERM/SIGINT → stop flag threaded through `qmdReconcile`/`runEmbedJob`/`embedLoop` (OR'd with embed-disabled marker), `runJobWithLock` finally releases lock. Shutdown drain: signal reconcile child up front, fold into the single `SHUTDOWN_GRACE_MS` wait loop (no second grace). `runDaemon(spawn)` seam for the drain test (`daemon.test.ts`). SIGHUP path unchanged. Honest caveat: native `store.embed()` blocks — graceful only between iterations. Typecheck clean; reconcile+daemon+locks: 50 pass, 1 pre-existing deno failure, zero new |
 |  |  |
 |  |  |

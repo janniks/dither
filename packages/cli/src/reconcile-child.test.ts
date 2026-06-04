@@ -6,7 +6,8 @@ import { runReconcileChild } from "./daemon-jobs";
 import { parseReconcile } from "./reconcile-protocol";
 import { readGlobal } from "./run-log";
 import { needsReindexPath, requestReindexSync } from "./markers";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { themeLockPath } from "./locks";
 import { writeTestConfig } from "../test/helpers/config";
 
 /**
@@ -71,6 +72,28 @@ describe("runReconcileChild", () => {
     expect(msgs[msgs.length - 1]?.kind).toBe("reconcile-done");
     // No journal writes on the child path.
     expect(await readGlobal()).toEqual([]);
+  });
+
+  it("holds the index theme lock with the reconcile process's own PID", async () => {
+    writeFileSync(join(library, "notes", "memo.md"), "# Memo\n\nHello world.\n", "utf-8");
+    requestReindexSync();
+
+    // The lock is acquired+released entirely inside runReconcileChild, so we
+    // observe it mid-run: on the first indexing job-progress line the lock is
+    // held, and its body must be THIS process's pid (Phase 4: holder PID ==
+    // the worker doing the qmd write, not a separate daemon). Post-P3 the
+    // worker IS this process when runReconcileChild runs in-band.
+    let holder: number | null = null;
+    await runReconcileChild((line) => {
+      const msg = parseReconcile(line);
+      if (msg?.kind === "job-progress" && msg.type === "indexing" && holder === null) {
+        holder = Number.parseInt(readFileSync(themeLockPath("index"), "utf-8").trim(), 10);
+      }
+    });
+
+    expect(holder).toBe(process.pid);
+    // Released after the job — no stale lock file left behind.
+    expect(existsSync(themeLockPath("index"))).toBe(false);
   });
 
   it("sets process.title so the worker is legible in ps", async () => {
