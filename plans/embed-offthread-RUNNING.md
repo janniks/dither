@@ -165,16 +165,25 @@ stderr, and is the sole writer of `jobs/` + `appendGlobal`.
   shutdown.
 
 **Acceptance:**
-- [ ] Daemon main thread no longer imports/loads qmd natives (no
-      `openStore` / `embedLoop` on the daemon path; verify by import graph).
-- [ ] `dither status` shows index + embed jobs identically to before
-      (same `jobs/` files, same log events) — driven by the child now.
-- [ ] Concurrent: a plugin fire issued during an in-progress reconcile
-      runs without waiting (test: kick a fast plugin mid-embed, assert it
-      completes while embed still running).
-- [ ] `fireQmdReconcile` coalescing: two rapid triggers spawn one child,
-      queue one follow-up (existing inflight/queued behavior preserved).
-- [ ] daemon-jobs / daemon tests pass.
+- [~] Daemon main thread no longer *executes* qmd (functional guarantee met
+      — `superviseReconcile` spawns the child; daemon only touches the
+      journal surface + `parseReconcile`). Import-graph NOT yet clean:
+      `daemon.ts → daemon-jobs.ts (clearInflightJobs) → store.ts → @tobilu/qmd`
+      still loads natives at module-load. Finalized in P5 (module split).
+- [x] `dither status` shows index + embed jobs identically to before — same
+      `jobs/` files + log events, now produced via supervisor→`journalSink`.
+      Proven by `reconcile-supervisor.test.ts`: NDJSON→journal output is
+      event-for-event equal to the inline `journalSink` path (jobId/ts aside).
+- [ ] Concurrent: plugin fire during an in-progress reconcile runs without
+      waiting. → deferred: the daemon never blocked on the child even before
+      (inline was already non-awaited in the main loop); concurrency holds by
+      construction (separate process). No dedicated mid-embed test (needs the
+      model download). Carry to P5 alongside the embed end-to-end.
+- [x] `fireQmdReconcile` coalescing preserved verbatim — `inflight`/`queued`
+      now resolves on child close (`sup.done`); `REFIRE_MIN_MS` + the
+      `needsReindexPath` re-fire check unchanged.
+- [x] daemon-jobs / daemon tests pass (env/deno failures are pre-existing,
+      unrelated; zero new failures). reconcile-supervisor unit test added.
 
 ---
 
@@ -302,7 +311,7 @@ inconsistency, not a rewrite.
 |--|--|
 | P1 | `runReconcileChild()` + hidden `daemon reconcile` subcommand; standalone real-qmd index test (15 pass, typecheck clean) |
 | P2 | sink seam (`reconcile-sink.ts` journal/stderr) + NDJSON protocol (`reconcile-protocol.ts` + `parseReconcile`); child streams stderr, daemon-inline journal unchanged (17 pass, daemon-jobs.test unmodified) |
-|  |  |
+| P3 | `reconcile-supervisor.ts` (`superviseReconcile` + testable `reconcileHandler`); daemon spawns `daemon reconcile`, parses NDJSON, sole journal writer; `fireQmdReconcile` rewired (coalescing kept); `reconcile` subcommand dynamic-imports `runReconcileChild`. Functional qmd-off-thread met; import-graph clean deferred to P5. Child PID tracked on `reconcileChild` for P4. Typecheck clean; reconcile-supervisor unit test (3 pass), zero new failures |
 |  |  |
 |  |  |
 |  |  |

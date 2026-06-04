@@ -15,9 +15,10 @@ import { Refirer } from "./refirer";
 import { readRefire } from "./refire";
 import { scanKicks, type KickPayload } from "./kicks";
 import { acquire as acquireLock, release as releaseLock } from "./locks";
-import { qmdReconcile, clearInflightJobs } from "./daemon-jobs";
-import { journalSink } from "./reconcile-sink";
+import { clearInflightJobs } from "./daemon-jobs";
+import { superviseReconcile } from "./reconcile-supervisor";
 import { needsReindexPath } from "./markers";
+import type { ChildProcess } from "node:child_process";
 
 /**
  * Long-lived daemon process. The status snapshot is event-driven — written
@@ -329,13 +330,17 @@ export async function runDaemon(): Promise<void> {
   });
   await writeStatusSnapshot(state, scheduler, watcher, detector);
 
-  // qmd state reconciliation runs in the background — it can take
-  // minutes (model download + embedding). We don't await it; the
-  // events log is the watcher's hand-off point. Multiple concurrent
-  // calls are safe because the per-theme locks serialize the actual
-  // work — and `qmdReconcile` itself is short on no-work paths.
+  // qmd state reconciliation runs off-thread in a `daemon reconcile`
+  // child — embedding can take minutes (model download + per-chunk
+  // embed) and must not block the daemon's event loop. We supervise the
+  // child over stderr NDJSON and stay the sole writer of `jobs/` +
+  // the global run-log. We don't await it; the events log is the
+  // watcher's hand-off point. Concurrent triggers are coalesced below
+  // (one child at a time, one queued follow-up).
   let inflight: Promise<void> | null = null;
   let queued = false;
+  // The live reconcile child, if any. Phase 4 SIGTERMs it on shutdown.
+  let reconcileChild: ChildProcess | null = null;
   // 500ms is well below human-perceivable latency for catch-up
   // indexing yet bounds wasted work if a plugin re-creates the
   // `needs-reindex` marker faster than reconcile can consume it.
@@ -349,7 +354,10 @@ export async function runDaemon(): Promise<void> {
       return;
     }
     lastStart = Date.now();
-    inflight = qmdReconcile(journalSink())
+    const sup = superviseReconcile();
+    // Tracked so Phase 4's shutdown can SIGTERM an in-flight reconcile.
+    reconcileChild = sup.child;
+    inflight = sup.done
       .catch((err) => {
         console.error(
           `[daemon] qmd reconcile failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -357,6 +365,7 @@ export async function runDaemon(): Promise<void> {
       })
       .then(() => {
         inflight = null;
+        reconcileChild = null;
         if (!queued && !existsSync(needsReindexPath())) return;
         queued = false;
         const wait = Math.max(0, REFIRE_MIN_MS - (Date.now() - lastStart));

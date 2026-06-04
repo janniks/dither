@@ -11,7 +11,6 @@ import {
   formatProbeReason,
 } from "../daemon-control";
 import { runDaemon } from "../daemon";
-import { runReconcileChild } from "../daemon-jobs";
 import { formatRelTime } from "../relative-time";
 
 const PREVIEW_LIMIT = 4;
@@ -207,7 +206,12 @@ const reconcileSubcommand = defineCommand({
   // Like `run`: no assertInitialized() — this is the child the daemon
   // spawns (Phase 3) after init was already checked. Hand-invoked without
   // a library, qmdReconcile exits clean on the no-library path.
+  //
+  // Dynamic import so loading this command module (and `daemon run`, its
+  // sibling) doesn't eagerly pull qmd natives (openStore/embedLoop) via
+  // daemon-jobs. Only this child process loads them.
   async run() {
+    const { runReconcileChild } = await import("../daemon-jobs");
     await runReconcileChild();
   },
 });
