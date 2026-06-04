@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runReconcileChild } from "./daemon-jobs";
+import { runReconcileChild } from "./reconcile-run";
 import { parseReconcile } from "./reconcile-protocol";
 import { disableEmbed, requestReindexSync } from "./markers";
 import { readGlobal } from "./run-log";

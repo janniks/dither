@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -10,8 +11,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { clearInflightJobs, qmdReconcile, readJobsSnapshot } from "./daemon-jobs";
+import { dirname, join, resolve } from "node:path";
+import { clearInflightJobs, readJobsSnapshot } from "./daemon-jobs";
+import { qmdReconcile } from "./reconcile-run";
 import {
   disableEmbed,
   embedDisabledPath,
@@ -151,6 +153,36 @@ describe("daemon-jobs", () => {
       // Fresh marker survives → next cycle will pick it up.
       expect(existsSync(needsReindexPath())).toBe(true);
       expect(existsSync(`${needsReindexPath()}.processing`)).toBe(false);
+    });
+
+    it("import graph is qmd-free: daemon-jobs.ts never reaches store/progress/@tobilu/qmd", () => {
+      // The whole point of the P5 module split: the journal surface must
+      // not transitively load native qmd. The reconcile runners live in
+      // reconcile-run.ts (child-only). We walk daemon-jobs.ts's static
+      // relative-import graph and assert no edge reaches store.ts /
+      // progress.ts, and that nothing in the graph imports @tobilu/qmd.
+      const srcDir = resolve(__dirname);
+      const seen = new Set<string>();
+      const walk = (file: string): void => {
+        const abs = resolve(file);
+        if (seen.has(abs)) return;
+        seen.add(abs);
+        const src = readFileSync(abs, "utf-8");
+        const re = /(?:import|export)\b[^;\n]*?from\s+["'](\.[^"']+)["']/g;
+        for (const m of src.matchAll(re)) {
+          const rel = m[1];
+          if (!rel) continue;
+          walk(rel.endsWith(".ts") ? resolve(dirname(abs), rel) : resolve(dirname(abs), `${rel}.ts`));
+        }
+      };
+      walk(join(srcDir, "daemon-jobs.ts"));
+      const graph = [...seen].map((f) => f.replace(`${srcDir}/`, ""));
+      expect(graph).not.toContain("store.ts");
+      expect(graph).not.toContain("progress.ts");
+      const importsQmd = graph.some((f) =>
+        /from\s+["']@tobilu\/qmd["']/.test(readFileSync(join(srcDir, f), "utf-8")),
+      );
+      expect(importsQmd).toBe(false);
     });
 
     it("inflight files survive log-tail truncation", async () => {

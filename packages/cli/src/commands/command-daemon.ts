@@ -209,9 +209,9 @@ const reconcileSubcommand = defineCommand({
   //
   // Dynamic import so loading this command module (and `daemon run`, its
   // sibling) doesn't eagerly pull qmd natives (openStore/embedLoop) via
-  // daemon-jobs. Only this child process loads them.
+  // reconcile-run. Only this child process loads them.
   async run() {
-    const { runReconcileChild } = await import("../daemon-jobs");
+    const { runReconcileChild } = await import("../reconcile-run");
     await runReconcileChild();
   },
 });

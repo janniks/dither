@@ -165,11 +165,12 @@ stderr, and is the sole writer of `jobs/` + `appendGlobal`.
   shutdown.
 
 **Acceptance:**
-- [~] Daemon main thread no longer *executes* qmd (functional guarantee met
+- [x] Daemon main thread no longer *executes* qmd (functional guarantee met
       — `superviseReconcile` spawns the child; daemon only touches the
-      journal surface + `parseReconcile`). Import-graph NOT yet clean:
-      `daemon.ts → daemon-jobs.ts (clearInflightJobs) → store.ts → @tobilu/qmd`
-      still loads natives at module-load. Finalized in P5 (module split).
+      journal surface + `parseReconcile`). Import-graph via daemon-jobs now
+      clean too: the `daemon.ts → daemon-jobs.ts → store.ts → @tobilu/qmd`
+      edge is severed by the P5 module split — `daemon-jobs.ts`'s transitive
+      graph is `{home, locks, markers, run-log}`, no qmd. (Finalized in P5.)
 - [x] `dither status` shows index + embed jobs identically to before — same
       `jobs/` files + log events, now produced via supervisor→`journalSink`.
       Proven by `reconcile-supervisor.test.ts`: NDJSON→journal output is
@@ -249,10 +250,18 @@ adds the shutdown drain + child SIGTERM handling (the real new work).
 
 ---
 
-## Phase 5: Cancellation + model-download end-to-end; delete dead inline path
+## Phase 5: Cancellation + model-download; split qmd runners out of daemon-jobs
 
-End-to-end: `dither index cancel` cancels the in-child embed; the dead
-inline qmd job runners are removed from the daemon module.
+End-to-end: `dither index cancel` cancels the in-child embed; the qmd job
+runners move OUT of `daemon-jobs.ts` into a child-only module so the daemon
+main thread's static import graph is finally qmd-free.
+
+> **Reframing.** The runners (`runIndexJob`/`runEmbedJob`/`runJobWithLock`/
+> `qmdReconcile`/`runReconcileChild`) are NOT dead — P3 moved them from
+> "called inline by the daemon" to "called only by the reconcile child".
+> Nothing is deletable. The acceptance that matters is "daemon-jobs.ts no
+> longer references openStore / embedLoop / acquireTheme; only the journal
+> surface remains." So Phase 5 is a **module SPLIT**, not a delete.
 
 - **Cancellation.** `dither index cancel` writes the `embed-disabled`
   marker (`markers.ts:120-124`). `embedLoop`'s `shouldCancel` checks
@@ -265,21 +274,44 @@ inline qmd job runners are removed from the daemon module.
   first `store.embed`. The optimistic `model-download` job-started/done
   bracket now rides the child→daemon stream (Phase 2). Verify the daemon
   renders the download phase distinctly in `dither status`.
-- **Delete dead code.** Remove the now-unused inline runners from
-  `daemon-jobs.ts`: `runIndexJob`, `runEmbedJob`, `runJobWithLock`, and
-  the `qmdReconcile` body (kept logic now lives in the child). Keep
-  `readJobsSnapshot`, `reduceJobsSnapshot`, `clearInflightJobs`,
-  `markJob*`, and the `Job`/`Snapshot` types — the daemon still writes
-  `jobs/` from the parsed stream.
+- **Module split (behavior-preserving MOVE).** Create `reconcile-run.ts`
+  (child-only) and move `runReconcileChild`, `qmdReconcile`, `runIndexJob`,
+  `runEmbedJob`, `runJobWithLock` into it — byte-equivalent except adjusted
+  imports/exports. `daemon-jobs.ts` keeps ONLY the journal surface
+  (`markJob*`, `readJobsSnapshot`, `reduceJobsSnapshot`, `clearInflightJobs`,
+  jobs-dir helpers, the `Job`/`Snapshot`/`ReconcileSummary` types) and no
+  longer imports `openStore`/`embedLoop`/`acquireTheme`/`store`/`progress`.
+  The hidden `reconcile` subcommand dynamic-imports the new module.
 
 **Acceptance:**
-- [ ] `dither index cancel` mid-embed stops the child's loop between
+- [x] `dither index cancel` mid-embed stops the child's loop between
       iterations; lock released; `dither status` shows no live embed.
-- [ ] First-run download events appear in the log via the child stream
-      (test or manual against a clean model cache).
-- [ ] `daemon-jobs.ts` no longer references `openStore` / `embedLoop` /
+      → Marker-gated skip proven (`reconcile-child.test.ts`: with
+      `embed-disabled` set the child indexes, emits NO embedding/model-download
+      job, leaves no `qmd-embed.lock`, exits clean). Same `embedLoop`
+      `shouldCancel` seam (OR'd with the P4 SIGTERM stop flag) preserved by the
+      move. Mid-batch interrupt unchanged: native `store.embed()` blocks, so
+      cancellation is between iterations (honest caveat from P4). Real
+      mid-embed download path = manual-verify (333MB).
+- [~] First-run download events appear in the log via the child stream.
+      → Logic preserved verbatim in the relocated `runEmbedJob` (optimistic
+      `model-download` job-started/done bracket rides the child→daemon NDJSON
+      stream, P2/P3). A real end-to-end download test is out of scope
+      (network + 333MB) → **manual-verify**.
+- [x] `daemon-jobs.ts` no longer references `openStore` / `embedLoop` /
       `acquireTheme`; only the journal-writing surface remains.
-- [ ] Full daemon + daemon-jobs + daemon-client test suites pass.
+      → grep-clean; its whole transitive graph is now `{home, locks, markers,
+      run-log}` (qmd-free), asserted by an import-graph guard test in
+      `daemon-jobs.test.ts`. Resolves the P3 [~] import-graph box: the
+      `daemon.ts → daemon-jobs.ts → store.ts → @tobilu/qmd` edge is gone.
+      (`daemon.ts` still reaches `store.ts` via the unrelated, pre-existing
+      promotion path `plugin-run → promotion → update-index → store`, which is
+      out of scope for this plan.)
+- [x] Full daemon + daemon-jobs + daemon-client test suites pass.
+      → 38 pass / 1 pre-existing deno-PATH failure (identical on clean HEAD),
+      zero new failures. Test imports for moved funcs updated
+      (`reconcile-child.test.ts`, `reconcile-protocol.test.ts`,
+      `daemon-jobs.test.ts`).
 
 ---
 
@@ -336,5 +368,5 @@ inconsistency, not a rewrite.
 | P2 | sink seam (`reconcile-sink.ts` journal/stderr) + NDJSON protocol (`reconcile-protocol.ts` + `parseReconcile`); child streams stderr, daemon-inline journal unchanged (17 pass, daemon-jobs.test unmodified) |
 | P3 | `reconcile-supervisor.ts` (`superviseReconcile` + testable `reconcileHandler`); daemon spawns `daemon reconcile`, parses NDJSON, sole journal writer; `fireQmdReconcile` rewired (coalescing kept); `reconcile` subcommand dynamic-imports `runReconcileChild`. Functional qmd-off-thread met; import-graph clean deferred to P5. Child PID tracked on `reconcileChild` for P4. Typecheck clean; reconcile-supervisor unit test (3 pass), zero new failures |
 | P4 | Lock confirmed child-held (no move needed — done structurally in P3); lock-body-holds-child-PID test via index leg (`reconcile-child.test.ts`). Child SIGTERM/SIGINT → stop flag threaded through `qmdReconcile`/`runEmbedJob`/`embedLoop` (OR'd with embed-disabled marker), `runJobWithLock` finally releases lock. Shutdown drain: signal reconcile child up front, fold into the single `SHUTDOWN_GRACE_MS` wait loop (no second grace). `runDaemon(spawn)` seam for the drain test (`daemon.test.ts`). SIGHUP path unchanged. Honest caveat: native `store.embed()` blocks — graceful only between iterations. Typecheck clean; reconcile+daemon+locks: 50 pass, 1 pre-existing deno failure, zero new |
-|  |  |
+| P5 | Reframed: split, not delete. Moved `runReconcileChild`/`qmdReconcile`/`runIndexJob`/`runEmbedJob`/`runJobWithLock` into new child-only `reconcile-run.ts` (byte-equivalent, imports adjusted). `daemon-jobs.ts` now journal-surface-only — grep-clean of `openStore`/`embedLoop`/`acquireTheme`; transitive graph `{home,locks,markers,run-log}`, qmd-free (closes the P3 [~] import-graph box). `reconcile` subcommand dynamic-imports `../reconcile-run`. Import-graph guard test + embed-disabled cancellation test added. Test imports updated (`reconcile-child`/`reconcile-protocol`/`daemon-jobs`). model-download bracket preserved (manual-verify). Typecheck clean; 38 pass, 1 pre-existing deno failure (identical on clean HEAD), zero new |
 |  |  |

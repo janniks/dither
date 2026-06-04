@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runReconcileChild } from "./daemon-jobs";
+import { runReconcileChild } from "./reconcile-run";
 import { parseReconcile } from "./reconcile-protocol";
 import { readGlobal } from "./run-log";
 import { needsReindexPath, requestReindexSync } from "./markers";
@@ -99,6 +99,32 @@ describe("runReconcileChild", () => {
   it("sets process.title so the worker is legible in ps", async () => {
     await runReconcileChild();
     expect(process.title).toBe("dither daemon reconcile");
+  });
+
+  it("with embed-disabled marker set (dither index cancel), the child indexes but skips embedding and leaves no embed lock", async () => {
+    // `dither index cancel` writes the embed-disabled marker (set in
+    // beforeEach for every case here). The child's reconcile checks
+    // readMarkerState().embedDisabled before the embed leg and between
+    // embedLoop iterations, so it never enters embedding — no `embedding`
+    // job-started, no model-download, and crucially no `qmd-embed.lock`
+    // stranded. We exercise the index leg (real qmd) and assert the embed
+    // path is fully skipped (cancellation path; avoids the ~333MB download).
+    writeFileSync(join(library, "notes", "memo.md"), "# Memo\n\nHello world.\n", "utf-8");
+    requestReindexSync();
+
+    const lines: string[] = [];
+    await runReconcileChild((l) => lines.push(l));
+    const msgs = lines.map(parseReconcile);
+
+    // Index ran...
+    expect(msgs.some((m) => m?.kind === "job-done" && m.type === "indexing")).toBe(true);
+    // ...but embedding never started, and no model-download bracket opened.
+    expect(msgs.some((m) => m !== null && "type" in m && m.type === "embedding")).toBe(false);
+    expect(msgs.some((m) => m !== null && "type" in m && m.type === "model-download")).toBe(false);
+    // No stranded embed lock — runJobWithLock never acquired it.
+    expect(existsSync(themeLockPath("embed"))).toBe(false);
+    // Cycle still completes cleanly.
+    expect(msgs[msgs.length - 1]?.kind).toBe("reconcile-done");
   });
 
   it("exits clean with no jobs when the library has no collections", async () => {
