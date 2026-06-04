@@ -4,10 +4,11 @@ import { dirname, join } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { resolveHome } from "./home";
 import { openStore } from "./store";
-import { appendGlobal, readGlobal, type LogEvent } from "./run-log";
+import { readGlobal, type LogEvent } from "./run-log";
 import { acquireTheme, releaseTheme, statusAll, type LockHandle, type LockTheme } from "./locks";
 import { embedLoop } from "./progress";
 import { claimReindex, readMarkerState, releaseReindexClaim } from "./markers";
+import { journalSink, stderrSink, type ReconcileSink } from "./reconcile-sink";
 
 /**
  * Daemon-side qmd state reconciler + job runners.
@@ -80,12 +81,12 @@ async function writeJobFileAtomic(path: string, job: CurrentJob): Promise<void> 
   await rename(tmp, path);
 }
 
-async function markJobStarted(job: CurrentJob): Promise<void> {
+export async function markJobStarted(job: CurrentJob): Promise<void> {
   await mkdir(dirname(jobFilePath(job.jobId)), { recursive: true });
   await writeJobFileAtomic(jobFilePath(job.jobId), job);
 }
 
-async function markJobProgress(jobId: string, current: number, total: number): Promise<void> {
+export async function markJobProgress(jobId: string, current: number, total: number): Promise<void> {
   try {
     const raw = await readFile(jobFilePath(jobId), "utf-8");
     const cur = JSON.parse(raw) as CurrentJob;
@@ -98,7 +99,7 @@ async function markJobProgress(jobId: string, current: number, total: number): P
   }
 }
 
-async function markJobEnded(jobId: string): Promise<void> {
+export async function markJobEnded(jobId: string): Promise<void> {
   await unlink(jobFilePath(jobId)).catch((err: NodeJS.ErrnoException) => {
     if (err.code !== "ENOENT") throw err;
   });
@@ -198,17 +199,19 @@ export interface ReconcileSummary {
 /**
  * Child-process entrypoint for `dither daemon reconcile`. Runs the full
  * qmd reconcile (openStore → index → embed) in its own process so the
- * daemon's event loop never blocks on native qmd code. Phase 1 keeps the
- * journal-writing behavior identical — it just delegates to qmdReconcile,
- * which still writes `jobs/` + `appendGlobal` directly. Phase 2 swaps that
- * for an NDJSON-on-stderr sink so the daemon stays the sole journal writer.
+ * daemon's event loop never blocks on native qmd code. Reports via the
+ * stderr NDJSON sink — it writes NO journal/`jobs/`; the daemon parses the
+ * stream and owns the journal (Phase 3). `emit` is injectable so tests
+ * capture lines without spawning.
  *
  * Sets process.title so the worker is legible in `ps` separate from the
  * daemon main loop.
  */
-export async function runReconcileChild(): Promise<ReconcileSummary> {
+export async function runReconcileChild(
+  emit?: (line: string) => void,
+): Promise<ReconcileSummary> {
   process.title = "dither daemon reconcile";
-  return qmdReconcile();
+  return qmdReconcile(stderrSink(emit));
 }
 
 /**
@@ -220,17 +223,18 @@ export async function runReconcileChild(): Promise<ReconcileSummary> {
  * Watchers (init's foreground watch, `dither status`) use the
  * `reconcile-started` / `reconcile-done` pair as session bookends.
  */
-export async function qmdReconcile(): Promise<ReconcileSummary> {
+export async function qmdReconcile(sink: ReconcileSink = journalSink()): Promise<ReconcileSummary> {
   const startedAt = Date.now();
   const cycleId = randomUUID();
-  await appendGlobal({ kind: "reconcile-started", cycleId });
+  await sink.reconcileStarted(cycleId);
 
   let jobsRun = 0;
   let store: Awaited<ReturnType<typeof openStore>> = null;
+  let failed: string | null = null;
   try {
     store = await openStore();
     if (!store) {
-      await appendGlobal({ kind: "reconcile-done", cycleId, jobsRun, reason: "no-library" });
+      await sink.reconcileDone(jobsRun, "no-library");
       return { jobsRun, durationMs: Date.now() - startedAt };
     }
 
@@ -239,14 +243,14 @@ export async function qmdReconcile(): Promise<ReconcileSummary> {
     // the atomic rename so any request arriving during the cycle lands
     // on a fresh marker and is picked up next cycle.
     if (claimReindex()) {
-      const ran = await runIndexJob(store, "needs-reindex-marker");
+      const ran = await runIndexJob(sink, store, "needs-reindex-marker");
       if (ran) jobsRun++;
       releaseReindexClaim();
     } else {
       // First-ever reconcile on a fresh library: index everything.
       const status = await store.getStatus();
       if (status.totalDocuments === 0 && status.collections.length > 0) {
-        const ran = await runIndexJob(store, "first-pass");
+        const ran = await runIndexJob(sink, store, "first-pass");
         if (ran) jobsRun++;
       }
     }
@@ -255,21 +259,18 @@ export async function qmdReconcile(): Promise<ReconcileSummary> {
     if (!readMarkerState().embedDisabled) {
       const status = await store.getStatus();
       if (status.needsEmbedding > 0) {
-        const ran = await runEmbedJob(store);
+        const ran = await runEmbedJob(sink, store);
         if (ran) jobsRun++;
       }
     }
   } catch (err) {
-    await appendGlobal({
-      kind: "reconcile-failed",
-      cycleId,
-      error: err instanceof Error ? err.message : String(err),
-    });
+    failed = err instanceof Error ? err.message : String(err);
   } finally {
     if (store) await store.close().catch(() => undefined);
   }
 
-  await appendGlobal({ kind: "reconcile-done", cycleId, jobsRun });
+  if (failed) await sink.reconcileFailed(failed);
+  await sink.reconcileDone(jobsRun);
   return { jobsRun, durationMs: Date.now() - startedAt };
 }
 
@@ -280,30 +281,23 @@ export async function qmdReconcile(): Promise<ReconcileSummary> {
  * onProgress tick) / `job-done`.
  */
 async function runIndexJob(
+  sink: ReconcileSink,
   store: NonNullable<Awaited<ReturnType<typeof openStore>>>,
   reason: string,
 ): Promise<boolean> {
   const handle = await acquireTheme("index");
   if (handle === null) {
-    await appendGlobal({
-      kind: "job-skipped",
-      type: "indexing",
-      reason: "lock-busy",
-    });
+    await sink.jobSkipped("indexing", "lock-busy");
     return false;
   }
-  return runJobWithLock(handle, "index", async (jobId, emitProgress) => {
-    await markJobStarted({ jobId, type: "indexing", startedAt: new Date().toISOString() });
-    await appendGlobal({ kind: "job-started", jobId, type: "indexing", reason });
+  return runJobWithLock(sink, handle, "indexing", async (emit) => {
+    await sink.jobStarted("indexing", reason);
     const result = await store.update({
       onProgress: ({ current, total }) => {
-        emitProgress({ current, total });
+        emit(current, total);
       },
     });
-    await appendGlobal({
-      kind: "job-done",
-      jobId,
-      type: "indexing",
+    await sink.jobDone("indexing", {
       filesIndexed: result.indexed + result.updated,
       filesTotal: result.indexed + result.updated + result.unchanged,
     });
@@ -321,47 +315,34 @@ async function runIndexJob(
  * the download phase distinctly.
  */
 async function runEmbedJob(
+  sink: ReconcileSink,
   store: NonNullable<Awaited<ReturnType<typeof openStore>>>,
 ): Promise<boolean> {
   const handle = await acquireTheme("embed");
   if (handle === null) {
-    await appendGlobal({ kind: "job-skipped", type: "embedding", reason: "lock-busy" });
+    await sink.jobSkipped("embedding", "lock-busy");
     return false;
   }
-  return runJobWithLock(handle, "embed", async (jobId, emitProgress) => {
-    let downloadJobId: string | null = null;
+  return runJobWithLock(sink, handle, "embedding", async (emit) => {
     // Optimistic: emit a model-download job-started; if the first
     // embed-onProgress arrives quickly the model was already cached
     // and we close the download event immediately. Otherwise the
     // download is genuinely in progress.
-    downloadJobId = randomUUID();
-    await markJobStarted({
-      jobId: downloadJobId,
-      type: "model-download",
-      startedAt: new Date().toISOString(),
-    });
-    await appendGlobal({ kind: "job-started", jobId: downloadJobId, type: "model-download" });
+    await sink.jobStarted("model-download");
     const downloadStartedAt = Date.now();
     let downloadClosed = false;
     const closeDownload = async (): Promise<void> => {
-      if (downloadClosed || !downloadJobId) return;
+      if (downloadClosed) return;
       downloadClosed = true;
-      await markJobEnded(downloadJobId);
-      await appendGlobal({
-        kind: "job-done",
-        jobId: downloadJobId,
-        type: "model-download",
-        durationMs: Date.now() - downloadStartedAt,
-      });
+      await sink.jobDone("model-download", { durationMs: Date.now() - downloadStartedAt });
     };
 
-    await markJobStarted({ jobId, type: "embedding", startedAt: new Date().toISOString() });
-    await appendGlobal({ kind: "job-started", jobId, type: "embedding" });
+    await sink.jobStarted("embedding");
     const summary = await embedLoop(
       store,
       (embedded, total) => {
         void closeDownload();
-        emitProgress({ current: embedded, total });
+        emit(embedded, total);
       },
       // Cancellation hand-off: `dither index cancel` writes the
       // embed-disabled marker. Between iterations the loop checks it
@@ -372,10 +353,7 @@ async function runEmbedJob(
     // Edge: nothing to embed → onProgress never fired → close download anyway.
     await closeDownload();
 
-    await appendGlobal({
-      kind: "job-done",
-      jobId,
-      type: "embedding",
+    await sink.jobDone("embedding", {
       chunks: summary.chunks,
       truncated: summary.truncated,
       iterations: summary.iterations,
@@ -385,50 +363,32 @@ async function runEmbedJob(
 }
 
 /**
- * Shared lock+events scaffolding for the two job runners. Generates a
- * jobId, ensures the lock is released on any exit (success, failure,
- * abort), and exposes a debounced `emitProgress` callback.
+ * Shared lock+events scaffolding for the two job runners. Ensures the lock
+ * is released on any exit (success, failure, abort) and exposes a debounced
+ * progress callback routed through the sink. Job identity (jobId minting,
+ * journal vs NDJSON) is the sink's concern — this only debounces + reports.
  */
 async function runJobWithLock(
+  sink: ReconcileSink,
   handle: LockHandle,
-  theme: LockTheme,
-  fn: (
-    jobId: string,
-    emitProgress: (info: { current: number; total: number }) => void,
-  ) => Promise<void>,
+  type: JobType,
+  fn: (emit: (cur: number, total: number) => void) => Promise<void>,
 ): Promise<boolean> {
-  const jobId = randomUUID();
-  const jobType = theme === "index" ? "indexing" : "embedding";
-  let lastEmitAt = 0;
+  let lastAt = 0;
   const PROGRESS_DEBOUNCE_MS = 100;
-  const emitProgress = (info: { current: number; total: number }): void => {
+  const emit = (cur: number, total: number): void => {
     const now = Date.now();
-    if (now - lastEmitAt < PROGRESS_DEBOUNCE_MS && info.current < info.total) {
-      return;
-    }
-    lastEmitAt = now;
-    void markJobProgress(jobId, info.current, info.total);
-    void appendGlobal({
-      kind: "job-progress",
-      jobId,
-      type: jobType,
-      current: info.current,
-      total: info.total,
-    });
+    if (now - lastAt < PROGRESS_DEBOUNCE_MS && cur < total) return;
+    lastAt = now;
+    void sink.jobProgress(type, cur, total);
   };
   try {
-    await fn(jobId, emitProgress);
+    await fn(emit);
     return true;
   } catch (err) {
-    await appendGlobal({
-      kind: "job-failed",
-      jobId,
-      type: jobType,
-      error: err instanceof Error ? err.message : String(err),
-    });
+    await sink.jobFailed(type, err instanceof Error ? err.message : String(err));
     throw err;
   } finally {
-    await markJobEnded(jobId);
     await releaseTheme(handle);
   }
 }

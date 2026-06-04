@@ -16,6 +16,7 @@ import { readRefire } from "./refire";
 import { scanKicks, type KickPayload } from "./kicks";
 import { acquire as acquireLock, release as releaseLock } from "./locks";
 import { qmdReconcile, clearInflightJobs } from "./daemon-jobs";
+import { journalSink } from "./reconcile-sink";
 import { needsReindexPath } from "./markers";
 
 /**
@@ -348,7 +349,7 @@ export async function runDaemon(): Promise<void> {
       return;
     }
     lastStart = Date.now();
-    inflight = qmdReconcile()
+    inflight = qmdReconcile(journalSink())
       .catch((err) => {
         console.error(
           `[daemon] qmd reconcile failed: ${err instanceof Error ? err.message : String(err)}`,

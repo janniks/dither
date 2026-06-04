@@ -118,13 +118,22 @@ journal/jobs and instead streams its intent.
   journals as `{kind:"stderr"}` (same as `supervisor.ts:117`).
 
 **Acceptance:**
-- [ ] Message shapes documented in-file (short comment block on the child
-      emitter).
-- [ ] Child emits started/progress/done for a real index + embed run;
-      asserted by capturing the child's stderr in a standalone test.
-- [ ] Model-download bracket emitted even when nothing to embed (close-anyway
-      path preserved, cf. `daemon-jobs.ts:356`).
-- [ ] No `appendGlobal` / `jobs/` writes from the child (grep clean).
+- [x] Message shapes documented in-file — `reconcile-protocol.ts` header +
+      `parseReconcile` (Phase-3-reusable parser).
+- [x] Child emits started/progress/done for a real **index** run; asserted by
+      capturing the child's stderr in `reconcile-protocol.test.ts`. (Embed leg
+      deferred — model download.)
+- [~] Model-download bracket emitted even when nothing to embed — logic
+      preserved verbatim through the sink; automated test deferred to P5
+      (needs the download).
+- [x] No `appendGlobal` / `jobs/` writes from the child — grep-clean
+      (`appendGlobal`/`markJob*` only inside `journalSink`) + runtime-asserted
+      (`readGlobal()` empty, no `jobs/`).
+
+Note: two sink methods beyond the wire protocol — `jobFailed` /
+`reconcileFailed` — exist for journal-path fidelity (old `job-failed` /
+`reconcile-failed` events) and are no-ops on the stderr sink (the child
+signals failure by throwing + non-zero exit; daemon reads exit code in P3).
 
 ---
 
@@ -292,7 +301,7 @@ inconsistency, not a rewrite.
 | commit | summary |
 |--|--|
 | P1 | `runReconcileChild()` + hidden `daemon reconcile` subcommand; standalone real-qmd index test (15 pass, typecheck clean) |
-|  |  |
+| P2 | sink seam (`reconcile-sink.ts` journal/stderr) + NDJSON protocol (`reconcile-protocol.ts` + `parseReconcile`); child streams stderr, daemon-inline journal unchanged (17 pass, daemon-jobs.test unmodified) |
 |  |  |
 |  |  |
 |  |  |

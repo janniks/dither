@@ -3,15 +3,17 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runReconcileChild } from "./daemon-jobs";
+import { parseReconcile } from "./reconcile-protocol";
 import { readGlobal } from "./run-log";
 import { needsReindexPath, requestReindexSync } from "./markers";
 import { existsSync } from "node:fs";
 import { writeTestConfig } from "../test/helpers/config";
 
 /**
- * Standalone Phase-1 coverage for the child entrypoint. Exercises the real
- * qmd index path against a temp library — no mocks, real openStore +
- * store.update.
+ * Standalone coverage for the child entrypoint. Exercises the real qmd
+ * index path against a temp library — no mocks, real openStore +
+ * store.update. Since Phase 2 the child reports via the stderr NDJSON sink
+ * (no journal writes), so we capture emitted lines instead of readGlobal.
  *
  * Embedding is deliberately NOT asserted here: the first store.embed()
  * triggers qmd's ~333MB model download, which we must not pull into the
@@ -55,17 +57,20 @@ describe("runReconcileChild", () => {
     // runIndexJob. This is the production index path.
     requestReindexSync();
 
-    const summary = await runReconcileChild();
+    const lines: string[] = [];
+    const summary = await runReconcileChild((l) => lines.push(l));
     expect(summary.jobsRun).toBe(1);
     // Marker consumed by the index job.
     expect(existsSync(needsReindexPath())).toBe(false);
 
-    const events = await readGlobal();
-    expect(events[0]?.kind).toBe("reconcile-started");
-    expect(events.some((e) => e.kind === "job-done" && e.type === "indexing")).toBe(true);
-    const done = events.find((e) => e.kind === "job-done" && e.type === "indexing");
-    expect(done?.filesIndexed).toBe(1);
-    expect(events[events.length - 1]?.kind).toBe("reconcile-done");
+    // Child reports via NDJSON, not the journal (daemon owns that in P3).
+    const msgs = lines.map(parseReconcile);
+    expect(msgs.some((m) => m?.kind === "job-done" && m.type === "indexing")).toBe(true);
+    const done = msgs.find((m) => m?.kind === "job-done" && m.type === "indexing");
+    expect(done && "filesIndexed" in done ? done.filesIndexed : null).toBe(1);
+    expect(msgs[msgs.length - 1]?.kind).toBe("reconcile-done");
+    // No journal writes on the child path.
+    expect(await readGlobal()).toEqual([]);
   });
 
   it("sets process.title so the worker is legible in ps", async () => {
@@ -77,10 +82,12 @@ describe("runReconcileChild", () => {
     // library/ exists but has no subdir collections after we remove notes.
     rmSync(join(library, "notes"), { recursive: true, force: true });
 
-    const summary = await runReconcileChild();
+    const lines: string[] = [];
+    const summary = await runReconcileChild((l) => lines.push(l));
     expect(summary.jobsRun).toBe(0);
-    const events = await readGlobal();
-    expect(events[events.length - 1]?.kind).toBe("reconcile-done");
+    const msgs = lines.map(parseReconcile);
+    expect(msgs[msgs.length - 1]?.kind).toBe("reconcile-done");
+    expect(await readGlobal()).toEqual([]);
   });
 
   it("exits clean (no index job) when an indexed library has no new files", async () => {
