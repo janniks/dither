@@ -14,7 +14,7 @@ import { inboxHasItems, recoverOrphanInflight } from "./inbox";
 import { Refirer } from "./refirer";
 import { readRefire } from "./refire";
 import { scanKicks, type KickPayload } from "./kicks";
-import { acquire as acquireLock, release as releaseLock } from "./locks";
+import { acquire as acquireLock, release as releaseLock, isPluginLock } from "./locks";
 import { clearInflightJobs } from "./daemon-jobs";
 import { superviseReconcile } from "./reconcile-supervisor";
 import { needsReindexPath } from "./markers";
@@ -170,7 +170,7 @@ async function removePidFile(state: DaemonState): Promise<void> {
   }
 }
 
-async function readRunningPlugins(): Promise<RunningPlugin[]> {
+export async function readRunningPlugins(): Promise<RunningPlugin[]> {
   let entries: string[];
   try {
     entries = await readdir(locksDirPath());
@@ -182,6 +182,9 @@ async function readRunningPlugins(): Promise<RunningPlugin[]> {
   for (const filename of entries) {
     if (!filename.endsWith(".lock")) continue;
     const name = filename.slice(0, -".lock".length);
+    // Skip reserved daemon locks (qmd-* themes held by the reconcile child,
+    // daemon-start) — they share locks/ but aren't plugins.
+    if (!isPluginLock(name)) continue;
     let raw: string;
     try {
       raw = await readFile(join(locksDirPath(), filename), "utf-8");

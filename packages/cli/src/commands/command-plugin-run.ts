@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { resolveWatchPath } from "../watch-paths";
 import { appendToInbox, type WatchTarget } from "../inbox";
 import { assertInitialized, libraryRoot } from "../config";
-import { hasKick, signalDaemon, writeKick, type KickOverrides } from "../kicks";
+import { clearKick, hasKick, signalDaemon, writeKick, type KickOverrides } from "../kicks";
 import { followRun, generateRunId, readRun, type RunResultRecord } from "../run-log";
 import { isLockHeld } from "../locks";
 import { pluginDir as pluginDirOf, resolveHome, runResultPath } from "../home";
@@ -160,6 +160,37 @@ export async function tailRun(runId: string): Promise<void> {
   }
 }
 
+/**
+ * Foreground-run interrupt cleanup: clear the kick this command wrote so an
+ * interrupted `plugin run` can't leave a stale kick that reads as "already
+ * running" forever while `plugin runs` shows nothing. Correct whether or not
+ * the daemon already consumed the kick — if unconsumed it cancels the
+ * request; if consumed the file is gone and `clearKick` is ENOENT-tolerant.
+ * Does NOT stop an already-running daemon-side run (out of scope) — it only
+ * stops the stale-kick lie.
+ */
+export async function clearKickOnInterrupt(plugin: string): Promise<void> {
+  await clearKick(plugin).catch(() => undefined);
+}
+
+/**
+ * Wire `clearKickOnInterrupt` onto SIGINT/SIGTERM for the duration of a
+ * foreground tail. Returns a teardown that detaches the handlers. Only the
+ * foreground path installs this; `--detach` returns before here, leaving the
+ * kick for the daemon.
+ */
+function onInterrupt(plugin: string): () => void {
+  const onSig = (): void => {
+    void clearKickOnInterrupt(plugin).finally(() => process.exit(130));
+  };
+  process.on("SIGINT", onSig);
+  process.on("SIGTERM", onSig);
+  return () => {
+    process.off("SIGINT", onSig);
+    process.off("SIGTERM", onSig);
+  };
+}
+
 export const runSubcommand = defineCommand({
   meta: {
     name: "run",
@@ -269,7 +300,14 @@ export const runSubcommand = defineCommand({
       return { runId, detached: true };
     }
 
-    await tailRun(runId);
+    // Foreground tail: own the kick we wrote so Ctrl-C clears it (above the
+    // tail's own abort handler, which only stops the journal follow).
+    const detach = onInterrupt(pluginName);
+    try {
+      await tailRun(runId);
+    } finally {
+      detach();
+    }
     return { runId };
   },
 });

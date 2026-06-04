@@ -170,4 +170,20 @@ describe("locks", () => {
       expect(snapshot.embed).toBeNull();
     });
   });
+
+  describe("isPluginLock", () => {
+    it("treats plain names as plugin locks", async () => {
+      const { isPluginLock } = await import("./locks");
+      expect(isPluginLock("hackernews")).toBe(true);
+      expect(isPluginLock("my-plugin")).toBe(true);
+    });
+
+    it("rejects reserved daemon locks (qmd-* themes, daemon-start)", async () => {
+      const { isPluginLock } = await import("./locks");
+      expect(isPluginLock("qmd-embed")).toBe(false);
+      expect(isPluginLock("qmd-index")).toBe(false);
+      expect(isPluginLock("qmd-download")).toBe(false);
+      expect(isPluginLock("daemon-start")).toBe(false);
+    });
+  });
 });

@@ -111,6 +111,20 @@ describe("daemon lifecycle (in-process)", () => {
     expect(await readDaemonPid()).toBeNull();
   });
 
+  it("readRunningPlugins skips reserved qmd-*/daemon-start locks", async () => {
+    // A live reconcile child holds qmd-embed.lock; daemon-start.lock guards
+    // spawns. Neither is a plugin — they must not surface as running.
+    mkdirSync(join(home, "locks"), { recursive: true });
+    writeFileSync(join(home, "locks", "qmd-embed.lock"), String(process.pid));
+    writeFileSync(join(home, "locks", "qmd-index.lock"), String(process.pid));
+    writeFileSync(join(home, "locks", "daemon-start.lock"), String(process.pid));
+    writeFileSync(join(home, "locks", "hackernews.lock"), String(process.pid));
+
+    const { readRunningPlugins } = await import("./daemon");
+    const running = await readRunningPlugins();
+    expect(running.map((r) => r.name)).toEqual(["hackernews"]);
+  });
+
   it("getDaemonStatus reports not-running cleanly", async () => {
     const { getDaemonStatus } = await import("./daemon-control");
     const s = await getDaemonStatus();

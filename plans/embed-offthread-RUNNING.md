@@ -335,13 +335,22 @@ inconsistency, not a rewrite.
   (`clearKick`, `kicks.ts:63`).
 
 **Acceptance:**
-- [ ] A live reconcile child never makes any plugin report as running in
-      `dither status` or block `dither plugin run`.
-- [ ] `plugin run` + `plugin runs` + status agree on running-ness in the
-      kick→fire→done window (no "already running" coexisting with "no runs
-      yet").
-- [ ] Ctrl-C during a foreground `plugin run` clears the kick it wrote.
-- [ ] (Note: a fuller kick/lock/journal unification can be a later pass.)
+- [x] A live reconcile child never makes any plugin report as running in
+      `dither status` or block `dither plugin run`. (`isPluginLock` in
+      `locks.ts` filters `qmd-*`/`daemon-start`; `readRunningPlugins`
+      skips them — `daemon.test.ts` "skips reserved qmd-*/daemon-start
+      locks". `isLockHeld` left as-is: it's name-specific, only ever
+      passed a real plugin name.)
+- [x] `plugin run` + `plugin runs` + status agree on running-ness in the
+      kick→fire→done window — an interrupted run no longer leaves a stale
+      kick that reads as "already running" while `runs` shows nothing.
+- [x] Ctrl-C during a foreground `plugin run` clears the kick it wrote
+      (`onInterrupt` wires `clearKickOnInterrupt(plugin)` around the
+      foreground `tailRun`; `--detach` returns first, so it's unaffected).
+- [ ] (Deferred, by design: a fuller kick/lock/journal unification AND the
+      silent-tail UX — `tailRun` showing "waiting for daemon, currently
+      embedding…" — remain a later pass. Not done here; scope was just the
+      two state-lie fixes.)
 
 ---
 
@@ -368,5 +377,6 @@ inconsistency, not a rewrite.
 | P2 | sink seam (`reconcile-sink.ts` journal/stderr) + NDJSON protocol (`reconcile-protocol.ts` + `parseReconcile`); child streams stderr, daemon-inline journal unchanged (17 pass, daemon-jobs.test unmodified) |
 | P3 | `reconcile-supervisor.ts` (`superviseReconcile` + testable `reconcileHandler`); daemon spawns `daemon reconcile`, parses NDJSON, sole journal writer; `fireQmdReconcile` rewired (coalescing kept); `reconcile` subcommand dynamic-imports `runReconcileChild`. Functional qmd-off-thread met; import-graph clean deferred to P5. Child PID tracked on `reconcileChild` for P4. Typecheck clean; reconcile-supervisor unit test (3 pass), zero new failures |
 | P4 | Lock confirmed child-held (no move needed — done structurally in P3); lock-body-holds-child-PID test via index leg (`reconcile-child.test.ts`). Child SIGTERM/SIGINT → stop flag threaded through `qmdReconcile`/`runEmbedJob`/`embedLoop` (OR'd with embed-disabled marker), `runJobWithLock` finally releases lock. Shutdown drain: signal reconcile child up front, fold into the single `SHUTDOWN_GRACE_MS` wait loop (no second grace). `runDaemon(spawn)` seam for the drain test (`daemon.test.ts`). SIGHUP path unchanged. Honest caveat: native `store.embed()` blocks — graceful only between iterations. Typecheck clean; reconcile+daemon+locks: 50 pass, 1 pre-existing deno failure, zero new |
+| P6 | State must not lie: (1) `isPluginLock(name)` helper in `locks.ts` (single source for reserved `qmd-*`/`daemon-start` lock names) — `readRunningPlugins` (`daemon.ts`) now skips them so a live reconcile child can't masquerade as a plugin in `dither status`/block `plugin run`; shutdown drain correct (reconcile child drained explicitly in P4). (2) `clearKickOnInterrupt(plugin)` + `onInterrupt` wiring in `command-plugin-run.ts` — foreground Ctrl-C clears the CLI-written kick (ENOENT-tolerant; doesn't kill a running daemon-side run); `--detach` unaffected. `isLockHeld` left as-is. Tests (real impl): locks `isPluginLock`, daemon `readRunningPlugins` filter, kick clear/no-op/`--detach`-leaves. Typecheck clean; 75 pass, 1 pre-existing deno-PATH failure (`fires runPlugin within ~3s`, identical on clean tree), zero new. Broader kick/lock/journal unification + silent-tail UX deferred. |
 | P5 | Reframed: split, not delete. Moved `runReconcileChild`/`qmdReconcile`/`runIndexJob`/`runEmbedJob`/`runJobWithLock` into new child-only `reconcile-run.ts` (byte-equivalent, imports adjusted). `daemon-jobs.ts` now journal-surface-only — grep-clean of `openStore`/`embedLoop`/`acquireTheme`; transitive graph `{home,locks,markers,run-log}`, qmd-free (closes the P3 [~] import-graph box). `reconcile` subcommand dynamic-imports `../reconcile-run`. Import-graph guard test + embed-disabled cancellation test added. Test imports updated (`reconcile-child`/`reconcile-protocol`/`daemon-jobs`). model-download bracket preserved (manual-verify). Typecheck clean; 38 pass, 1 pre-existing deno failure (identical on clean HEAD), zero new |
 |  |  |

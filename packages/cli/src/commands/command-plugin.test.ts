@@ -144,4 +144,34 @@ describe("dither plugin command", () => {
     }
     expect(errs.join("")).toMatch(/already running/);
   });
+
+  describe("clearKickOnInterrupt", () => {
+    it("clears the kick the foreground run wrote", async () => {
+      const { writeKick, hasKick } = await import("../kicks");
+      const { clearKickOnInterrupt } = await import("./command-plugin-run");
+      await writeKick("foo", { runId: "r", kickedAt: "t" });
+      expect(hasKick("foo")).toBe(true);
+      await clearKickOnInterrupt("foo");
+      expect(hasKick("foo")).toBe(false);
+    });
+
+    it("is a no-op when the daemon already consumed the kick", async () => {
+      const { hasKick } = await import("../kicks");
+      const { clearKickOnInterrupt } = await import("./command-plugin-run");
+      expect(hasKick("gone")).toBe(false);
+      await expect(clearKickOnInterrupt("gone")).resolves.toBeUndefined();
+      expect(hasKick("gone")).toBe(false);
+    });
+
+    it("--detach leaves the kick in place for the daemon (no interrupt cleanup applies)", async () => {
+      fakeInstall("detachy");
+      fakeDaemon();
+      const { main } = await import("../main");
+      await captureLogs(async () => {
+        await runCommand(main, { rawArgs: ["plugin", "run", "detachy", "--detach"] });
+      });
+      const { hasKick } = await import("../kicks");
+      expect(hasKick("detachy")).toBe(true);
+    });
+  });
 });

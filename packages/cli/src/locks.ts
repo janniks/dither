@@ -54,6 +54,18 @@ export function themeLockPath(theme: LockTheme): string {
 }
 
 /**
+ * True when a lock name belongs to a plugin, false for reserved daemon
+ * locks: the `qmd-*` theme locks held by the reconcile child and the
+ * `daemon-start` spawn-serialisation lock. Locks live in one dir keyed
+ * only by name, so readers that enumerate `locks/` (e.g. the status
+ * snapshot's running-plugin scan) must filter these out — otherwise a
+ * live reconcile child masquerades as a plugin named "qmd-embed".
+ */
+export function isPluginLock(name: string): boolean {
+  return !name.startsWith("qmd-") && name !== "daemon-start";
+}
+
+/**
  * Liveness probe via signal 0. Returns false for finite-but-dead pids
  * (ESRCH), true for live pids and EPERM (process exists but we can't
  * signal it). Unexpected errno codes throw — they shouldn't happen on
