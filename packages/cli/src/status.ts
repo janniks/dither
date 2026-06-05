@@ -92,6 +92,14 @@ export async function getStatus(): Promise<DitherStatus> {
       collections = s?.collections.length ?? 0;
       entries = s?.totalDocuments ?? 0;
     } catch {
+      // R_OK already passed, so the directory is readable — this catch only
+      // fires when the qmd store itself won't open. In a real install that
+      // basically can't happen, so we don't special-case it. It DOES show up
+      // in dev checkouts: `~/.npmrc` sets `ignore-scripts=true`, so
+      // better-sqlite3's native binding isn't built on `npm install` and
+      // openStore throws "Could not locate the bindings file" until you run
+      // `npm run install` inside node_modules/better-sqlite3. The "unreadable"
+      // label is imperfect for that case but not worth a dedicated state.
       libraryHealth = "unreadable";
     }
   }
