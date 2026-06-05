@@ -8,11 +8,12 @@ import { envCommand } from "./commands/command-env";
 import { daemonCommand } from "./commands/command-daemon";
 import { initCommand } from "./commands/command-init";
 import { collectionCommand } from "./commands/command-collection";
+import { buildVersion } from "./build-stamp";
 
 export const main = defineCommand({
   meta: {
     name: "dither",
-    version: "0.0.1",
+    version: buildVersion(),
     description: "Personal index for the agentic era.",
   },
   subCommands: {

@@ -19,6 +19,7 @@ import { acquire as acquireLock, release as releaseLock, isPluginLock } from "./
 import { clearInflightJobs } from "./daemon-jobs";
 import { superviseReconcile } from "./reconcile-supervisor";
 import { needsReindexPath } from "./markers";
+import { stampString } from "./build-stamp";
 import type { ChildProcess } from "node:child_process";
 import { spawn as nodeSpawn } from "node:child_process";
 
@@ -36,6 +37,7 @@ export interface StatusSnapshot {
   token: string;
   startedAt: string;
   lastUpdated: string;
+  // SemVer stamp of the running daemon's baked build (`stampString`).
   version: string;
   schedules: number;
   watches: number;
@@ -247,7 +249,7 @@ async function writeStatusSnapshot(
     token: state.token,
     startedAt: state.startedAt,
     lastUpdated: new Date().toISOString(),
-    version: "0.0.1",
+    version: stampString(),
     schedules: state.scheduleCount,
     watches: state.watchCount,
     running,

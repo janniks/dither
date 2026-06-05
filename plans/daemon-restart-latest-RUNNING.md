@@ -30,11 +30,11 @@ Single-source the version (drop the `main.ts`/`package.json` duplication).
 Surface the stamp in `dither daemon status`.
 
 **Acceptance:**
-- [ ] Build bakes a SemVer stamp into the bundle and writes a matching
+- [x] Build bakes a SemVer stamp into the bundle and writes a matching
       `dist/build-info.json` (atomic, written last).
-- [ ] Dev stamp carries `+sha.builtAt`; a clean prod-style build is bare semver.
-- [ ] Version single-sourced.
-- [ ] `dither daemon status` shows the running stamp.
+- [x] Dev stamp carries `+sha.builtAt`; a clean prod-style build is bare semver.
+- [x] Version single-sourced.
+- [x] `dither daemon status` shows the running stamp.
 
 ---
 
@@ -96,4 +96,4 @@ Append a row after each phase. Rename back when complete.
 
 | commit | summary |
 |--|--|
-|  |  |
+| (pending) | P1: build-stamp infra — tsdown `define` bakes `__BUILD_STAMP__` (stamp computed once: pkg version + git short-sha + digits `builtAt`); `build:done` hook writes `dist/build-info.json` last via tmp+rename. `build-stamp.ts` accessor with test-safe fallback + `readBuildInfo`. Version single-sourced (`main.ts` + status snapshot via `buildVersion`/`stampString`). Stamp shown as `build:` in `daemon status`. Tests: 7 new pass, typecheck clean, zero new daemon failures. |

@@ -88,6 +88,7 @@ const statusSubcommand = defineCommand({
     }
     console.log(`daemon:      running (pid ${s.pid})`);
     if (s.snapshot) {
+      console.log(`build:       ${s.snapshot.version}`);
       console.log(`startedAt:   ${s.snapshot.startedAt}`);
       console.log(`lastUpdated: ${s.snapshot.lastUpdated}`);
       console.log(`schedules:   ${s.snapshot.schedules}`);
