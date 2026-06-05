@@ -9,8 +9,10 @@ import { resolveHome } from "./home";
  * re-queue orphans) so kicks, inbox, refires, and the future watcher /
  * scheduler all share one durability implementation.
  *
- * Surface is tiny by design — `enqueue` / `drain` / `recover` — and hides
- * the storage shape, atomic tmp+rename, dedup, and the inflight lease.
+ * Surface is small by design — `enqueue` plus either the coupled `drain`
+ * (claim → run → ack|restore in one call) or the decoupled `claim` / `ack` /
+ * `restore` lease (for the inbox, whose run is an async external child). It
+ * hides the storage shape, atomic tmp+rename, dedup, and the inflight lease.
  *
  * Two storage shapes, one mechanism:
  *
@@ -35,6 +37,17 @@ export interface QueueConfig<T> {
   shape: "latest" | "log";
   /** Dedup key (log shape only). Items sharing a key collapse, last wins. */
   key?: (item: T) => string;
+  /**
+   * Tie-break for two items sharing a `key`. Returns the one to keep. Default
+   * is last-appended-wins. The inbox overrides this to keep the latest mtime.
+   */
+  prefer?: (a: T, b: T) => T;
+  /**
+   * Sub-directory under `<home>` for the inflight lease. Defaults to
+   * `<dir>/inflight`. The inbox overrides it to `inflight` so the lease lands
+   * at `<home>/inflight/<name>.<ext>` (its established on-disk layout).
+   */
+  inflightDir?: string;
 }
 
 export class Queue<T> {
@@ -53,9 +66,14 @@ export class Queue<T> {
     return join(this.base(), `${name}.${this.cfg.ext}`);
   }
 
+  private inflightBase(): string {
+    if (this.cfg.inflightDir) return join(resolveHome(), this.cfg.inflightDir);
+    return join(this.base(), "inflight");
+  }
+
   private inflight(name: string): string {
     assertSafe(name);
-    return join(this.base(), "inflight", `${name}.${this.cfg.ext}`);
+    return join(this.inflightBase(), `${name}.${this.cfg.ext}`);
   }
 
   /** Durably enqueue one item. Atomic; latest-wins or append per shape. */
@@ -106,7 +124,7 @@ export class Queue<T> {
    * recovered. Generalizes `recoverOrphanInflight`.
    */
   async recoverAll(): Promise<string[]> {
-    const names = await list(join(this.base(), "inflight"), this.cfg.ext);
+    const names = await list(this.inflightBase(), this.cfg.ext);
     for (const name of names) await this.restore(name);
     return names;
   }
@@ -116,13 +134,20 @@ export class Queue<T> {
     return list(this.base(), this.cfg.ext);
   }
 
-  // --- internals: claim / ack / restore mirror inbox.ts ---
+  // --- decoupled lease API: claim / ack / restore ---
+  //
+  // `drain` is claim → run → ack|restore in one call, for sources whose
+  // processing is synchronous with the drain (kicks). The inbox needs them
+  // split: claim leases targets at fire-start, then the async Deno child runs,
+  // then ack (clean) or restore (failure) lands much later. Same lease, two
+  // call shapes.
 
-  private async claim(name: string): Promise<T[]> {
+  /** Lease pending → inflight, read + dedup, return the claimed items. */
+  async claim(name: string): Promise<T[]> {
     const file = this.pending(name);
     const lease = this.inflight(name);
     await mkdir(this.base(), { recursive: true });
-    await mkdir(join(this.base(), "inflight"), { recursive: true });
+    await mkdir(this.inflightBase(), { recursive: true });
 
     try {
       await rename(file, lease);
@@ -144,11 +169,13 @@ export class Queue<T> {
     return items;
   }
 
-  private async ack(name: string): Promise<void> {
+  /** Drop the lease — the claimed items are done. */
+  async ack(name: string): Promise<void> {
     await unlink(this.inflight(name)).catch(ignoreEnoent);
   }
 
-  private async restore(name: string): Promise<void> {
+  /** Re-queue the leased items back to pending, then drop the lease. */
+  async restore(name: string): Promise<void> {
     const lease = this.inflight(name);
     let raw: string;
     try {
@@ -157,17 +184,20 @@ export class Queue<T> {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
       throw err;
     }
-    if (raw.length > 0) {
-      const file = this.pending(name);
-      await mkdir(this.base(), { recursive: true });
-      // `latest` shape: a fresh enqueue during the run already supersedes the
-      // leased item, so restore exclusively — EEXIST means something newer is
-      // pending and the lease is simply dropped.
-      if (this.cfg.shape === "latest") {
-        await writeFile(file, raw, { flag: "wx" }).catch(ignoreEexist);
-      } else await appendFile(file, raw);
-    }
+    if (raw.length > 0) await this.requeue(name, raw);
     await unlink(lease).catch(ignoreEnoent);
+  }
+
+  /** Append (log) or exclusively rewrite (latest) leased rows back to pending. */
+  private async requeue(name: string, raw: string): Promise<void> {
+    const file = this.pending(name);
+    await mkdir(this.base(), { recursive: true });
+    // `latest` shape: a fresh enqueue during the run already supersedes the
+    // leased item, so restore exclusively — EEXIST means something newer is
+    // pending and the lease is simply dropped. `log` shape appends back; the
+    // next claim re-dedups.
+    if (this.cfg.shape === "latest") return writeFile(file, raw, { flag: "wx" }).catch(ignoreEexist);
+    return appendFile(file, raw);
   }
 
   private async read(file: string): Promise<T[]> {
@@ -195,9 +225,15 @@ export class Queue<T> {
   private dedup(rows: T[]): T[] {
     if (!this.cfg.key) return rows;
     const key = this.cfg.key;
-    const latest = new Map<string, T>();
-    for (const r of rows) latest.set(key(r), r);
-    return Array.from(latest.values());
+    const prefer = this.cfg.prefer;
+    const kept = new Map<string, T>();
+    for (const r of rows) {
+      const prev = kept.get(key(r));
+      // No prefer comparator → last-appended wins. With one (inbox), the
+      // comparator picks the survivor (latest mtime), independent of order.
+      kept.set(key(r), prev && prefer ? prefer(prev, r) : r);
+    }
+    return Array.from(kept.values());
   }
 }
 

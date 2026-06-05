@@ -132,6 +132,44 @@ describe("daemon lifecycle (in-process)", () => {
     expect(s.pid).toBeNull();
   });
 
+  it("uniform boot recover restores orphan inflight + arms refire rows", async () => {
+    // No installed plugins → reconcile sets nothing, so watch/schedule recover
+    // are no-ops and nothing fires (no deno needed). This isolates the two
+    // durable-state recoveries that run on every boot through the uniform
+    // recover-all path: the inbox's orphan-inflight restore and the refirer's
+    // re-arm of a persisted row.
+    mkdirSync(join(home, "inflight"), { recursive: true });
+    writeFileSync(
+      join(home, "inflight", "ghost.ndjson"),
+      `${JSON.stringify({ path: "/g.md", mtime: "2026-05-13T00:00:00.000Z" })}\n`,
+    );
+    // A refire row due far in the future — recover arms a (long) timer without
+    // firing. We assert the inflight restore + that boot completed cleanly.
+    mkdirSync(join(home, "refires"), { recursive: true });
+    writeFileSync(
+      join(home, "refires", "ghost.json"),
+      JSON.stringify({ fireAt: new Date(Date.now() + 3_600_000).toISOString(), retryCount: 0, suspended: false }),
+    );
+
+    const { runDaemon } = await import("./daemon");
+    const exited = runDaemon();
+
+    const inbox = join(home, "inboxes", "ghost.ndjson");
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      if (existsSync(inbox) && !existsSync(join(home, "inflight", "ghost.ndjson"))) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    process.kill(process.pid, "SIGTERM");
+    await exited;
+
+    // Inflight restored back into the inbox; lease gone.
+    expect(existsSync(inbox)).toBe(true);
+    expect(existsSync(join(home, "inflight", "ghost.ndjson"))).toBe(false);
+    // The refire row is still on disk (a far-future timer, never fired).
+    expect(existsSync(join(home, "refires", "ghost.json"))).toBe(true);
+  }, 15_000);
+
   it("registers schedule from grants and fires runPlugin within ~3s", async () => {
     // Tiny inline plugin with `schedule: "every 1s"`.
     const pluginDir = mkdtempSync(join(tmpdir(), "dither-sched-fixture-"));

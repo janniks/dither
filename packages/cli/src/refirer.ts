@@ -1,23 +1,28 @@
-import { listRefires, type RefireRow } from "./refire";
+import { listRefires } from "./refire";
+import type { Emit, Source } from "./queue";
 
 /**
  * One-shot timer registry for refire rows persisted on disk. Owns one
  * setTimeout per pending refire and fires the callback when each elapses.
  *
- * Symmetric with `Scheduler` (cron entries) and `Watcher` (chokidar events)
- * — three separate fire sources that all funnel back into `fireWithSuppress`.
+ * A `Source` like `Scheduler` and `Watcher`, and shaped identically: `start`
+ * is a no-op (live rows are armed by `set()` after each run via
+ * `fireWithSuppress`), `recover` re-arms a timer per non-suspended persisted
+ * row at boot / SIGHUP (`reload`). Each timer funnels back into `onFire`
+ * (`fireWithSuppress`); `emit` is vestigial, as it is for the other two
+ * sources whose live producer fires through the constructor callback.
  */
 
 export type RefireCallback = (name: string) => void | Promise<void>;
 
-export class Refirer {
+export class Refirer implements Source {
   private timers = new Map<string, NodeJS.Timeout>();
 
   constructor(private readonly onFire: RefireCallback) {}
 
   /**
    * Read all persisted refire rows and schedule a timer for each non-
-   * suspended one. Called at daemon startup and on SIGHUP reload.
+   * suspended one. Shared by `start` (boot/SIGHUP wiring) and `recover`.
    */
   async reload(): Promise<void> {
     this.stop();
@@ -26,6 +31,18 @@ export class Refirer {
       if (row.suspended) continue;
       this.scheduleAt(plugin, Date.parse(row.fireAt));
     }
+  }
+
+  /**
+   * `Source.start` — no-op. Live rows are armed by `set()` after each run
+   * (`fireWithSuppress` reads the row a finishing plugin wrote). Kept to
+   * satisfy the `Source` shape, like Scheduler/Watcher.
+   */
+  start(_emit: Emit): void {}
+
+  /** `Source.recover` — boot/SIGHUP re-arm of the persisted rows. */
+  async recover(_emit: Emit): Promise<void> {
+    await this.reload();
   }
 
   /** Add / replace a refire timer for one plugin. */

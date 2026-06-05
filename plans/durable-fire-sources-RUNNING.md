@@ -114,10 +114,32 @@ drain the queue**. Delete the now-redundant bespoke durability code
 (scattered `restoreInflight`/`scanKicks`/ad-hoc recovery call sites).
 
 **Acceptance:**
-- [ ] Refirer is a `Source`; inflight recovery is the Queue's `recover`.
-- [ ] Daemon boot + SIGHUP = `recover all + drain` (single uniform path).
-- [ ] Dead/duplicated durability code removed (net deletion).
-- [ ] Full daemon/source/queue suites pass.
+- [x] Refirer is a `Source`; inflight recovery is the Queue's `recover`.
+- [x] Daemon boot + SIGHUP = `recover all + drain` (single uniform path).
+- [x] Dead/duplicated durability code removed (net deletion).
+- [x] Full daemon/source/queue suites pass.
+
+**P5 notes (carry to Phase 6):**
+- **SIGHUP** stays scoped: `onHup` does `reconcile()` + `refirer.reload()`
+  only — it does NOT re-run the full `recoverAll` (no re-drain of kicks, no
+  watch watermark re-scan, no schedule anacron re-fire). Routing SIGHUP
+  through `recoverAll` would change behavior (re-fire owed work on every
+  reload), so it was left out deliberately. Boot is the single uniform
+  `recover all` path; reload is the lighter `reconcile + refire re-arm`.
+  Decide in P6 whether that asymmetry is worth unifying.
+- **Inbox lease layout divergence.** The inbox keeps its historical on-disk
+  shape — pending `inboxes/<p>.ndjson`, lease `inflight/<p>.ndjson` (sibling
+  dirs, not `inboxes/inflight/`). Expressed via a new `QueueConfig.inflightDir`
+  override. Every other queue uses the default `<dir>/inflight`. Minor
+  asymmetry; could migrate the inbox to the default layout in P6 if the
+  on-disk break is acceptable.
+- **`prefer` comparator.** Dedup gained an optional `prefer(a,b)` tie-break so
+  the inbox keeps the *latest mtime* (not last-appended). Default stays
+  last-wins. One extra config knob, but it's the only way to preserve the
+  inbox's mtime semantics through the shared dedup.
+- `Refirer.reload()` stays public (SIGHUP calls it); `recover` wraps it. `emit`
+  is vestigial for refirer/kicks (they fire via their own closures) — same
+  observation as P1's kick note.
 
 ---
 
@@ -150,3 +172,4 @@ all phases complete.
 | P2 | Plugin run = transaction: state staged in `runs/<runId>/state.json` (seeded from committed), `DITHER_STATE_FILE` repointed, write-grant tightened to `runDir` only, atomic tmp+rename commit alongside `promote` on clean exit; rollback via existing `rm -rf` finally. Injectable `spawn` seam threads through to `supervise`. Typecheck clean; plugin-run/supervisor/promotion 28 pass; full suite 43 pre-existing deno fails unchanged (+3 new tests, 0 new fails) |
 | P3 | Watcher is a `Source`: `start`/`recover`/`stop` + kept `set`/`stats`/`suppressOnce`. New `watch-state.ts` persists a per-(plugin,collection) mtime watermark (`<home>/watch-state/<plugin>__<safe-collection>.json`), advanced on every live emit (best-effort) and in `recover`. `recover(emit)` walks each watched collection (`walkMd`), enqueues `mtime > watermark` honoring the glob, advances to max mtime, nudges a fire. Daemon boot calls `watcher.start(fire)` + `watcher.recover(fire)` after reconcile, uniform with kicks; inbox stays the store (Queue migration deferred to P5). Typecheck clean; watcher/inbox/watch-state 51 pass (+7 new tests), only the pre-existing deno `daemon.test.ts` fire-within-3s fail remains (0 new fails) |
 | P4 | Scheduler is a `Source`: `start`/`recover`/`stop` + kept `set`/`stats`. New `schedule-state.ts` persists a per-plugin `lastRun` (`<home>/schedule-state/<plugin>.json`), advanced inside the croner callback (persist-then-fire) and in `recover`. `recover(emit)` is anacron catch-up: per active job `Cron.nextRun(lastRun)` — a scheduled time `≤ now` means a tick was missed → `emit(name)` once (N misses collapse to one), then `lastRun = now`. Empty `lastRun` (fresh install) seeds `lastRun = now`, no fire. Daemon boot calls `scheduler.start(fireScheduled)` + `scheduler.recover(fireScheduled)` through the `"scheduled"` `fireWithSuppress` choke point, uniform with watcher/kicks; `set()` reconcile path untouched. Typecheck clean; scheduler/schedule-state 13 pass (+8 new tests), only the pre-existing deno `daemon.test.ts` fire-within-3s fail remains (0 new fails) |
+| P5 | Consolidation. (a) `Queue` exposes decoupled `claim`/`ack`/`restore` (was private); `drain` = claim→run→ack\|restore built on them. Added `QueueConfig.inflightDir` (lease-dir override) + `prefer(a,b)` dedup tie-break. (b) `inbox.ts` is now a thin wrapper over a single `Queue<WatchTarget>` (`shape:"log"`, `key:path`, `prefer:latest-mtime`, `inflightDir:"inflight"`): `claimInbox`=`claim`, `clearInflight`=`ack`, `restoreInflight`=`restore`, `recoverOrphanInflight`=`recoverAll`. Deleted the hand-rolled rename/read/dedup/restore/recover FS internals (inbox 169→74 lines) + 3 dead `home.ts` path helpers. Dedup-by-latest-mtime preserved via `prefer`. (c) `Refirer implements Source` (`start` no-op, `recover`=`reload`, `stop`); retry/backoff/poison-pill untouched. (d) Daemon boot = `reconcile()` → `recoverAll(sources)` — one loop over `[kick,watch,schedule,refire]` doing `start`+`recover` each, replacing 5 bespoke call sites; SIGHUP left scoped (reconcile + refire reload). Net prod source −45 lines (208 del / 163 ins). Typecheck clean; queue/inbox/refire/refirer/scheduler/watcher/daemon/plugin-run 86 pass (+8 new tests), only pre-existing deno fire-within-3s fail remains (0 new fails) |

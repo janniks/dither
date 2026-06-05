@@ -89,18 +89,6 @@ export function binDir(): string {
   return join(resolveHome(), "bin");
 }
 
-export function inboxPath(plugin: string): string {
-  return join(resolveHome(), "inboxes", `${plugin}.ndjson`);
-}
-
-export function inflightPath(plugin: string): string {
-  return join(resolveHome(), "inflight", `${plugin}.ndjson`);
-}
-
-export function inflightDir(): string {
-  return join(resolveHome(), "inflight");
-}
-
 /** Per-(plugin,collection) mtime watermark for the watcher's boot catch-up. */
 export function watchStatePath(key: string): string {
   return join(resolveHome(), "watch-state", `${key}.json`);

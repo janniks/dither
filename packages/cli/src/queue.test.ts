@@ -157,6 +157,65 @@ describe("Queue", () => {
     expect(await q.pendingNames()).toEqual(["aaa", "bbb"]);
   });
 
+  it("decoupled claim → ack removes the lease (run finishes out-of-band)", async () => {
+    const { Queue } = await import("./queue");
+    const q = new Queue<Item>({ dir: "q", ext: "ndjson", shape: "log" });
+    await q.enqueue("p", { path: "/a", v: 1 });
+
+    const claimed = await q.claim("p");
+    expect(claimed).toEqual([{ path: "/a", v: 1 }]);
+    // Lease is held; pending is empty until ack/restore.
+    expect(existsSync(join(home, "q", "p.ndjson"))).toBe(false);
+    expect(existsSync(join(home, "q", "inflight", "p.ndjson"))).toBe(true);
+
+    await q.ack("p");
+    expect(existsSync(join(home, "q", "inflight", "p.ndjson"))).toBe(false);
+    expect(await q.claim("p")).toEqual([]);
+  });
+
+  it("decoupled claim → restore re-queues for the next claim", async () => {
+    const { Queue } = await import("./queue");
+    const q = new Queue<Item>({ dir: "q", ext: "ndjson", shape: "log", key: (i) => i.path });
+    await q.enqueue("p", { path: "/a", v: 1 });
+
+    await q.claim("p");
+    await q.restore("p");
+    expect(existsSync(join(home, "q", "inflight", "p.ndjson"))).toBe(false);
+    expect(await q.claim("p")).toEqual([{ path: "/a", v: 1 }]);
+  });
+
+  it("custom inflightDir leases to a sibling dir (the inbox layout)", async () => {
+    const { Queue } = await import("./queue");
+    const q = new Queue<Item>({ dir: "in", ext: "ndjson", shape: "log", inflightDir: "fl" });
+    await q.enqueue("p", { path: "/a", v: 1 });
+    await q.claim("p");
+    expect(existsSync(join(home, "fl", "p.ndjson"))).toBe(true);
+    expect(existsSync(join(home, "in", "inflight", "p.ndjson"))).toBe(false);
+    expect(await q.recoverAll()).toEqual(["p"]);
+    expect(await q.claim("p")).toEqual([{ path: "/a", v: 1 }]);
+  });
+
+  it("prefer comparator keeps the winner regardless of append order", async () => {
+    const { Queue } = await import("./queue");
+    // Keep the greater `v` even when the smaller is appended last.
+    const q = new Queue<Item>({
+      dir: "q",
+      ext: "ndjson",
+      shape: "log",
+      key: (i) => i.path,
+      prefer: (a, b) => (b.v > a.v ? b : a),
+    });
+    await q.enqueue("p", { path: "/a", v: 5 });
+    await q.enqueue("p", { path: "/a", v: 1 });
+
+    const seen: Item[] = [];
+    await q.drain("p", async (item) => {
+      seen.push(item);
+      return "done";
+    });
+    expect(seen).toEqual([{ path: "/a", v: 5 }]);
+  });
+
   it("rejects unsafe identities", async () => {
     const { Queue } = await import("./queue");
     const q = new Queue<Item>({ dir: "q", ext: "json", shape: "latest" });

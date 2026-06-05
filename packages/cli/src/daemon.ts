@@ -14,7 +14,7 @@ import { inboxHasItems, recoverOrphanInflight } from "./inbox";
 import { Refirer } from "./refirer";
 import { readRefire } from "./refire";
 import { kickSource, type KickPayload } from "./kicks";
-import type { Outcome } from "./queue";
+import type { Outcome, Source, Emit } from "./queue";
 import { acquire as acquireLock, release as releaseLock, isPluginLock } from "./locks";
 import { clearInflightJobs } from "./daemon-jobs";
 import { superviseReconcile } from "./reconcile-supervisor";
@@ -156,6 +156,26 @@ async function fireKick(
   return "done";
 }
 
+/**
+ * Boot / SIGHUP, expressed once: `start` each source's live producer, then
+ * `recover` its owed work from durable state. Per-source guarded so one
+ * source's recovery failure can't sink the rest. This is the single uniform
+ * path the spec asks for — kicks, watcher, scheduler, refirer all flow through
+ * it instead of five bespoke call sites.
+ */
+async function recoverAll(
+  sources: ReadonlyArray<{ name: string; source: Source; emit: Emit }>,
+): Promise<void> {
+  for (const { name, source, emit } of sources) {
+    await Promise.resolve(source.start(emit)).catch((err) => {
+      console.error(`[daemon] ${name} start failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+    await Promise.resolve(source.recover(emit)).catch((err) => {
+      console.error(`[daemon] ${name} recover failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+  }
+}
+
 async function writePidFile(state: DaemonState): Promise<void> {
   await mkdir(resolveHome(), { recursive: true });
   await writeFile(
@@ -294,6 +314,18 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   const kicks = kickSource((name, payload) =>
     fireKick(watcher, refirer, detector, name, payload, writeStatus),
   );
+  // Every fire source, each paired with the `emit` its recover nudges. Boot
+  // and SIGHUP both reduce to "recover all of these" (see recoverAll). Kicks
+  // and the refirer ignore `emit` — they fire through their own closures — so
+  // they get a no-op; the watcher/scheduler emit re-fires through the choke
+  // point. Order is irrelevant: sources are independent.
+  const noop: Emit = () => undefined;
+  const sources: Array<{ name: string; source: Source; emit: Emit }> = [
+    { name: "kick", source: kicks, emit: noop },
+    { name: "watch", source: watcher, emit: fireWatch },
+    { name: "schedule", source: scheduler, emit: fireScheduled },
+    { name: "refire", source: refirer, emit: noop },
+  ];
   // reconcile() loads config + grants fresh on every call, so SIGHUP
   // (`dither daemon reload`) is the supported way to pick up a library
   // change after `dither init --force`. We do NOT auto-reload on config
@@ -327,42 +359,19 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
       `[daemon] write daemon-started event failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   });
-  // Restore any inflight rows from a crashed prior run before reconciling —
-  // ensures the first fire of each watch plugin sees items that were in
-  // flight when the daemon went down.
+  // One uniform boot path: re-derive every source's owed work from durable
+  // state. `reconcile()` first because the watcher/scheduler recover needs the
+  // active entries it `set()`s. The inbox is not a source — it's the Queue's
+  // own recovery — so it leads, restoring inflight rows so the first watch fire
+  // sees items in flight when the daemon went down. Then each source `start`s
+  // its live producer and `recover`s its missed work (kick drain, watch
+  // watermark scan, schedule anacron catch-up, refire re-arm), uniformly.
   const recovered = await recoverOrphanInflight().catch(() => [] as string[]);
   if (recovered.length > 0) {
     console.error(`[daemon] recovered inflight for: ${recovered.join(", ")}`);
   }
   await reconcile();
-  // Refire registry is independent of grants — load it once at startup and
-  // again on SIGHUP. A new refire row written by a finishing run is picked
-  // up by the next reconcile (or could trigger an inline refirer.set() —
-  // deferred for now since plugins exit and the daemon reconciles often
-  // enough in practice).
-  await refirer.reload().catch((err) => {
-    console.error(`[daemon] refire reload failed: ${err instanceof Error ? err.message : String(err)}`);
-  });
-  // Recover + drain kicks that arrived (or were left inflight) while the
-  // daemon was down. Same robustness pattern as recoverOrphanInflight +
-  // refirer.reload — now expressed as the kick Source's boot recovery.
-  await Promise.resolve(kicks.recover(() => undefined)).catch((err) => {
-    console.error(`[daemon] kick recover failed: ${err instanceof Error ? err.message : String(err)}`);
-  });
-  // Watcher boot catch-up: re-derive file changes missed during the
-  // down-window from the per-collection mtime watermark, enqueue them, and
-  // nudge a fire. `reconcile()` above has already `set()` the active entries.
-  watcher.start(fireWatch);
-  await Promise.resolve(watcher.recover(fireWatch)).catch((err) => {
-    console.error(`[daemon] watch recover failed: ${err instanceof Error ? err.message : String(err)}`);
-  });
-  // Scheduler boot catch-up: anacron — if a scheduled tick came due while the
-  // daemon was down (per-plugin `lastRun` vs. cron pattern), fire it once. The
-  // live timers were set() by reconcile() above; start() is a no-op.
-  scheduler.start(fireScheduled);
-  await Promise.resolve(scheduler.recover(fireScheduled)).catch((err) => {
-    console.error(`[daemon] schedule recover failed: ${err instanceof Error ? err.message : String(err)}`);
-  });
+  await recoverAll(sources);
   await writeStatusSnapshot(state, scheduler, watcher, detector);
 
   // qmd state reconciliation runs off-thread in a `daemon reconcile`
@@ -465,9 +474,9 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   process.on("SIGTERM", onTerm);
   process.on("SIGINT", onTerm);
   process.on("SIGHUP", onHup);
-  // Kick Source owns SIGUSR1 → drain. POSIX coalesces signals; every kick on
-  // disk gets processed per drain.
-  kicks.start(() => undefined);
+  // The kick Source's SIGUSR1 handler was already wired by recoverAll's
+  // `start` above (POSIX coalesces signals; every kick on disk gets processed
+  // per drain).
 
   await exited;
 
