@@ -11,8 +11,10 @@ import {
   type InstalledPlugin,
 } from "../plugin-install";
 import {
+  formatDryRun,
   InstallCancelledError,
   mergeInputs,
+  planInstall,
   promptInteractive,
   readExistingGrants,
   readPackage,
@@ -130,6 +132,18 @@ export async function installPluginOrExit(opts: InstallOptions): Promise<Install
     }
     throw err;
   }
+}
+
+/**
+ * `install --dry-run`: preview the field/grant surface without installing
+ * or prompting. Reads the same inputs as the interactive path (flags
+ * layered over any prior grants) and runs the existing planner.
+ */
+export async function dryRunInstall(opts: InstallOptions): Promise<void> {
+  const parsed = await readPackage(opts.source);
+  const existing = await readExistingGrants(parsed.name);
+  const plan = await planInstall(parsed, existing ? mergeInputs(existing, opts) : opts);
+  process.stdout.write(formatDryRun(parsed, plan));
 }
 
 interface ConsentedGrants {

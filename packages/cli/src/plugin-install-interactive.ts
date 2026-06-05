@@ -118,6 +118,37 @@ export function formatMissing(missing: MissingField[]): string {
   return `missing required ${parts.join("; ")}. pass --env / --file or run on a TTY for interactive setup.`;
 }
 
+/**
+ * Render a `--dry-run` preview from a plan: the required fields still
+ * unprovided (these block a non-TTY install) plus the optional / consent
+ * surface the interactive flow would otherwise prompt for. Pure — no
+ * secret *values* are printed, only names and defaults.
+ */
+export function formatDryRun(parsed: ParsedPackage, plan: PlanResult): string {
+  const out = [`dry run — ${parsed.name}@${parsed.version}`];
+  const missing = plan.ok ? [] : plan.missing;
+  if (missing.length === 0) out.push("", "required fields satisfied — install won't block.");
+  else {
+    out.push("", "required, not yet provided:");
+    for (const f of missing) out.push(`  ${f.kind}  ${f.name}`);
+    out.push("", formatMissing(missing));
+  }
+  const m = parsed.manifest;
+  const opt = [
+    ...(m.env ?? []).filter((e) => e.default !== undefined).map((e) => `env ${e.name} (default ${e.default})`),
+    ...(m.files ?? []).filter((f) => !f.required).map((f) => `file ${f.id} (optional)`),
+    ...(m.net?.length ? [`net ${m.net.join(", ")}`] : []),
+    ...(m.collections?.length ? [`collections ${m.collections.join(", ")}`] : []),
+    ...(m.schedule ? [`schedule ${m.schedule}`] : []),
+    ...(m.watch ? [`watch ${m.watch.collections.join(", ")}`] : []),
+  ];
+  if (opt.length > 0) {
+    out.push("", "also prompted (have a default or are consent toggles):");
+    for (const o of opt) out.push(`  ${o}`);
+  }
+  return out.join("\n") + "\n";
+}
+
 function resolveEnvCollect(
   declared: Manifest["env"],
   provided: Record<string, string> | undefined,

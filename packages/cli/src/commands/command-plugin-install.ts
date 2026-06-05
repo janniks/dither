@@ -7,6 +7,7 @@ import { FDA_SETTINGS_URI, type ProtectedInstall } from "../tcc-hint";
 import {
   grantArgs,
   readGrantArgs,
+  dryRunInstall,
   installPluginOrExit,
   printInstallHint,
   ensureDaemonForPlugin,
@@ -105,16 +106,24 @@ export const installSubcommand = defineCommand({
         "Dev mode: symlink the install destination to the source path instead of copying. Author edits take effect without reinstall; node_modules + deno.json from the source are used as-is.",
       default: false,
     },
+    "dry-run": {
+      type: "boolean",
+      description:
+        "Show which fields and grants the install will ask for, then exit. No install, no prompts.",
+      default: false,
+    },
     ...grantArgs,
   },
   async run({ args }) {
     await assertInitialized();
     const grants = readGrantArgs(args);
-    const result = await installPluginOrExit({
+    const opts = {
       source: args.source,
       ...grants,
       ...(args.symlink ? { symlink: true } : {}),
-    });
+    };
+    if (args["dry-run"]) return dryRunInstall(opts);
+    const result = await installPluginOrExit(opts);
     console.log(`\ninstalled ${result.name}@${result.version}${args.symlink ? " (symlinked)" : ""}`);
     console.log(`  → ${result.dest}`);
     if (result.protectedInstall) await handleProtectedInstall(result.protectedInstall);

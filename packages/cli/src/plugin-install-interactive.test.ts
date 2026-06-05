@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildListOptions,
+  formatDryRun,
   formatMissing,
   hasFieldDescription,
   humanizeSchedule,
@@ -152,6 +153,38 @@ describe("planInstall", () => {
     const r = await planInstall(pkg({ files: [{ id: "opt", kind: "file" }] }), {});
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.resolved.files).toEqual({});
+  });
+});
+
+describe("formatDryRun", () => {
+  it("lists required fields not yet provided", async () => {
+    const p = pkg({ env: [{ name: "API_TOKEN" }], files: [{ id: "db", kind: "file", required: true }] });
+    const out = formatDryRun(p, await planInstall(p, {}));
+    expect(out).toContain("required, not yet provided:");
+    expect(out).toContain("env  API_TOKEN");
+    expect(out).toContain("file  db");
+  });
+
+  it("reports satisfied when flags cover the required fields", async () => {
+    const p = pkg({ env: [{ name: "API_TOKEN" }] });
+    const out = formatDryRun(p, await planInstall(p, { env: { API_TOKEN: "x" } }));
+    expect(out).toContain("required fields satisfied");
+    expect(out).not.toContain("not yet provided");
+  });
+
+  it("surfaces optional + consent items without leaking secret values", async () => {
+    const p = pkg({
+      env: [{ name: "API_TOKEN" }, { name: "REGION", default: "us" }],
+      net: ["api.example.com"],
+      collections: ["articles"],
+      schedule: "0 9 * * *",
+    });
+    const out = formatDryRun(p, await planInstall(p, { env: { API_TOKEN: "secret" } }));
+    expect(out).toContain("env REGION (default us)");
+    expect(out).toContain("net api.example.com");
+    expect(out).toContain("collections articles");
+    expect(out).toContain("schedule 0 9 * * *");
+    expect(out).not.toContain("secret");
   });
 });
 
