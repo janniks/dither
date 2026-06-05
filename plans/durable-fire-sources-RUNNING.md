@@ -81,10 +81,10 @@ Migrate the watcher to a `Source` over `Queue`; add a per-collection mtime
 during downtime.
 
 **Acceptance:**
-- [ ] Watcher is a `Source` (`start` = chokidar→emit; `stop`).
-- [ ] Watermark persisted per watched collection; advanced as events flow.
-- [ ] `recover` scans `watch.collections`, enqueues `mtime > watermark`.
-- [ ] Test: change a file while the watcher is stopped → `recover` enqueues and
+- [x] Watcher is a `Source` (`start` = chokidar→emit; `stop`).
+- [x] Watermark persisted per watched collection; advanced as events flow.
+- [x] `recover` scans `watch.collections`, enqueues `mtime > watermark`.
+- [x] Test: change a file while the watcher is stopped → `recover` enqueues and
       fires it on next drain.
 
 ---
@@ -148,3 +148,4 @@ all phases complete.
 |--|--|
 | P1 | `Queue<T>` deep module (latest/log shapes, claim/ack/restore/recover) + `Source` interface; kicks migrated as first Source; `plugin run` intact. Typecheck clean, 38 pass + daemon suite clean (1 pre-existing deno fail) |
 | P2 | Plugin run = transaction: state staged in `runs/<runId>/state.json` (seeded from committed), `DITHER_STATE_FILE` repointed, write-grant tightened to `runDir` only, atomic tmp+rename commit alongside `promote` on clean exit; rollback via existing `rm -rf` finally. Injectable `spawn` seam threads through to `supervise`. Typecheck clean; plugin-run/supervisor/promotion 28 pass; full suite 43 pre-existing deno fails unchanged (+3 new tests, 0 new fails) |
+| P3 | Watcher is a `Source`: `start`/`recover`/`stop` + kept `set`/`stats`/`suppressOnce`. New `watch-state.ts` persists a per-(plugin,collection) mtime watermark (`<home>/watch-state/<plugin>__<safe-collection>.json`), advanced on every live emit (best-effort) and in `recover`. `recover(emit)` walks each watched collection (`walkMd`), enqueues `mtime > watermark` honoring the glob, advances to max mtime, nudges a fire. Daemon boot calls `watcher.start(fire)` + `watcher.recover(fire)` after reconcile, uniform with kicks; inbox stays the store (Queue migration deferred to P5). Typecheck clean; watcher/inbox/watch-state 51 pass (+7 new tests), only the pre-existing deno `daemon.test.ts` fire-within-3s fail remains (0 new fails) |

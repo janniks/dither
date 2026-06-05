@@ -1,8 +1,11 @@
 import { FSWatcher, watch } from "chokidar";
 import type { Stats } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
+import { join } from "node:path";
 import picomatch from "picomatch";
-import { appendToInbox } from "./inbox";
+import { appendToInbox, type WatchTarget } from "./inbox";
+import type { Emit, Source } from "./queue";
+import { advanceWatermark, readWatermark, watchKey } from "./watch-state";
 import { resolveWatchPath } from "./watch-paths";
 
 /**
@@ -19,6 +22,13 @@ import { resolveWatchPath } from "./watch-paths";
  * Self-trigger suppression: plugins are *also* writers in the entries tree,
  * so we maintain a recently-promoted-paths map (TTL ~2 s). Chokidar events
  * for paths in that map are dropped before the inbox write.
+ *
+ * Durability across the down-window: chokidar only sees *live* changes, so a
+ * file touched while the daemon was down would be lost. As a `Source`, the
+ * watcher persists a per-(plugin,collection) mtime watermark (advanced on
+ * every live emit) and `recover(emit)` walks the watched collections at boot,
+ * re-enqueuing anything newer than the watermark. The inbox dedups by path,
+ * so over-enqueueing is harmless — the watermark is the efficiency floor.
  */
 
 export interface WatchEntry {
@@ -53,7 +63,7 @@ export interface WatcherOptions {
   debounceCapMs?: number;
 }
 
-export class Watcher {
+export class Watcher implements Source {
   private fsWatcher: FSWatcher | null = null;
   private plugins = new Map<string, PluginWatcher>();
   private suppress = new Map<string, number>();
@@ -98,6 +108,43 @@ export class Watcher {
     });
     this.fsWatcher.on("add", (path, stats) => void this.onChange(gen, path, stats));
     this.fsWatcher.on("change", (path, stats) => void this.onChange(gen, path, stats));
+  }
+
+  /**
+   * `Source.start` — the live producer is wired by `set()` (chokidar →
+   * inbox append + watermark advance), called from the daemon's reconcile
+   * on boot and SIGHUP. `emit` is vestigial here, like kicks: the watcher's
+   * durable emit *is* the inbox append, so there's nothing to bind. Kept to
+   * satisfy the `Source` shape uniformly with the other fire sources.
+   */
+  start(_emit: Emit): void {}
+
+  /**
+   * `Source.recover` — boot catch-up. For each active watch entry, walk its
+   * collections and re-enqueue every file with `mtime > watermark` (changes
+   * the watcher missed while the daemon was down), then advance the watermark
+   * to the max mtime seen. Requires `set()` to have run first (the daemon's
+   * reconcile does this before recover). `emit(name)` nudges the drain for
+   * any plugin that got fresh rows.
+   */
+  async recover(emit: Emit): Promise<void> {
+    for (const plugin of this.plugins.values()) {
+      let enqueued = false;
+      for (const c of plugin.entry.collections) {
+        const key = watchKey(plugin.entry.name, c);
+        const mark = await readWatermark(key);
+        let max = mark;
+        for (const t of await walkMd(resolveWatchPath(this.libraryRoot, c))) {
+          if (t.mtime <= mark) continue;
+          if (!matchesGlob(this.libraryRoot, t.path, plugin.entry.collections, plugin.matcher)) continue;
+          await appendToInbox(plugin.entry.name, t);
+          enqueued = true;
+          if (t.mtime > max) max = t.mtime;
+        }
+        if (max > mark) await advanceWatermark(key, max);
+      }
+      if (enqueued) await emit(plugin.entry.name);
+    }
   }
 
   /**
@@ -163,6 +210,13 @@ export class Watcher {
       if (!plugin.matcher(relative)) continue;
 
       await appendToInbox(plugin.entry.name, { path, mtime });
+      // Best-effort: the watermark is a re-derivable efficiency floor (a lost
+      // advance only costs one redundant, inbox-deduped re-enqueue next boot),
+      // and a late event racing a stop()/teardown shouldn't crash the watcher.
+      await advanceWatermark(
+        watchKey(plugin.entry.name, collectionOf(this.libraryRoot, path, plugin.entry.collections)),
+        mtime,
+      ).catch(() => undefined);
       if (plugin.windowStart === null) plugin.windowStart = Date.now();
       this.scheduleFlush(plugin);
     }
@@ -196,4 +250,48 @@ function relativeToCollections(root: string, path: string, collections: string[]
     if (path.startsWith(prefix)) return path.slice(prefix.length);
   }
   return null;
+}
+
+/** The collection entry whose resolved dir contains `path` (watermark key). */
+function collectionOf(root: string, path: string, collections: string[]): string {
+  for (const c of collections) {
+    const base = resolveWatchPath(root, c);
+    if (path === base || path.startsWith(`${base}/`)) return c;
+  }
+  return collections[0] ?? "";
+}
+
+/** Does a recovered path pass a plugin's glob (relative to its collections)? */
+function matchesGlob(
+  root: string,
+  path: string,
+  collections: string[],
+  matcher: (p: string) => boolean,
+): boolean {
+  const relative = relativeToCollections(root, path, collections);
+  return relative !== null && matcher(relative);
+}
+
+/** Recursively collect `.md` files under `dir` as inbox targets. ENOENT → []. */
+async function walkMd(dir: string): Promise<WatchTarget[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return [];
+  }
+  return (
+    await Promise.all(
+      entries.map(async (name) => {
+        const full = join(dir, name);
+        const s = await stat(full).catch(() => null);
+        if (!s) return [];
+        if (s.isDirectory()) return walkMd(full);
+        if (s.isFile() && name.endsWith(".md")) {
+          return [{ path: full, mtime: new Date(s.mtimeMs).toISOString() }];
+        }
+        return [];
+      }),
+    )
+  ).flat();
 }

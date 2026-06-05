@@ -74,6 +74,75 @@ describe("Watcher", () => {
     expect(paths.some((p) => p.endsWith("ignored.txt"))).toBe(false);
   }, 10_000);
 
+  it("recover enqueues files changed while stopped, then advances the watermark", async () => {
+    const { Watcher } = await import("./watcher");
+    const { claimInbox } = await import("./inbox");
+    const { readWatermark, watchKey } = await import("./watch-state");
+
+    const watcher = new Watcher(() => {});
+    // set() wires the active entries; chokidar isn't started for this scan.
+    watcher.set(libRoot, [{ name: "tagger", collections: ["messages"] }]);
+
+    // A file that landed while the daemon was down (no live event saw it).
+    writeFileSync(join(libRoot, "messages", "down.md"), "missed");
+
+    const fired: string[] = [];
+    await watcher.recover((name) => {
+      fired.push(name);
+    });
+    watcher.stop();
+
+    expect(fired).toEqual(["tagger"]);
+    const claimed = await claimInbox("tagger");
+    expect(claimed.map((t) => t.path).some((p) => p.endsWith("down.md"))).toBe(true);
+
+    const mark = await readWatermark(watchKey("tagger", "messages"));
+    expect(mark).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("recover does not re-enqueue a file at or below the watermark", async () => {
+    const { Watcher } = await import("./watcher");
+    const { claimInbox } = await import("./inbox");
+
+    const watcher = new Watcher(() => {});
+    watcher.set(libRoot, [{ name: "tagger", collections: ["messages"] }]);
+    writeFileSync(join(libRoot, "messages", "old.md"), "v1");
+
+    // First recover enqueues + sets watermark to old.md's mtime.
+    await watcher.recover(() => {});
+    await claimInbox("tagger"); // drain it
+
+    // Second recover with no new change: watermark already covers old.md.
+    const fired: string[] = [];
+    await watcher.recover((name) => {
+      fired.push(name);
+    });
+    watcher.stop();
+
+    expect(fired).toEqual([]);
+    const claimed = await claimInbox("tagger");
+    expect(claimed).toEqual([]);
+  });
+
+  it("recover honors the glob filter", async () => {
+    const { Watcher } = await import("./watcher");
+    const { claimInbox } = await import("./inbox");
+
+    const watcher = new Watcher(() => {});
+    watcher.set(libRoot, [{ name: "md-only", collections: ["messages"], glob: "**/*.md" }]);
+    writeFileSync(join(libRoot, "messages", "kept.md"), "y");
+    // .txt isn't an .md file — walkMd never sees it.
+    writeFileSync(join(libRoot, "messages", "ignored.txt"), "x");
+
+    await watcher.recover(() => {});
+    watcher.stop();
+
+    const claimed = await claimInbox("md-only");
+    const paths = claimed.map((t) => t.path);
+    expect(paths.some((p) => p.endsWith("kept.md"))).toBe(true);
+    expect(paths.some((p) => p.endsWith("ignored.txt"))).toBe(false);
+  });
+
   it("suppressOnce drops the matching event", async () => {
     const { Watcher } = await import("./watcher");
     const fires: string[] = [];

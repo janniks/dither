@@ -268,6 +268,9 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   // (impossible in practice — triad start is synchronous below) is a no-op.
   // eslint-disable-next-line prefer-const
   let writeStatus: () => void = () => undefined;
+  const fireWatch = (name: string): void => {
+    void fireWithSuppress(watcher, refirer, detector, name, "watch", writeStatus);
+  };
   watcher = new Watcher((name: string) =>
     fireWithSuppress(watcher, refirer, detector, name, "watch", writeStatus),
   );
@@ -342,6 +345,13 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   // refirer.reload — now expressed as the kick Source's boot recovery.
   await Promise.resolve(kicks.recover(() => undefined)).catch((err) => {
     console.error(`[daemon] kick recover failed: ${err instanceof Error ? err.message : String(err)}`);
+  });
+  // Watcher boot catch-up: re-derive file changes missed during the
+  // down-window from the per-collection mtime watermark, enqueue them, and
+  // nudge a fire. `reconcile()` above has already `set()` the active entries.
+  watcher.start(fireWatch);
+  await Promise.resolve(watcher.recover(fireWatch)).catch((err) => {
+    console.error(`[daemon] watch recover failed: ${err instanceof Error ? err.message : String(err)}`);
   });
   await writeStatusSnapshot(state, scheduler, watcher, detector);
 
