@@ -127,6 +127,35 @@ describe("dither init (Phase 1)", () => {
     expect(cfg?.library.path).toBe("/somewhere/else");
   });
 
+  it("re-running init never wipes existing grants or library files", async () => {
+    // Hard guarantee: a second `dither init` on an already-initialized
+    // install must touch nothing the user has accumulated — not grants,
+    // not library content. It returns early before any fs write.
+    const { saveConfig } = await import("../config");
+    const lib = join(home, "library");
+    mkdirSync(join(lib, "twitter", "likes"), { recursive: true });
+    const likeFile = join(lib, "twitter", "likes", "1.md");
+    writeFileSync(likeFile, "---\nid: 1\n---\nliked\n", "utf-8");
+    const grantsDir = join(home, "grants");
+    mkdirSync(grantsDir, { recursive: true });
+    const grantFile = join(grantsDir, "twitter-import.json");
+    writeFileSync(grantFile, '{"net":["api.twitter.com"]}', "utf-8");
+    await saveConfig({
+      schema: { version: 2 },
+      library: { path: lib },
+      collections: { external: [] },
+    });
+
+    const { main } = await import("../main");
+    await captureLogs(async () => {
+      await runCommand(main, { rawArgs: ["init"] });
+    });
+
+    const { readFileSync } = await import("node:fs");
+    expect(readFileSync(likeFile, "utf-8")).toBe("---\nid: 1\n---\nliked\n");
+    expect(readFileSync(grantFile, "utf-8")).toBe('{"net":["api.twitter.com"]}');
+  });
+
   it("re-running init with --library notes the flag is ignored", async () => {
     const { saveConfig } = await import("../config");
     await saveConfig({
