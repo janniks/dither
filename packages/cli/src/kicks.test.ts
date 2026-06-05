@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,54 +19,28 @@ describe("kicks", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  it("writeKick + readKick round-trips the payload", async () => {
-    const { writeKick, readKick } = await import("./kicks");
+  it("writeKick writes the pending file at <home>/kicks/<plugin>.json", async () => {
+    const { writeKick } = await import("./kicks");
     const payload = {
       runId: "20260525T120000-foo-deadbeef",
       kickedAt: "2026-05-25T12:00:00.000Z",
       overrides: { env: { TOKEN: "abc" } },
     };
     await writeKick("foo", payload);
-    expect(await readKick("foo")).toEqual(payload);
-  });
-
-  it("readKick returns null on missing file", async () => {
-    const { readKick } = await import("./kicks");
-    expect(await readKick("nope")).toBeNull();
+    const raw = require("node:fs").readFileSync(join(home, "kicks", "foo.json"), "utf-8");
+    expect(JSON.parse(raw)).toEqual(payload);
   });
 
   it("clearKick unlinks the file", async () => {
-    const { writeKick, clearKick, readKick } = await import("./kicks");
+    const { writeKick, clearKick, hasKick } = await import("./kicks");
     await writeKick("foo", { runId: "r", kickedAt: "t" });
     await clearKick("foo");
-    expect(await readKick("foo")).toBeNull();
+    expect(hasKick("foo")).toBe(false);
   });
 
   it("clearKick is no-op on missing file", async () => {
     const { clearKick } = await import("./kicks");
     await expect(clearKick("nope")).resolves.toBeUndefined();
-  });
-
-  it("listKicks returns sorted entries", async () => {
-    const { writeKick, listKicks } = await import("./kicks");
-    await writeKick("bbb", { runId: "r2", kickedAt: "t" });
-    await writeKick("aaa", { runId: "r1", kickedAt: "t" });
-    const out = await listKicks();
-    expect(out.map((e) => e.plugin)).toEqual(["aaa", "bbb"]);
-  });
-
-  it("listKicks returns [] when dir is missing", async () => {
-    const { listKicks } = await import("./kicks");
-    expect(await listKicks()).toEqual([]);
-  });
-
-  it("listKicks ignores non-json entries", async () => {
-    const { writeKick, listKicks } = await import("./kicks");
-    await writeKick("ok", { runId: "r", kickedAt: "t" });
-    mkdirSync(join(home, "kicks"), { recursive: true });
-    writeFileSync(join(home, "kicks", "junk.txt"), "not-json");
-    const out = await listKicks();
-    expect(out.map((e) => e.plugin)).toEqual(["ok"]);
   });
 
   it("hasKick reports presence", async () => {
@@ -79,11 +53,10 @@ describe("kicks", () => {
   });
 
   it("rejects traversal segments in plugin names", async () => {
-    const { writeKick, readKick, clearKick } = await import("./kicks");
+    const { writeKick, clearKick } = await import("./kicks");
     const p = { runId: "r", kickedAt: "t" };
     for (const bad of ["../escape", "/abs", "with/slash", "with\\back", "..", ".", ""]) {
       await expect(writeKick(bad, p)).rejects.toThrow(/invalid plugin name/);
-      await expect(readKick(bad)).rejects.toThrow(/invalid plugin name/);
       await expect(clearKick(bad)).rejects.toThrow(/invalid plugin name/);
     }
   });
@@ -95,39 +68,11 @@ describe("kicks", () => {
 
   it("signalDaemon is a no-op when pid file points at a dead pid", async () => {
     const { signalDaemon } = await import("./kicks");
-    // Pid 1 is `init` and we can't signal it from a test, so use a clearly
-    // dead pid: spawn no-op + reap, then use that pid. Simpler: write a
-    // non-existent very high pid; `process.kill` will return ESRCH which
-    // signalDaemon swallows.
     writeFileSync(
       join(home, "dither.pid"),
       JSON.stringify({ pid: 2147483646, token: "x", startedAt: "t" }),
     );
     expect(() => signalDaemon()).not.toThrow();
-  });
-
-  it("scanKicks fires each pending kick and unlinks the file", async () => {
-    const { writeKick, scanKicks, listKicks } = await import("./kicks");
-    await writeKick("a", { runId: "r-a", kickedAt: "t1" });
-    await writeKick("b", { runId: "r-b", kickedAt: "t2", overrides: { net: ["x.com"] } });
-    const fired: Array<{ name: string; runId: string }> = [];
-    await scanKicks((name, payload) => {
-      fired.push({ name, runId: payload.runId });
-    });
-    expect(fired).toEqual([
-      { name: "a", runId: "r-a" },
-      { name: "b", runId: "r-b" },
-    ]);
-    expect(await listKicks()).toEqual([]);
-  });
-
-  it("scanKicks is a no-op when no kicks exist", async () => {
-    const { scanKicks } = await import("./kicks");
-    let called = 0;
-    await scanKicks(() => {
-      called += 1;
-    });
-    expect(called).toBe(0);
   });
 
   it("signalDaemon sends SIGUSR1 to a live pid", async () => {
@@ -143,11 +88,80 @@ describe("kicks", () => {
         JSON.stringify({ pid: process.pid, token: "x", startedAt: "t" }),
       );
       signalDaemon();
-      // SIGUSR1 delivery is async — wait briefly for the handler to run.
       await new Promise((r) => setTimeout(r, 20));
       expect(received).toBe(true);
     } finally {
       process.off("SIGUSR1", onSig);
+    }
+  });
+
+  it("kickSource.drain fires each pending kick and clears the file", async () => {
+    const { writeKick, kickSource, hasKick } = await import("./kicks");
+    await writeKick("a", { runId: "r-a", kickedAt: "t1" });
+    await writeKick("b", { runId: "r-b", kickedAt: "t2", overrides: { net: ["x.com"] } });
+    const fired: Array<{ name: string; runId: string }> = [];
+    const src = kickSource(async (name, payload) => {
+      fired.push({ name, runId: payload.runId });
+      return "done";
+    });
+    await src.drain();
+    expect(fired).toEqual([
+      { name: "a", runId: "r-a" },
+      { name: "b", runId: "r-b" },
+    ]);
+    expect(hasKick("a")).toBe(false);
+    expect(hasKick("b")).toBe(false);
+  });
+
+  it("kickSource.drain is a no-op when no kicks exist", async () => {
+    const { kickSource } = await import("./kicks");
+    let called = 0;
+    const src = kickSource(async () => {
+      called += 1;
+      return "done";
+    });
+    await src.drain();
+    expect(called).toBe(0);
+  });
+
+  it("kickSource.recover re-queues an inflight kick left by a crashed daemon and fires it", async () => {
+    const { kickSource } = await import("./kicks");
+    // Plant an orphan inflight kick (claimed but never acked).
+    mkdirSync(join(home, "kicks", "inflight"), { recursive: true });
+    writeFileSync(
+      join(home, "kicks", "inflight", "ghost.json"),
+      `${JSON.stringify({ runId: "r-ghost", kickedAt: "t" })}\n`,
+    );
+    const fired: string[] = [];
+    const src = kickSource(async (name) => {
+      fired.push(name);
+      return "done";
+    });
+    await src.recover(() => undefined);
+    expect(fired).toEqual(["ghost"]);
+    expect(existsSync(join(home, "kicks", "inflight", "ghost.json"))).toBe(false);
+    expect(existsSync(join(home, "kicks", "ghost.json"))).toBe(false);
+  });
+
+  it("kickSource start/stop registers and removes a SIGUSR1 drain", async () => {
+    const { writeKick, kickSource, hasKick } = await import("./kicks");
+    const fired: string[] = [];
+    const src = kickSource(async (name) => {
+      fired.push(name);
+      return "done";
+    });
+    src.start(() => undefined);
+    try {
+      await writeKick("sig", { runId: "r-sig", kickedAt: "t" });
+      process.kill(process.pid, "SIGUSR1");
+      // SIGUSR1 + async drain — poll until the kick clears.
+      const deadline = Date.now() + 1000;
+      while (Date.now() < deadline && hasKick("sig")) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      expect(fired).toEqual(["sig"]);
+    } finally {
+      src.stop();
     }
   });
 });

@@ -31,13 +31,25 @@ proving the abstraction end-to-end. Define the `Source` interface and make kicks
 the first `Source`.
 
 **Acceptance:**
-- [ ] `Queue<T>` module: enqueue is atomic+durable; drain claims, runs, acks on
+- [x] `Queue<T>` module: enqueue is atomic+durable; drain claims, runs, acks on
       success, restores on failure; recover re-queues unacked at boot.
-- [ ] Kicks flow through `Queue` (`plugin run` still works end-to-end; a kick
+- [x] Kicks flow through `Queue` (`plugin run` still works end-to-end; a kick
       left on disk is drained on boot).
-- [ ] `Source` interface defined; kicks implemented as a `Source`.
-- [ ] Tests: real-impl queue round-trip (enqueue→drain→ack), restore-on-failure,
+- [x] `Source` interface defined; kicks implemented as a `Source`.
+- [x] Tests: real-impl queue round-trip (enqueue→drain→ack), restore-on-failure,
       recover-on-boot. Existing kick/plugin-run tests pass.
+
+**Review notes (carry to Phase 6):**
+- `Source.emit` is **vestigial for kicks** — the CLI writes the kick file before
+  the daemon hears about it, so the kick source only *drains*, never *emits*.
+  Watch whether `emit` stays the right shape once watcher/scheduler (live
+  producers that observe-then-enqueue) land in P3/P4.
+- `kickSource` returns `Source & { drain() }` — a test seam. Fold into the
+  interface only if every source needs it; else it's a kick-specific wart.
+- Kick `Outcome` is always `"done"` (`fireWithSuppress` swallows run errors), so
+  kick at-least-once rests on crash-before-ack + boot recover, not a `"retry"`
+  signal. The `retry`/`log` path is exercised by inbox in P5.
+- One inline `else` in `queue.ts:168` slips the no-`else` rule — tidy in P6.
 
 ---
 
@@ -134,4 +146,4 @@ all phases complete.
 
 | commit | summary |
 |--|--|
-|  |  |
+| P1 | `Queue<T>` deep module (latest/log shapes, claim/ack/restore/recover) + `Source` interface; kicks migrated as first Source; `plugin run` intact. Typecheck clean, 38 pass + daemon suite clean (1 pre-existing deno fail) |

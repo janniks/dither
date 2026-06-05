@@ -13,7 +13,8 @@ import { LoopDetector, type HaltRecord } from "./loop-detector";
 import { inboxHasItems, recoverOrphanInflight } from "./inbox";
 import { Refirer } from "./refirer";
 import { readRefire } from "./refire";
-import { scanKicks, type KickPayload } from "./kicks";
+import { kickSource, type KickPayload } from "./kicks";
+import type { Outcome } from "./queue";
 import { acquire as acquireLock, release as releaseLock, isPluginLock } from "./locks";
 import { clearInflightJobs } from "./daemon-jobs";
 import { superviseReconcile } from "./reconcile-supervisor";
@@ -136,18 +137,23 @@ async function fireWithSuppress(
   }
 }
 
-function fireKick(
+async function fireKick(
   watcher: Watcher,
   refirer: Refirer,
   detector: LoopDetector,
   name: string,
   payload: KickPayload,
   notify: () => void,
-): void {
-  void fireWithSuppress(watcher, refirer, detector, name, "manual", notify, {
+): Promise<Outcome> {
+  // `fireWithSuppress` swallows its own run errors (logs + returns), so a
+  // claimed kick always acks once attempted. The durability that matters is
+  // crash-before-attempt: the kick stays pending (or restores from inflight
+  // on boot recover) and re-fires next drain.
+  await fireWithSuppress(watcher, refirer, detector, name, "manual", notify, {
     runId: payload.runId,
     ...(payload.overrides ? { overrides: payload.overrides } : {}),
   });
+  return "done";
 }
 
 async function writePidFile(state: DaemonState): Promise<void> {
@@ -276,6 +282,12 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   writeStatus = (): void => {
     void writeStatusSnapshot(state, scheduler, watcher, detector);
   };
+  // Kicks: the first fire source migrated onto the durable `Queue`. `start`
+  // wires SIGUSR1 → drain; `recover` re-queues an inflight kick left by a
+  // crashed daemon then drains everything pending on disk.
+  const kicks = kickSource((name, payload) =>
+    fireKick(watcher, refirer, detector, name, payload, writeStatus),
+  );
   // reconcile() loads config + grants fresh on every call, so SIGHUP
   // (`dither daemon reload`) is the supported way to pick up a library
   // change after `dither init --force`. We do NOT auto-reload on config
@@ -325,12 +337,11 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   await refirer.reload().catch((err) => {
     console.error(`[daemon] refire reload failed: ${err instanceof Error ? err.message : String(err)}`);
   });
-  // Drain kicks that arrived while the daemon was down. Same robustness
-  // pattern as recoverOrphanInflight + refirer.reload.
-  await scanKicks((name, payload) =>
-    fireKick(watcher, refirer, detector, name, payload, writeStatus),
-  ).catch((err) => {
-    console.error(`[daemon] kick drain failed: ${err instanceof Error ? err.message : String(err)}`);
+  // Recover + drain kicks that arrived (or were left inflight) while the
+  // daemon was down. Same robustness pattern as recoverOrphanInflight +
+  // refirer.reload — now expressed as the kick Source's boot recovery.
+  await Promise.resolve(kicks.recover(() => undefined)).catch((err) => {
+    console.error(`[daemon] kick recover failed: ${err instanceof Error ? err.message : String(err)}`);
   });
   await writeStatusSnapshot(state, scheduler, watcher, detector);
 
@@ -431,24 +442,17 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
     fireQmdReconcile();
   }
 
-  function onUsr1(): void {
-    // POSIX coalesces signals — every kick on disk gets processed per scan.
-    void scanKicks((name, payload) =>
-      fireKick(watcher, refirer, detector, name, payload, writeStatus),
-    ).catch((err) => {
-      console.error(`[daemon] kick scan failed: ${err instanceof Error ? err.message : String(err)}`);
-    });
-  }
-
   process.on("SIGTERM", onTerm);
   process.on("SIGINT", onTerm);
   process.on("SIGHUP", onHup);
-  process.on("SIGUSR1", onUsr1);
+  // Kick Source owns SIGUSR1 → drain. POSIX coalesces signals; every kick on
+  // disk gets processed per drain.
+  kicks.start(() => undefined);
 
   await exited;
 
   process.off("SIGTERM", onTerm);
   process.off("SIGINT", onTerm);
   process.off("SIGHUP", onHup);
-  process.off("SIGUSR1", onUsr1);
+  kicks.stop();
 }
