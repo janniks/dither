@@ -1,4 +1,6 @@
 import { Cron } from "croner";
+import type { Emit, Source } from "./queue";
+import { advanceLastRun, readLastRun } from "./schedule-state";
 import { parseSchedule } from "./schedule-parser";
 
 /**
@@ -10,6 +12,15 @@ import { parseSchedule } from "./schedule-parser";
  * Each fire calls back into `onFire(name)`. The scheduler does not import
  * `runPlugin` directly — that keeps a tight unit-testable boundary and lets
  * the daemon decide how to wire the actual run (e.g. with shutdown gating).
+ *
+ * Durability across the down-window: croner is in-memory, so a tick due while
+ * the daemon was down would be silently dropped. As a `Source`, the scheduler
+ * persists a per-plugin `lastRun` (advanced on every live fire) and
+ * `recover(emit)` asks croner whether each pattern would have fired between
+ * `lastRun` and now — if so it fires once (anacron-style; N missed ticks
+ * collapse to one). A fresh schedule (empty `lastRun`) does NOT catch-up-fire;
+ * it just initializes `lastRun = now` so a brand-new install doesn't
+ * immediately fire everything.
  */
 
 export interface ScheduleEntry {
@@ -24,7 +35,7 @@ export interface SchedulerStats {
   entries: Array<{ name: string; pattern: string; nextRun: string | null }>;
 }
 
-export class Scheduler {
+export class Scheduler implements Source {
   private jobs = new Map<string, Cron>();
 
   constructor(private readonly onFire: FireCallback) {}
@@ -46,8 +57,14 @@ export class Scheduler {
       }
 
       try {
+        // Live tick: record lastRun, then fire. Persisting first means a
+        // crash mid-fire still advances the watermark, so boot recover won't
+        // double-fire a tick we already started (at-least-once stays at-least
+        // — the run itself is transactional, so a rare redo is safe).
         const job = new Cron(pattern, () => {
-          void this.onFire(entry.name);
+          void advanceLastRun(entry.name, new Date().toISOString())
+            .catch(() => undefined)
+            .finally(() => void this.onFire(entry.name));
         });
         const prior = this.jobs.get(entry.name);
         if (prior) prior.stop();
@@ -58,6 +75,37 @@ export class Scheduler {
           `scheduler: skipping '${entry.name}' — invalid cron '${pattern}': ${message}`,
         );
       }
+    }
+  }
+
+  /**
+   * `Source.start` — the live producer is wired by `set()` (cron tick →
+   * lastRun advance + onFire), called from the daemon's reconcile on boot
+   * and SIGHUP. `emit` is unused here, like the watcher: the cron tick fires
+   * directly through `onFire`. Kept to satisfy the `Source` shape uniformly.
+   */
+  start(_emit: Emit): void {}
+
+  /**
+   * `Source.recover` — anacron boot catch-up. For each active schedule, ask
+   * croner whether the pattern would have fired strictly after `lastRun` and
+   * at/before now; if so, `emit(name)` exactly once (N missed ticks collapse
+   * to one) and advance `lastRun = now`. A fresh schedule (empty `lastRun`)
+   * never catch-up-fires — it just seeds `lastRun = now`. Requires `set()` to
+   * have run first (the daemon's reconcile does this before recover).
+   */
+  async recover(emit: Emit): Promise<void> {
+    const now = new Date();
+    for (const [name, job] of this.jobs) {
+      const last = await readLastRun(name);
+      if (!last) {
+        await advanceLastRun(name, now.toISOString());
+        continue;
+      }
+      const due = job.nextRun(new Date(last));
+      if (!due || due > now) continue;
+      await emit(name);
+      await advanceLastRun(name, now.toISOString());
     }
   }
 

@@ -1,5 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Scheduler } from "./scheduler";
+import { advanceLastRun, readLastRun } from "./schedule-state";
 
 describe("Scheduler", () => {
   it("fires every-1s schedules at least twice within 2.5s", async () => {
@@ -74,5 +78,81 @@ describe("Scheduler", () => {
     await new Promise((r) => setTimeout(r, 1500));
     sched.stop();
     expect(fires).toEqual([]);
+  }, 10_000);
+});
+
+describe("Scheduler durability (lastRun + anacron recover)", () => {
+  let home: string;
+  let prev: string | undefined;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "dither-sched-test-"));
+    prev = process.env.DITHER_DIR;
+    process.env.DITHER_DIR = home;
+  });
+
+  afterEach(() => {
+    if (prev === undefined) delete process.env.DITHER_DIR;
+    else process.env.DITHER_DIR = prev;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  const iso = (ms: number) => new Date(Date.now() - ms).toISOString();
+
+  it("recover fires once when a daily tick came due during downtime", async () => {
+    await advanceLastRun("daily", iso(2 * 24 * 60 * 60 * 1000)); // 2 days ago
+    const emits: string[] = [];
+    const sched = new Scheduler(() => {});
+    sched.set([{ name: "daily", schedule: "0 0 * * *" }]);
+    await sched.recover((name) => void emits.push(name));
+    sched.stop();
+    expect(emits).toEqual(["daily"]);
+    // lastRun advanced to ~now → no second catch-up
+    const emits2: string[] = [];
+    sched.set([{ name: "daily", schedule: "0 0 * * *" }]);
+    await sched.recover((name) => void emits2.push(name));
+    sched.stop();
+    expect(emits2).toEqual([]);
+  });
+
+  it("recover does not fire when no tick was due", async () => {
+    // lastRun 1 hour ago, pattern fires monthly on the 1st → not due
+    await advanceLastRun("monthly", iso(60 * 60 * 1000));
+    const emits: string[] = [];
+    const sched = new Scheduler(() => {});
+    sched.set([{ name: "monthly", schedule: "0 0 1 * *" }]);
+    await sched.recover((name) => void emits.push(name));
+    sched.stop();
+    expect(emits).toEqual([]);
+  });
+
+  it("recover collapses N missed ticks into a single fire", async () => {
+    // hourly pattern, lastRun 5 hours ago → 5 missed ticks, still one emit
+    await advanceLastRun("hourly", iso(5 * 60 * 60 * 1000));
+    const emits: string[] = [];
+    const sched = new Scheduler(() => {});
+    sched.set([{ name: "hourly", schedule: "0 * * * *" }]);
+    await sched.recover((name) => void emits.push(name));
+    sched.stop();
+    expect(emits).toEqual(["hourly"]);
+  });
+
+  it("a fresh schedule (empty lastRun) does not catch-up-fire, just seeds lastRun", async () => {
+    const emits: string[] = [];
+    const sched = new Scheduler(() => {});
+    sched.set([{ name: "fresh", schedule: "0 0 * * *" }]);
+    expect(await readLastRun("fresh")).toBe("");
+    await sched.recover((name) => void emits.push(name));
+    sched.stop();
+    expect(emits).toEqual([]);
+    expect(await readLastRun("fresh")).not.toBe("");
+  });
+
+  it("a live fire advances lastRun", async () => {
+    const sched = new Scheduler(() => {});
+    sched.set([{ name: "ticker", schedule: "every 1s" }]);
+    await new Promise((r) => setTimeout(r, 1500));
+    sched.stop();
+    expect(await readLastRun("ticker")).not.toBe("");
   }, 10_000);
 });

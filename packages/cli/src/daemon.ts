@@ -271,6 +271,9 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   const fireWatch = (name: string): void => {
     void fireWithSuppress(watcher, refirer, detector, name, "watch", writeStatus);
   };
+  const fireScheduled = (name: string): void => {
+    void fireWithSuppress(watcher, refirer, detector, name, "scheduled", writeStatus);
+  };
   watcher = new Watcher((name: string) =>
     fireWithSuppress(watcher, refirer, detector, name, "watch", writeStatus),
   );
@@ -352,6 +355,13 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   watcher.start(fireWatch);
   await Promise.resolve(watcher.recover(fireWatch)).catch((err) => {
     console.error(`[daemon] watch recover failed: ${err instanceof Error ? err.message : String(err)}`);
+  });
+  // Scheduler boot catch-up: anacron — if a scheduled tick came due while the
+  // daemon was down (per-plugin `lastRun` vs. cron pattern), fire it once. The
+  // live timers were set() by reconcile() above; start() is a no-op.
+  scheduler.start(fireScheduled);
+  await Promise.resolve(scheduler.recover(fireScheduled)).catch((err) => {
+    console.error(`[daemon] schedule recover failed: ${err instanceof Error ? err.message : String(err)}`);
   });
   await writeStatusSnapshot(state, scheduler, watcher, detector);
 

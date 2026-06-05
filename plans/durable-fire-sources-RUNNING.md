@@ -97,10 +97,10 @@ Make the scheduler a `Source`: persist `lastRun` per schedule; boot `recover`
 does anacron-style catch-up (a missed tick fires once; N missed → 1).
 
 **Acceptance:**
-- [ ] `lastRun` persisted per schedule; updated on each fire.
-- [ ] `recover` fires once if a run was due during downtime (collapses misses).
-- [ ] Live cron tick enqueues via `emit`.
-- [ ] Test: simulate downtime spanning a due tick → exactly one catch-up fire.
+- [x] `lastRun` persisted per schedule; updated on each fire.
+- [x] `recover` fires once if a run was due during downtime (collapses misses).
+- [x] Live cron tick enqueues via `emit`.
+- [x] Test: simulate downtime spanning a due tick → exactly one catch-up fire.
 
 ---
 
@@ -149,3 +149,4 @@ all phases complete.
 | P1 | `Queue<T>` deep module (latest/log shapes, claim/ack/restore/recover) + `Source` interface; kicks migrated as first Source; `plugin run` intact. Typecheck clean, 38 pass + daemon suite clean (1 pre-existing deno fail) |
 | P2 | Plugin run = transaction: state staged in `runs/<runId>/state.json` (seeded from committed), `DITHER_STATE_FILE` repointed, write-grant tightened to `runDir` only, atomic tmp+rename commit alongside `promote` on clean exit; rollback via existing `rm -rf` finally. Injectable `spawn` seam threads through to `supervise`. Typecheck clean; plugin-run/supervisor/promotion 28 pass; full suite 43 pre-existing deno fails unchanged (+3 new tests, 0 new fails) |
 | P3 | Watcher is a `Source`: `start`/`recover`/`stop` + kept `set`/`stats`/`suppressOnce`. New `watch-state.ts` persists a per-(plugin,collection) mtime watermark (`<home>/watch-state/<plugin>__<safe-collection>.json`), advanced on every live emit (best-effort) and in `recover`. `recover(emit)` walks each watched collection (`walkMd`), enqueues `mtime > watermark` honoring the glob, advances to max mtime, nudges a fire. Daemon boot calls `watcher.start(fire)` + `watcher.recover(fire)` after reconcile, uniform with kicks; inbox stays the store (Queue migration deferred to P5). Typecheck clean; watcher/inbox/watch-state 51 pass (+7 new tests), only the pre-existing deno `daemon.test.ts` fire-within-3s fail remains (0 new fails) |
+| P4 | Scheduler is a `Source`: `start`/`recover`/`stop` + kept `set`/`stats`. New `schedule-state.ts` persists a per-plugin `lastRun` (`<home>/schedule-state/<plugin>.json`), advanced inside the croner callback (persist-then-fire) and in `recover`. `recover(emit)` is anacron catch-up: per active job `Cron.nextRun(lastRun)` — a scheduled time `≤ now` means a tick was missed → `emit(name)` once (N misses collapse to one), then `lastRun = now`. Empty `lastRun` (fresh install) seeds `lastRun = now`, no fire. Daemon boot calls `scheduler.start(fireScheduled)` + `scheduler.recover(fireScheduled)` through the `"scheduled"` `fireWithSuppress` choke point, uniform with watcher/kicks; `set()` reconcile path untouched. Typecheck clean; scheduler/schedule-state 13 pass (+8 new tests), only the pre-existing deno `daemon.test.ts` fire-within-3s fail remains (0 new fails) |

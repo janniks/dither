@@ -109,3 +109,12 @@ export function watchStatePath(key: string): string {
 export function watchStateDir(): string {
   return join(resolveHome(), "watch-state");
 }
+
+/** Per-plugin `lastRun` for the scheduler's anacron boot catch-up. */
+export function scheduleStatePath(plugin: string): string {
+  return join(resolveHome(), "schedule-state", `${plugin}.json`);
+}
+
+export function scheduleStateDir(): string {
+  return join(resolveHome(), "schedule-state");
+}
