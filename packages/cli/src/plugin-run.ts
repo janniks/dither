@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdir, readFile, writeFile, copyFile, rename, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,7 @@ import { ensureDeno } from "./deno-bootstrap";
 import { claimInbox, clearInflight, restoreInflight, type WatchTarget } from "./inbox";
 import { clearRefire, decideRunOutcome, readRefire, writeRefire } from "./refire";
 import { supervise } from "./supervisor";
+import type { spawn as nodeSpawn } from "node:child_process";
 import { promote } from "./promotion";
 import { resolveWatchPath } from "./watch-paths";
 
@@ -35,6 +36,8 @@ export interface RunOptions {
   /** Pre-supplied runId. The kick path uses this so the CLI's tail can
    *  follow the journal before the daemon opens it. */
   runId?: string;
+  /** Injectable spawn for tests. Defaults to node:child_process spawn. */
+  spawn?: typeof nodeSpawn;
 }
 
 export interface RunResult {
@@ -196,9 +199,17 @@ async function runPluginLocked(
   await mkdir(runDir, { recursive: true });
 
   try {
+    // State is transactional: the plugin reads/writes a run-local copy,
+    // which only commits to the persistent path on a clean finish (next
+    // to promotion). The committed state seeds the run-local copy; if no
+    // committed state exists the run-local file starts absent (the SDK's
+    // readState returns its initial). On interruption the run dir is
+    // rm-rf'd, so the mutated copy vanishes and committed state is untouched.
     const stateDir = join(pluginDir, "state");
     await mkdir(stateDir, { recursive: true });
-    const stateFile = join(stateDir, "state.json");
+    const committedState = join(stateDir, "state.json");
+    const stateFile = join(runDir, "state.json");
+    await copyFile(committedState, stateFile).catch(() => undefined);
 
     // Watch fires claim from the inbox; manual/scheduled use whatever the
     // caller passes (typically nothing). The inbox claim is what makes
@@ -257,7 +268,9 @@ async function runPluginLocked(
       // outside the watch pipeline) but only when no watch roots exist.
       ...(watchRoots.length > 0 ? [] : targets.map((t) => t.path)),
     ]);
-    const allowWrite = denoPermissionList("write", [stateDir, runDir]);
+    // Write grant is runDir only — the plugin writes its state to the
+    // run-local copy (under runDir), never the persistent state/ path.
+    const allowWrite = denoPermissionList("write", [runDir]);
     const allowEnv = DITHER_ENV_VARS.join(",");
 
     const denoArgs = [
@@ -292,8 +305,16 @@ async function runPluginLocked(
     // `supervisor.ts`. The supervisor returns the exit code (no throw);
     // we translate non-zero into the same FDA-tagged error the old
     // inline path raised.
-    const denoPath = await ensureDeno();
-    const sup = await supervise({ denoPath, denoArgs, env, journal });
+    // An injected spawn (tests) drives the child directly, so the real
+    // deno binary is never invoked — skip the bootstrap fetch.
+    const denoPath = opts.spawn ? "deno" : await ensureDeno();
+    const sup = await supervise({
+      denoPath,
+      denoArgs,
+      env,
+      journal,
+      ...(opts.spawn ? { spawn: opts.spawn } : {}),
+    });
     if (sup.exitCode !== 0) {
       const message = sup.fdaPath
         ? formatFdaError(sup.fdaPath, denoPath)
@@ -311,6 +332,14 @@ async function runPluginLocked(
       grants: grantCollections,
       journal,
     });
+    // Commit run-local state alongside promotion, under the same
+    // clean-exit condition. tmp+rename keeps it atomic against a reader.
+    // Only commit when the plugin actually wrote state this run.
+    if (existsSync(stateFile)) {
+      const tmp = join(stateDir, `.commit.${runId}.tmp`);
+      await copyFile(stateFile, tmp);
+      await rename(tmp, committedState);
+    }
     return { added: result.added, reschedule: sup.lastReschedule };
   } finally {
     // Always clean up the run dir — failed runs would otherwise leave

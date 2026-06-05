@@ -63,11 +63,11 @@ alongside promotion on clean finish. Interrupted run → discarded → state rol
 back with output.
 
 **Acceptance:**
-- [ ] State seeded into the run dir; `DITHER_STATE_FILE` points there; sandbox
+- [x] State seeded into the run dir; `DITHER_STATE_FILE` points there; sandbox
       write-grant no longer includes the persistent `state/`.
-- [ ] Clean finish commits state atomically (tmp+rename) with promotion.
-- [ ] Interrupted run leaves the committed state unchanged and nothing promoted.
-- [ ] Tests: committed-then-visible on success; unchanged on interruption (real
+- [x] Clean finish commits state atomically (tmp+rename) with promotion.
+- [x] Interrupted run leaves the committed state unchanged and nothing promoted.
+- [x] Tests: committed-then-visible on success; unchanged on interruption (real
       impl, no mocks).
 
 ---
@@ -147,3 +147,4 @@ all phases complete.
 | commit | summary |
 |--|--|
 | P1 | `Queue<T>` deep module (latest/log shapes, claim/ack/restore/recover) + `Source` interface; kicks migrated as first Source; `plugin run` intact. Typecheck clean, 38 pass + daemon suite clean (1 pre-existing deno fail) |
+| P2 | Plugin run = transaction: state staged in `runs/<runId>/state.json` (seeded from committed), `DITHER_STATE_FILE` repointed, write-grant tightened to `runDir` only, atomic tmp+rename commit alongside `promote` on clean exit; rollback via existing `rm -rf` finally. Injectable `spawn` seam threads through to `supervise`. Typecheck clean; plugin-run/supervisor/promotion 28 pass; full suite 43 pre-existing deno fails unchanged (+3 new tests, 0 new fails) |
