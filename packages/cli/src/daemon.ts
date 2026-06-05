@@ -167,7 +167,7 @@ async function recoverAll(
   sources: ReadonlyArray<{ name: string; source: Source; emit: Emit }>,
 ): Promise<void> {
   for (const { name, source, emit } of sources) {
-    await Promise.resolve(source.start(emit)).catch((err) => {
+    await Promise.resolve(source.start()).catch((err) => {
       console.error(`[daemon] ${name} start failed: ${err instanceof Error ? err.message : String(err)}`);
     });
     await Promise.resolve(source.recover(emit)).catch((err) => {

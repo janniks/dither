@@ -111,13 +111,12 @@ export class Watcher implements Source {
   }
 
   /**
-   * `Source.start` — the live producer is wired by `set()` (chokidar →
-   * inbox append + watermark advance), called from the daemon's reconcile
-   * on boot and SIGHUP. `emit` is vestigial here, like kicks: the watcher's
-   * durable emit *is* the inbox append, so there's nothing to bind. Kept to
-   * satisfy the `Source` shape uniformly with the other fire sources.
+   * `Source.start` — no-op. The live producer is wired by `set()` (chokidar →
+   * inbox append + watermark advance), called from the daemon's reconcile on
+   * boot and SIGHUP, and fires through the constructor `onFire`. Nothing to
+   * bind here; kept to satisfy the `Source` shape uniformly.
    */
-  start(_emit: Emit): void {}
+  start(): void {}
 
   /**
    * `Source.recover` — boot catch-up. For each active watch entry, walk its

@@ -243,12 +243,14 @@ export class Queue<T> {
  * Queue, never here — sources stay small and distinct (cron, chokidar, kick
  * signal all look different; only the Queue is shared).
  *
- * `emit` enqueues + (for live sources) nudges the drain. Each source decides
- * what to emit; the daemon owns the drain.
+ * `start` just wires the live producer; every source's producer fires through
+ * its own closure (the SIGUSR1 drain, the chokidar/cron callback, the refire
+ * timer), so `start` takes no `emit` — only `recover` re-derives + emits owed
+ * work. Each source decides what to emit; the daemon owns the drain.
  */
 export interface Source {
-  /** Wire the live producer. `emit` enqueues an item for `name`. */
-  start(emit: Emit): void | Promise<void>;
+  /** Wire the live producer (its own closure does the firing). */
+  start(): void | Promise<void>;
   /** Boot: re-derive owed work from durable state and `emit` it. */
   recover(emit: Emit): void | Promise<void>;
   /** Tear down the live producer. */

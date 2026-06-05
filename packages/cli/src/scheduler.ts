@@ -79,12 +79,12 @@ export class Scheduler implements Source {
   }
 
   /**
-   * `Source.start` — the live producer is wired by `set()` (cron tick →
-   * lastRun advance + onFire), called from the daemon's reconcile on boot
-   * and SIGHUP. `emit` is unused here, like the watcher: the cron tick fires
-   * directly through `onFire`. Kept to satisfy the `Source` shape uniformly.
+   * `Source.start` — no-op. The live producer is wired by `set()` (cron tick →
+   * lastRun advance + onFire), called from the daemon's reconcile on boot and
+   * SIGHUP; the cron tick fires directly through `onFire`. Nothing to bind
+   * here; kept to satisfy the `Source` shape uniformly.
    */
-  start(_emit: Emit): void {}
+  start(): void {}
 
   /**
    * `Source.recover` — anacron boot catch-up. For each active schedule, ask

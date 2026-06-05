@@ -74,7 +74,7 @@ describe("Refirer as Source", () => {
     writeRow("due", { fireAt: new Date(Date.now() + 1000).toISOString(), retryCount: 0, suspended: false });
     writeRow("dead", { fireAt: new Date(Date.now() + 1000).toISOString(), retryCount: 3, suspended: true });
 
-    refirer.start(() => undefined);
+    refirer.start();
     expect(refirer.stats().count).toBe(0); // start does not arm.
 
     await refirer.recover(() => undefined);

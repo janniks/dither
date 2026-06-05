@@ -83,6 +83,41 @@ Inflight is **not** a source — it's the Queue's own recovery.
   (one run per plugin); different plugins run concurrently. No global concurrency
   cap (deferred — [[daemon-restart-followups]]).
 
+## Review (P6)
+
+The deliberate "try it, then look at how it landed" pass. Verdict: **deep
+module landed**; the only interface correction needed was dropping the
+vestigial `start` emit.
+
+- **The Queue is a genuine deep module.** Small surface
+  (`enqueue`/`claim`/`ack`/`restore`/`drain`/`recover`/`recoverAll`/
+  `pendingNames`), all durability hidden behind it (atomic tmp+rename, the two
+  storage shapes, dedup, the inflight lease). Five-plus consumers share the one
+  implementation: kicks, the inbox, and the per-source recover paths. `inbox.ts`
+  collapsed 169 → 74 lines (a thin wrapper over a single `Queue<WatchTarget>`),
+  and daemon boot reduced to one `recoverAll` loop over the source list,
+  replacing five bespoke recovery call sites.
+- **`Source` is a thin, honest contract.** After review, `start`'s `emit`
+  parameter was dropped — kicks, watcher, scheduler, and refirer all ignore it;
+  each fires through its own closure (the SIGUSR1 drain, the chokidar/cron
+  callback, the refire timer). Only `recover(emit)` actually emits. The contract
+  is now `start()` + `recover(emit)` + `stop()`, describing exactly what's used.
+  Sources stayed distinct adapters — no cron/chokidar/kick mega-union — so depth
+  lives in the Queue, as intended.
+- **Deliberate divergences kept** (decisions, not accidents):
+  - `QueueConfig.prefer` (latest-mtime dedup tie-break) and
+    `QueueConfig.inflightDir` (the inbox's historical `<home>/inflight/`
+    layout) exist solely for the inbox's second storage shape. They're the
+    minimum needed and documented at the config; not removed.
+  - **SIGHUP stays the lighter `reconcile + refire reload`**, not the full
+    `recoverAll`. Routing reload through `recoverAll` would re-fire owed work
+    (re-drain kicks, re-scan the watch watermark, re-run the schedule anacron
+    catch-up) on every config reload. Boot is the single uniform `recover all`;
+    reload is intentionally scoped.
+  - `kickSource` returns `Source & { drain() }`; `drain()` is a **test-only
+    seam** (the daemon drives kicks through `start`/`recover`/`stop`), commented
+    as such rather than promoted into the interface.
+
 ## Non-goals / deferred
 
 See [[daemon-restart-followups]]: live lease + sweep, global concurrency cap,

@@ -150,7 +150,7 @@ describe("kicks", () => {
       fired.push(name);
       return "done";
     });
-    src.start(() => undefined);
+    src.start();
     try {
       await writeKick("sig", { runId: "r-sig", kickedAt: "t" });
       process.kill(process.pid, "SIGUSR1");

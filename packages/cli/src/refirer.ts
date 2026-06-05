@@ -38,7 +38,7 @@ export class Refirer implements Source {
    * (`fireWithSuppress` reads the row a finishing plugin wrote). Kept to
    * satisfy the `Source` shape, like Scheduler/Watcher.
    */
-  start(_emit: Emit): void {}
+  start(): void {}
 
   /** `Source.recover` — boot/SIGHUP re-arm of the persisted rows. */
   async recover(_emit: Emit): Promise<void> {
