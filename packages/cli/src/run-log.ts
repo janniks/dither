@@ -48,6 +48,9 @@ export type EventKind =
   | "job-skipped"
   | "model-download-progress"
   | "stale-detected"
+  | "daemon-restarting"
+  | "daemon-restarted"
+  | "daemon-restart-failed"
   // run-scope (plugin execution)
   | "progress"
   | "stderr"

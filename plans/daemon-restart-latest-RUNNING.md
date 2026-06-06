@@ -65,10 +65,10 @@ On stale-detect, run the hand-off: stop sources, drain plugin children up to
 file to the successor). Successor boot replays the queue and does the work.
 
 **Acceptance:**
-- [ ] Stale + SIGUSR1 → successor spawned from the fresh bundle, old exits.
-- [ ] The triggering kick is handled by the **successor** (durable hand-off).
-- [ ] `RESTART_DRAIN_MS` is a separate, longer knob than `SHUTDOWN_GRACE_MS`.
-- [ ] Token PID ownership: old daemon does not clobber the successor's PID file.
+- [x] Stale + SIGUSR1 → successor spawned from the fresh bundle, old exits.
+- [x] The triggering kick is handled by the **successor** (durable hand-off).
+- [x] `RESTART_DRAIN_MS` is a separate, longer knob than `SHUTDOWN_GRACE_MS`.
+- [x] Token PID ownership: old daemon does not clobber the successor's PID file.
 
 ---
 
@@ -96,5 +96,6 @@ Append a row after each phase. Rename back when complete.
 
 | commit | summary |
 |--|--|
+| (pending) | P3: the hand-off. `handOff()` in `daemon.ts` (closure in `runDaemon`): set `handingOff` synchronously (re-entrancy + stop-dispatch gate) → `daemon-restarting` event → quiet (`scheduler/watcher/refirer/kicks.stop()`) → drain (SIGTERM `reconcileChild` immediately, wait plugin children up to new `RESTART_DRAIN_MS=300_000`, separate from `SHUTDOWN_GRACE_MS=30_000`) → spawn successor via the injectable `spawn` (detached `execPath argv1 daemon run`, `DITHER_DAEMON=1`, `unref`; guards missing argv1) → confirm by polling the PID file for a DIFFERENT identity (`pid!==process.pid \|\| token!==state.token`) that's alive (bounded by `HANDOFF_CONFIRM_MS=30_000`; NOT `waitForDaemonPid`, which returns our own pid) → exit via token-guarded `removePidFile` + `resolveExit` (leaves successor's PID file intact). **Choke-point gate:** `fireWithSuppress` returns `false` (no run) when `handingOff`; `fireKick` maps that to `"retry"` → Queue `restore` → kick stays pending for the successor's boot recover (kick-not-consumed invariant). Wired into both P3 SEAMs (`onHup`/`onUsr1`): `checkStale()` true → `void handOff()`, else normal reload/drain. New event kinds `daemon-restarting`/`daemon-restarted`/`daemon-restart-failed`. P4 rollback seam marked at confirm-timeout + missing-argv1 (logs `daemon-restart-failed`, falls through to graceful exit). Tests: 4 new (RESTART_DRAIN_MS≠SHUTDOWN_GRACE_MS, handingOff gates `fireWithSuppress`, kick-not-consumed retry→restore, full stale+SIGUSR1 drive with fake successor → restarting→restarted→exit + token guard). Typecheck clean; daemon/build-stamp/kicks 56 pass, only pre-existing no-`deno` `~3s` failure. |
 | (pending) | P2: staleness detection (detect + log, no restart). `isStale()` in `build-stamp.ts` — full-stamp compare (version/sha/builtAt) vs `dist/build-info.json`; `disk === null` (missing sidecar / un-bundled) → not stale, test-safe. `checkStale()` in `daemon.ts` funnels both external IPC entries: top of `onHup` (SIGHUP) + a daemon-level SIGUSR1 listener alongside the kick Source's own drain — on stale, `appendGlobal({ kind: "stale-detected", from, to })` once, no restart. P3 seam comments mark where the hand-off branches in. New `stale-detected` event kind. Tests: 5 new (3 `isStale`, 2 `checkStale`) pass, typecheck clean, zero new daemon failures (only pre-existing no-`deno` `~3s` fire). |
 | (pending) | P1: build-stamp infra — tsdown `define` bakes `__BUILD_STAMP__` (stamp computed once: pkg version + git short-sha + digits `builtAt`); `build:done` hook writes `dist/build-info.json` last via tmp+rename. `build-stamp.ts` accessor with test-safe fallback + `readBuildInfo`. Version single-sourced (`main.ts` + status snapshot via `buildVersion`/`stampString`). Stamp shown as `build:` in `daemon status`. Tests: 7 new pass, typecheck clean, zero new daemon failures. |

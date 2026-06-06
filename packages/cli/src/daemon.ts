@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
-import { mkdir, writeFile, readFile, readdir, unlink } from "node:fs/promises";
+import { mkdir, writeFile, readFile, readdir, unlink, open } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
-import { pidFilePath, statusSnapshotPath, locksDirPath, resolveHome } from "./home";
+import { join, dirname } from "node:path";
+import { pidFilePath, statusSnapshotPath, locksDirPath, daemonLogPath, resolveHome } from "./home";
 import { libraryRoot as resolveLibraryRoot } from "./config";
 import { appendGlobal, listRuns, truncateGlobal, type RunSummary } from "./run-log";
 import { listPlugins, type InstalledPluginInfo } from "./plugin-list";
@@ -15,7 +15,7 @@ import { Refirer } from "./refirer";
 import { readRefire } from "./refire";
 import { kickSource, type KickPayload } from "./kicks";
 import type { Outcome, Source, Emit } from "./queue";
-import { acquire as acquireLock, release as releaseLock, isPluginLock } from "./locks";
+import { acquire as acquireLock, release as releaseLock, isPluginLock, isPidAlive } from "./locks";
 import { clearInflightJobs } from "./daemon-jobs";
 import { superviseReconcile } from "./reconcile-supervisor";
 import { needsReindexPath } from "./markers";
@@ -31,6 +31,16 @@ import { spawn as nodeSpawn } from "node:child_process";
  */
 
 const SHUTDOWN_GRACE_MS = 30_000;
+
+// Drain budget for a version hand-off — separate, longer knob than the
+// interactive `SHUTDOWN_GRACE_MS` (Ctrl-C / `daemon stop`). A restart waits
+// up to this long for in-flight plugin children to finish before spawning the
+// successor; the reconcile child is SIGTERM'd immediately (durable in SQLite).
+const RESTART_DRAIN_MS = 300_000;
+
+// How long the old daemon polls the PID file for the successor's distinct
+// identity before giving up (P4 turns timeout into rollback).
+const HANDOFF_CONFIRM_MS = 30_000;
 
 export interface StatusSnapshot {
   pid: number;
@@ -53,11 +63,15 @@ export interface RunningPlugin {
   pid: number;
 }
 
-interface DaemonState {
+export interface DaemonState {
   token: string;
   startedAt: string;
   shuttingDown: boolean;
   reloadRequested: boolean;
+  // Set true synchronously at the very start of a version hand-off — both a
+  // re-entrancy guard (a second trigger is a no-op) and a "stop dispatching"
+  // gate (the choke point leaves the triggering kick for the successor).
+  handingOff: boolean;
   scheduleCount: number;
   watchCount: number;
 }
@@ -100,7 +114,11 @@ interface KickContext {
   overrides?: KickPayload["overrides"];
 }
 
-async function fireWithSuppress(
+// Exported for tests only — the daemon drives these through `runDaemon`'s
+// closures. Tests assert the hand-off gate (handingOff → no run) and the
+// kick-not-consumed mapping (gated kick → "retry" → restore).
+export async function fireWithSuppress(
+  state: DaemonState,
   watcher: Watcher,
   refirer: Refirer,
   detector: LoopDetector,
@@ -108,13 +126,18 @@ async function fireWithSuppress(
   trigger: "scheduled" | "watch" | "manual",
   notify: () => void,
   kick?: KickContext,
-): Promise<void> {
+): Promise<boolean> {
+  // Hand-off gate: once handing off we stop dispatching new runs. The trigger
+  // that arrives mid-hand-off must NOT be consumed — for a kick this surfaces
+  // as `false` (→ "retry" → restore → successor drains it). We return BEFORE
+  // acquiring the lock or running anything.
+  if (state.handingOff) return false;
   const source = `${trigger}:${name}`;
   if (detector.shouldHalt(source, name)) {
     detector.record(source, name, false);
     console.error(`[daemon] halting ${trigger} fire of '${name}' — loop threshold reached`);
     notify();
-    return;
+    return false;
   }
   detector.record(source, name, true);
 
@@ -126,7 +149,7 @@ async function fireWithSuppress(
   const lock = await acquireLock(name);
   if (!lock) {
     console.error(`[daemon] ${trigger} fire of '${name}' skipped — already running`);
-    return;
+    return true;
   }
   notify();
 
@@ -156,11 +179,13 @@ async function fireWithSuppress(
   // until the inbox is empty (or the next event lands a fresh debounce).
   if (trigger === "watch") {
     const stillPending = await inboxHasItems(name).catch(() => false);
-    if (stillPending) void fireWithSuppress(watcher, refirer, detector, name, "watch", notify);
+    if (stillPending) void fireWithSuppress(state, watcher, refirer, detector, name, "watch", notify);
   }
+  return true;
 }
 
-async function fireKick(
+export async function fireKick(
+  state: DaemonState,
   watcher: Watcher,
   refirer: Refirer,
   detector: LoopDetector,
@@ -168,15 +193,17 @@ async function fireKick(
   payload: KickPayload,
   notify: () => void,
 ): Promise<Outcome> {
-  // `fireWithSuppress` swallows its own run errors (logs + returns), so a
-  // claimed kick always acks once attempted. The durability that matters is
+  // `fireWithSuppress` swallows its own run errors (logs + returns true), so a
+  // claimed kick acks once attempted. The durability that matters is
   // crash-before-attempt: the kick stays pending (or restores from inflight
-  // on boot recover) and re-fires next drain.
-  await fireWithSuppress(watcher, refirer, detector, name, "manual", notify, {
+  // on boot recover) and re-fires next drain. The one case that returns
+  // `false` is a hand-off in progress — the run was NOT started, so we report
+  // `"retry"` and the Queue restores the kick to pending for the successor.
+  const ran = await fireWithSuppress(state, watcher, refirer, detector, name, "manual", notify, {
     runId: payload.runId,
     ...(payload.overrides ? { overrides: payload.overrides } : {}),
   });
-  return "done";
+  return ran ? "done" : "retry";
 }
 
 /**
@@ -217,6 +244,29 @@ async function removePidFile(state: DaemonState): Promise<void> {
     const code = (err as NodeJS.ErrnoException).code;
     if (code !== "ENOENT" && !(err instanceof SyntaxError)) throw err;
   }
+}
+
+/**
+ * Read the on-disk PID file's `{pid, token}` (the identity of whoever owns the
+ * daemon right now). ENOENT / malformed → null. Used by the hand-off to confirm
+ * the successor has taken ownership (a DIFFERENT identity than ours).
+ */
+async function readPidIdentity(): Promise<{ pid: number; token: string } | null> {
+  let raw: string;
+  try {
+    raw = await readFile(pidFilePath(), "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+  let parsed: { pid?: unknown; token?: unknown };
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed.pid !== "number" || typeof parsed.token !== "string") return null;
+  return { pid: parsed.pid, token: parsed.token };
 }
 
 export async function readRunningPlugins(): Promise<RunningPlugin[]> {
@@ -296,6 +346,7 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
     startedAt: new Date().toISOString(),
     shuttingDown: false,
     reloadRequested: false,
+    handingOff: false,
     scheduleCount: 0,
     watchCount: 0,
   };
@@ -312,22 +363,16 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   // eslint-disable-next-line prefer-const
   let writeStatus: () => void = () => undefined;
   const fireWatch = (name: string): void => {
-    void fireWithSuppress(watcher, refirer, detector, name, "watch", writeStatus);
+    void fireWithSuppress(state, watcher, refirer, detector, name, "watch", writeStatus);
   };
   const fireScheduled = (name: string): void => {
-    void fireWithSuppress(watcher, refirer, detector, name, "scheduled", writeStatus);
+    void fireWithSuppress(state, watcher, refirer, detector, name, "scheduled", writeStatus);
   };
-  watcher = new Watcher((name: string) =>
-    fireWithSuppress(watcher, refirer, detector, name, "watch", writeStatus),
-  );
-  const scheduler = new Scheduler((name: string) =>
-    fireWithSuppress(watcher, refirer, detector, name, "scheduled", writeStatus),
-  );
+  watcher = new Watcher(fireWatch);
+  const scheduler = new Scheduler(fireScheduled);
   // Refirer drives plugin-initiated reschedules + post-failure retries. Fires
   // through the same watch-trigger pipeline (drains inbox, runs plugin).
-  refirer = new Refirer((name: string) =>
-    fireWithSuppress(watcher, refirer, detector, name, "watch", writeStatus),
-  );
+  refirer = new Refirer(fireWatch);
   writeStatus = (): void => {
     void writeStatusSnapshot(state, scheduler, watcher, detector);
   };
@@ -335,7 +380,7 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   // wires SIGUSR1 → drain; `recover` re-queues an inflight kick left by a
   // crashed daemon then drains everything pending on disk.
   const kicks = kickSource((name, payload) =>
-    fireKick(watcher, refirer, detector, name, payload, writeStatus),
+    fireKick(state, watcher, refirer, detector, name, payload, writeStatus),
   );
   // Every fire source, each paired with the `emit` its recover nudges. Boot
   // and SIGHUP both reduce to "recover all of these" (see recoverAll). Kicks
@@ -482,25 +527,119 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
     resolveExit();
   }
 
-  function onHup(): void {
-    // P3 SEAM: when checkStale resolves true, branch into the hand-off instead
-    // of reconciling on stale code. P2 only logs; reconcile still runs.
-    void checkStale();
-    state.reloadRequested = true;
-    void Promise.all([reconcile(), refirer.reload()])
-      .then(() => writeStatus())
-      .catch((err) => {
-        console.error(`[daemon] reload failed: ${err instanceof Error ? err.message : String(err)}`);
-      });
-    // SIGHUP is also the handoff signal from `dither init` / `dither
-    // index update` — reconcile qmd state too.
-    fireQmdReconcile();
+  /**
+   * Version hand-off: quiet → drain → spawn successor → confirm → exit. Built
+   * from the on-disk bundle (re-exec'ing `execPath argv1 daemon run`), so the
+   * successor runs the fresh code. The durable queue carries any in-flight
+   * trigger across; the successor's boot recover drains it.
+   */
+  async function handOff(): Promise<void> {
+    // Re-entrancy + "stop dispatching" gate. Set synchronously before any
+    // await, so a second trigger (or a fire mid-hand-off) is a no-op and the
+    // choke point leaves the kick for the successor.
+    if (state.handingOff || state.shuttingDown) return;
+    state.handingOff = true;
+
+    const to = stampString((await readBuildInfo()) ?? undefined);
+    await appendGlobal({ kind: "daemon-restarting", from: stampString(), to }).catch(() => undefined);
+
+    // quiet: stop every live producer. handingOff already gates the choke
+    // point for any signal still in flight.
+    scheduler.stop();
+    watcher.stop();
+    refirer.stop();
+    kicks.stop();
+
+    // drain: SIGTERM the reconcile child immediately (durable in SQLite,
+    // re-reconciled via marker), then wait for plugin children to finish
+    // within RESTART_DRAIN_MS — its own, longer knob.
+    const child = reconcileChild;
+    if (child && child.exitCode === null) child.kill("SIGTERM");
+    const drainStart = Date.now();
+    while (Date.now() - drainStart < RESTART_DRAIN_MS) {
+      const running = await readRunningPlugins();
+      const reconcileLive = reconcileChild !== null && reconcileChild.exitCode === null;
+      if (running.length === 0 && !reconcileLive) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+
+    // spawn successor: detached re-exec of the on-disk bundle (fresh code).
+    // Mirrors daemon-control's spawn block; uses the injectable `spawn` so
+    // tests can simulate a successor.
+    const entry = process.argv[1];
+    if (!entry) {
+      await appendGlobal({ kind: "daemon-restart-failed", reason: "no-entrypoint" }).catch(() => undefined);
+      // P4 SEAM: rollback (re-enable sources, resume on old code). For P3 we
+      // fall through to a graceful exit.
+      return finishHandoff();
+    }
+    await mkdir(dirname(daemonLogPath()), { recursive: true });
+    const logFile = await open(daemonLogPath(), "a");
+    const successor = spawn(process.execPath, [entry, "daemon", "run"], {
+      detached: true,
+      stdio: ["ignore", logFile.fd, logFile.fd],
+      env: { ...process.env, DITHER_DAEMON: "1" },
+    });
+    successor.unref();
+    await logFile.close();
+
+    // confirm: poll the PID file until it shows a DIFFERENT identity than our
+    // own (the successor wrote its own {pid, token}) AND that pid is alive. We
+    // can't use waitForDaemonPid — it would return our own still-live pid.
+    const confirmStart = Date.now();
+    let confirmed = false;
+    while (Date.now() - confirmStart < HANDOFF_CONFIRM_MS) {
+      const id = await readPidIdentity();
+      if (id && (id.pid !== process.pid || id.token !== state.token) && isPidAlive(id.pid)) {
+        confirmed = true;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    if (!confirmed) {
+      // P4 SEAM: confirm timed out → rollback to old code (re-enable sources,
+      // clear handingOff). For P3 we log the failure and exit gracefully;
+      // P4 turns this branch into the rollback.
+      await appendGlobal({ kind: "daemon-restart-failed", reason: "confirm-timeout" }).catch(() => undefined);
+    }
+    return finishHandoff();
   }
 
-  // P3 SEAM: when checkStale resolves true, branch into the hand-off instead
-  // of the normal kick drain. P2 only logs; the kick Source's own SIGUSR1
-  // handler (wired by recoverAll's `start`) still drains in parallel.
-  const onUsr1 = (): void => void checkStale();
+  // Graceful exit tail shared by the hand-off paths. removePidFile is
+  // token-guarded, so it never clobbers the successor's PID file.
+  async function finishHandoff(): Promise<void> {
+    state.shuttingDown = true;
+    await appendGlobal({ kind: "daemon-restarted", pid: process.pid }).catch(() => undefined);
+    await removePidFile(state);
+    resolveExit();
+  }
+
+  function onHup(): void {
+    // P3: on stale, hand off instead of reconciling on stale code. checkStale
+    // already logs `stale-detected`; handOff logs `daemon-restarting`.
+    void checkStale().then((stale) => {
+      if (stale) return void handOff();
+      state.reloadRequested = true;
+      void Promise.all([reconcile(), refirer.reload()])
+        .then(() => writeStatus())
+        .catch((err) => {
+          console.error(`[daemon] reload failed: ${err instanceof Error ? err.message : String(err)}`);
+        });
+      // SIGHUP is also the handoff signal from `dither init` / `dither
+      // index update` — reconcile qmd state too.
+      fireQmdReconcile();
+    });
+  }
+
+  // P3: on stale, branch into the hand-off. The kick Source's own SIGUSR1
+  // handler (wired by recoverAll's `start`) still drains in parallel — but
+  // `handingOff` gates the choke point, so the triggering kick is left for the
+  // successor (it returns "retry" → restore → pending).
+  const onUsr1 = (): void => {
+    void checkStale().then((stale) => {
+      if (stale) void handOff();
+    });
+  };
 
   process.on("SIGTERM", onTerm);
   process.on("SIGINT", onTerm);

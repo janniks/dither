@@ -291,6 +291,170 @@ describe("daemon control (no daemon)", () => {
   });
 });
 
+describe("daemon hand-off (version self-restart)", () => {
+  let home: string;
+  let prevHome: string | undefined;
+  // Default sidecar path read by isStale() with no arg — sits next to
+  // build-stamp.ts. Written stale to trigger the hand-off on SIGUSR1/HUP.
+  const sidecar = join(__dirname, "build-info.json");
+
+  beforeEach(async () => {
+    home = mkdtempSync(join(tmpdir(), "dither-handoff-"));
+    prevHome = process.env.DITHER_DIR;
+    process.env.DITHER_DIR = home;
+    const { writeTestConfig } = await import("../test/helpers/config");
+    await writeTestConfig(join(home, "entries"));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    rmSync(sidecar, { force: true });
+    if (prevHome === undefined) delete process.env.DITHER_DIR;
+    else process.env.DITHER_DIR = prevHome;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  async function globalEvents() {
+    const { readFile } = await import("node:fs/promises");
+    const raw = await readFile(join(home, "run-log.jsonl"), "utf-8").catch(() => "");
+    return raw
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { kind: string });
+  }
+
+  it("RESTART_DRAIN_MS is a separate, longer knob than SHUTDOWN_GRACE_MS", async () => {
+    // Both constants are module-private; assert via the source text so a future
+    // edit that collapses them into one knob trips this.
+    const { readFile } = await import("node:fs/promises");
+    const src = await readFile(join(__dirname, "daemon.ts"), "utf-8");
+    const grace = src.match(/SHUTDOWN_GRACE_MS = ([\d_]+)/)?.[1];
+    const drain = src.match(/RESTART_DRAIN_MS = ([\d_]+)/)?.[1];
+    expect(grace).toBe("30_000");
+    expect(drain).toBe("300_000");
+    expect(drain).not.toBe(grace);
+  });
+
+  it("handingOff gates fireWithSuppress — no run starts", async () => {
+    const { fireWithSuppress } = await import("./daemon");
+    const { Watcher } = await import("./watcher");
+    const { Refirer } = await import("./refirer");
+    const { LoopDetector } = await import("./loop-detector");
+
+    const state = {
+      token: "t",
+      startedAt: new Date().toISOString(),
+      shuttingDown: false,
+      reloadRequested: false,
+      handingOff: true,
+      scheduleCount: 0,
+      watchCount: 0,
+    };
+    const ran = await fireWithSuppress(
+      state,
+      new Watcher(() => undefined),
+      new Refirer(() => undefined),
+      new LoopDetector(),
+      "ghost",
+      "manual",
+      () => undefined,
+    );
+    // Gated: returned without acquiring the lock or running. No lock file left.
+    expect(ran).toBe(false);
+    expect(existsSync(join(home, "locks", "ghost.lock"))).toBe(false);
+  });
+
+  it("kick-not-consumed: a kick present at hand-off stays claimable (retry→restore)", async () => {
+    const { fireKick } = await import("./daemon");
+    const { Watcher } = await import("./watcher");
+    const { Refirer } = await import("./refirer");
+    const { LoopDetector } = await import("./loop-detector");
+    const { writeKick, hasKick, kickSource } = await import("./kicks");
+
+    const state = {
+      token: "t",
+      startedAt: new Date().toISOString(),
+      shuttingDown: false,
+      reloadRequested: false,
+      handingOff: true,
+      scheduleCount: 0,
+      watchCount: 0,
+    };
+
+    // A kick is pending on disk at hand-off time.
+    await writeKick("ghost", { runId: "r1", kickedAt: new Date().toISOString() });
+    expect(hasKick("ghost")).toBe(true);
+
+    // Drain through the real kick Source with the gated fireKick. The gate
+    // makes fireKick return "retry" → the Queue restores the lease to pending.
+    const source = kickSource((name, payload) =>
+      fireKick(state, new Watcher(() => undefined), new Refirer(() => undefined), new LoopDetector(), name, payload, () => undefined),
+    );
+    await source.drain();
+
+    // Invariant: the kick was NOT acked away — it's claimable again.
+    expect(hasKick("ghost")).toBe(true);
+  });
+
+  it("stale + SIGUSR1 → spawns successor, logs restarting→restarted, exits", async () => {
+    const { runDaemon } = await import("./daemon");
+
+    // A stale sidecar at the default path so checkStale() (no-arg) sees a
+    // different build than the baked dev fallback.
+    writeFileSync(sidecar, JSON.stringify({ version: "9.9.9", sha: "newsha", builtAt: "20260606010101" }));
+
+    const pidPath = join(home, "dither.pid");
+    // Fake spawn handles BOTH daemon child kinds: the reconcile child (no
+    // "daemon run" args) and the successor re-exec. The successor simulates a
+    // fresh daemon by writing a PID file with a DIFFERENT pid/token, so the
+    // old daemon's confirm-poll succeeds.
+    const reconcile = fakeReconcileChild();
+    const spawn = vi.fn((_exec: string, args: string[]): unknown => {
+      if (args.includes("daemon") && args.includes("run")) {
+        // A real successor would write its own {pid, token}. We can't fork a
+        // live process here, so we reuse OUR pid (guaranteed alive for the
+        // isPidAlive confirm) with a DIFFERENT token — that's still a distinct
+        // identity, which is what the confirm-poll checks for.
+        writeFileSync(
+          pidPath,
+          JSON.stringify({ pid: process.pid, token: "successor-token", startedAt: new Date().toISOString() }),
+        );
+        return { pid: process.pid, unref: () => undefined };
+      }
+      return reconcile;
+    });
+
+    const exited = runDaemon(spawn as unknown as typeof import("node:child_process").spawn);
+
+    // Wait until the (old) daemon has written its own PID file.
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      if (existsSync(pidPath)) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(existsSync(pidPath)).toBe(true);
+
+    // Trigger the hand-off.
+    process.kill(process.pid, "SIGUSR1");
+    await exited;
+
+    // Successor was spawned from the on-disk bundle (daemon run re-exec).
+    const handoffSpawn = spawn.mock.calls.find((c) => c[1].includes("daemon") && c[1].includes("run"));
+    expect(handoffSpawn).toBeTruthy();
+
+    const kinds = (await globalEvents()).map((e) => e.kind);
+    expect(kinds).toContain("daemon-restarting");
+    expect(kinds).toContain("daemon-restarted");
+    expect(kinds).not.toContain("daemon-restart-failed");
+
+    // Token guard: the successor's PID file is left intact (we did NOT clobber
+    // it — it still holds the successor identity).
+    const { readFile } = await import("node:fs/promises");
+    const left = JSON.parse(await readFile(pidPath, "utf-8")) as { token: string };
+    expect(left.token).toBe("successor-token");
+  }, 20_000);
+});
+
 describe("checkStale (staleness detection on IPC entries)", () => {
   let home: string;
   let prevHome: string | undefined;
