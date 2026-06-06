@@ -57,3 +57,20 @@ export async function readBuildInfo(dir = join(here, "build-info.json")): Promis
     throw err;
   }
 }
+
+/**
+ * Stale iff the build on disk (the `dist/build-info.json` sidecar) differs from
+ * the build this process was spawned from (the baked `__BUILD_STAMP__`). `disk
+ * === null` → NOT stale: nothing to compare (un-bundled/test, or a missing
+ * sidecar mid-build). Full-stamp compare — `builtAt` is the per-rebuild
+ * discriminator; `sha`/`version` cover upgrades/downgrades.
+ *
+ * Test-safe: under vitest the baked stamp is the dev fallback and there's no
+ * sidecar next to the source, so this returns false without throwing.
+ */
+export async function isStale(dir?: string): Promise<boolean> {
+  const baked = buildStamp();
+  const disk = await readBuildInfo(dir);
+  if (disk === null) return false;
+  return disk.version !== baked.version || disk.sha !== baked.sha || disk.builtAt !== baked.builtAt;
+}

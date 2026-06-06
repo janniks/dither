@@ -47,6 +47,7 @@ export type EventKind =
   | "job-failed"
   | "job-skipped"
   | "model-download-progress"
+  | "stale-detected"
   // run-scope (plugin execution)
   | "progress"
   | "stderr"

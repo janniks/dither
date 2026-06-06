@@ -290,3 +290,55 @@ describe("daemon control (no daemon)", () => {
     expect(kill).toHaveBeenCalled();
   });
 });
+
+describe("checkStale (staleness detection on IPC entries)", () => {
+  let home: string;
+  let prevHome: string | undefined;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "dither-stale-"));
+    prevHome = process.env.DITHER_DIR;
+    process.env.DITHER_DIR = home;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (prevHome === undefined) delete process.env.DITHER_DIR;
+    else process.env.DITHER_DIR = prevHome;
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  async function globalEvents() {
+    const { readFile } = await import("node:fs/promises");
+    const raw = await readFile(join(home, "run-log.jsonl"), "utf-8").catch(() => "");
+    return raw
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { kind: string; from?: string; to?: string });
+  }
+
+  it("logs stale-detected when the disk sidecar differs from the baked stamp", async () => {
+    const sidecar = join(home, "build-info.json");
+    writeFileSync(sidecar, JSON.stringify({ version: "9.9.9", sha: "feedbee", builtAt: "20260606000000" }));
+
+    const { checkStale } = await import("./daemon");
+    expect(await checkStale(sidecar)).toBe(true);
+
+    const stale = (await globalEvents()).filter((e) => e.kind === "stale-detected");
+    expect(stale).toHaveLength(1);
+    const [row] = stale;
+    expect(row?.to).toBe("9.9.9+feedbee.20260606000000");
+    expect(row?.from).toBeTruthy();
+  });
+
+  it("is silent when the disk sidecar matches the baked stamp", async () => {
+    const { buildStamp } = await import("./build-stamp");
+    const sidecar = join(home, "build-info.json");
+    writeFileSync(sidecar, JSON.stringify(buildStamp()));
+
+    const { checkStale } = await import("./daemon");
+    expect(await checkStale(sidecar)).toBe(false);
+
+    expect((await globalEvents()).filter((e) => e.kind === "stale-detected")).toHaveLength(0);
+  });
+});

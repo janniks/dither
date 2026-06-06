@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildStamp, stampString, buildVersion, readBuildInfo } from "./build-stamp";
+import { buildStamp, stampString, buildVersion, readBuildInfo, isStale } from "./build-stamp";
 
 const pkgVersion = "0.0.1"; // single source: packages/cli/package.json
 
@@ -38,5 +38,29 @@ describe("readBuildInfo", () => {
 
   it("returns null on ENOENT", async () => {
     expect(await readBuildInfo(join(tmpdir(), "no-such-build-info.json"))).toBeNull();
+  });
+});
+
+describe("isStale", () => {
+  // Baked stamp under vitest is the dev fallback: { version: pkgVersion, sha:
+  // "dev", builtAt: "" }. A sidecar that differs from that → stale.
+  it("true when the disk sidecar differs from the baked/dev stamp", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dither-stale-"));
+    const path = join(dir, "build-info.json");
+    writeFileSync(path, JSON.stringify({ version: "9.9.9", sha: "feedbee", builtAt: "20260606000000" }));
+    expect(await isStale(path)).toBe(true);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("false when the disk sidecar matches the baked/dev stamp", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dither-stale-"));
+    const path = join(dir, "build-info.json");
+    writeFileSync(path, JSON.stringify(buildStamp()));
+    expect(await isStale(path)).toBe(false);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("false when the sidecar is missing (nothing to compare)", async () => {
+    expect(await isStale(join(tmpdir(), "no-such-build-info.json"))).toBe(false);
   });
 });

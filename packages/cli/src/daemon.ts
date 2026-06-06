@@ -19,7 +19,7 @@ import { acquire as acquireLock, release as releaseLock, isPluginLock } from "./
 import { clearInflightJobs } from "./daemon-jobs";
 import { superviseReconcile } from "./reconcile-supervisor";
 import { needsReindexPath } from "./markers";
-import { stampString } from "./build-stamp";
+import { isStale, stampString, readBuildInfo } from "./build-stamp";
 import type { ChildProcess } from "node:child_process";
 import { spawn as nodeSpawn } from "node:child_process";
 
@@ -72,6 +72,27 @@ function watchEntriesOf(plugins: InstalledPluginInfo[]): WatchEntry[] {
     if (!w || !Array.isArray(w.collections) || w.collections.length === 0) return [];
     return [{ name: p.name, collections: w.collections, ...(w.glob ? { glob: w.glob } : {}) }];
   });
+}
+
+/**
+ * Single choke point for staleness on every external IPC entry (SIGUSR1 kick,
+ * SIGHUP reload). If the build on disk differs from the one we're running, log
+ * a `stale-detected` event carrying both stamps. Returns whether stale so the
+ * caller can branch.
+ *
+ * P2: detect + log only — the normal handling (kick drain / reconcile) still
+ * proceeds. P3 SEAM: when `isStale()`, this is where the hand-off begins —
+ * set a `handingOff` flag, stop sources, and start the drain/spawn instead of
+ * (or before) returning to the normal handler. Do NOT restart here yet.
+ */
+export async function checkStale(dir?: string): Promise<boolean> {
+  if (!(await isStale(dir))) return false;
+  await appendGlobal({
+    kind: "stale-detected",
+    from: stampString(),
+    to: stampString((await readBuildInfo(dir)) ?? undefined),
+  }).catch(() => undefined);
+  return true;
 }
 
 interface KickContext {
@@ -462,6 +483,9 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   }
 
   function onHup(): void {
+    // P3 SEAM: when checkStale resolves true, branch into the hand-off instead
+    // of reconciling on stale code. P2 only logs; reconcile still runs.
+    void checkStale();
     state.reloadRequested = true;
     void Promise.all([reconcile(), refirer.reload()])
       .then(() => writeStatus())
@@ -473,17 +497,25 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
     fireQmdReconcile();
   }
 
+  // P3 SEAM: when checkStale resolves true, branch into the hand-off instead
+  // of the normal kick drain. P2 only logs; the kick Source's own SIGUSR1
+  // handler (wired by recoverAll's `start`) still drains in parallel.
+  const onUsr1 = (): void => void checkStale();
+
   process.on("SIGTERM", onTerm);
   process.on("SIGINT", onTerm);
   process.on("SIGHUP", onHup);
+  process.on("SIGUSR1", onUsr1);
   // The kick Source's SIGUSR1 handler was already wired by recoverAll's
   // `start` above (POSIX coalesces signals; every kick on disk gets processed
-  // per drain).
+  // per drain). This second listener only checks staleness — it does not touch
+  // the drain.
 
   await exited;
 
   process.off("SIGTERM", onTerm);
   process.off("SIGINT", onTerm);
   process.off("SIGHUP", onHup);
+  process.off("SIGUSR1", onUsr1);
   kicks.stop();
 }

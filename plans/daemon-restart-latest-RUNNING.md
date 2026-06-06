@@ -48,9 +48,9 @@ Hook it lazily at the top of the SIGUSR1 and SIGHUP handlers — log a
 isolation).
 
 **Acceptance:**
-- [ ] `isStale()` true iff baked stamp ≠ sidecar stamp (handles missing sidecar).
-- [ ] Checked on SIGUSR1 + SIGHUP only; no timers.
-- [ ] Rebuild → next kick/HUP logs `stale-detected`; matching build → silent.
+- [x] `isStale()` true iff baked stamp ≠ sidecar stamp (handles missing sidecar).
+- [x] Checked on SIGUSR1 + SIGHUP only; no timers.
+- [x] Rebuild → next kick/HUP logs `stale-detected`; matching build → silent.
 
 ---
 
@@ -96,4 +96,5 @@ Append a row after each phase. Rename back when complete.
 
 | commit | summary |
 |--|--|
+| (pending) | P2: staleness detection (detect + log, no restart). `isStale()` in `build-stamp.ts` — full-stamp compare (version/sha/builtAt) vs `dist/build-info.json`; `disk === null` (missing sidecar / un-bundled) → not stale, test-safe. `checkStale()` in `daemon.ts` funnels both external IPC entries: top of `onHup` (SIGHUP) + a daemon-level SIGUSR1 listener alongside the kick Source's own drain — on stale, `appendGlobal({ kind: "stale-detected", from, to })` once, no restart. P3 seam comments mark where the hand-off branches in. New `stale-detected` event kind. Tests: 5 new (3 `isStale`, 2 `checkStale`) pass, typecheck clean, zero new daemon failures (only pre-existing no-`deno` `~3s` fire). |
 | (pending) | P1: build-stamp infra — tsdown `define` bakes `__BUILD_STAMP__` (stamp computed once: pkg version + git short-sha + digits `builtAt`); `build:done` hook writes `dist/build-info.json` last via tmp+rename. `build-stamp.ts` accessor with test-safe fallback + `readBuildInfo`. Version single-sourced (`main.ts` + status snapshot via `buildVersion`/`stampString`). Stamp shown as `build:` in `daemon status`. Tests: 7 new pass, typecheck clean, zero new daemon failures. |
