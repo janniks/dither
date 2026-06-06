@@ -39,8 +39,19 @@ const SHUTDOWN_GRACE_MS = 30_000;
 const RESTART_DRAIN_MS = 300_000;
 
 // How long the old daemon polls the PID file for the successor's distinct
-// identity before giving up (P4 turns timeout into rollback).
-const HANDOFF_CONFIRM_MS = 30_000;
+// identity before giving up and rolling back (P4). Overridable for tests via
+// `setHandoffConfirmMs` so rollback/flap tests don't wait the full 30s.
+const HANDOFF_CONFIRM_DEFAULT_MS = 30_000;
+let handoffConfirmMs = HANDOFF_CONFIRM_DEFAULT_MS;
+
+/** Test-only: shrink (or restore) the confirm-timeout so rollback is fast. */
+export function setHandoffConfirmMs(ms: number): void {
+  handoffConfirmMs = ms;
+}
+
+// Consecutive failed hand-offs (rollbacks) before the daemon gives up on
+// auto-restart and stays on old code until a human intervenes.
+const FLAP_THRESHOLD = 3;
 
 export interface StatusSnapshot {
   pid: number;
@@ -49,6 +60,11 @@ export interface StatusSnapshot {
   lastUpdated: string;
   // SemVer stamp of the running daemon's baked build (`stampString`).
   version: string;
+  // True once auto-restart has flapped past FLAP_THRESHOLD — the daemon gave up
+  // handing off and stays on old code (a human must `dither daemon restart`).
+  restartDisabled: boolean;
+  // Consecutive failed hand-offs so far (0 while healthy).
+  restartFails: number;
   schedules: number;
   watches: number;
   running: RunningPlugin[];
@@ -72,6 +88,12 @@ export interface DaemonState {
   // re-entrancy guard (a second trigger is a no-op) and a "stop dispatching"
   // gate (the choke point leaves the triggering kick for the successor).
   handingOff: boolean;
+  // Consecutive failed hand-offs (rollbacks). Resets implicitly on a successful
+  // hand-off — that process exits and the successor starts fresh at 0.
+  restartFails: number;
+  // Latched once `restartFails` hits FLAP_THRESHOLD: the daemon stops attempting
+  // auto-restarts and stays on old code until a human restarts it.
+  restartDisabled: boolean;
   scheduleCount: number;
   watchCount: number;
 }
@@ -321,6 +343,8 @@ async function writeStatusSnapshot(
     startedAt: state.startedAt,
     lastUpdated: new Date().toISOString(),
     version: stampString(),
+    restartDisabled: state.restartDisabled,
+    restartFails: state.restartFails,
     schedules: state.scheduleCount,
     watches: state.watchCount,
     running,
@@ -347,6 +371,8 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
     shuttingDown: false,
     reloadRequested: false,
     handingOff: false,
+    restartFails: 0,
+    restartDisabled: false,
     scheduleCount: 0,
     watchCount: 0,
   };
@@ -406,6 +432,16 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
     state.watchCount = watcher.stats().count;
   }
 
+  // Bring every source up: `reconcile()` re-`set()`s the scheduler/watcher
+  // entries (their `stop()` cleared them), then `recoverAll` `start`s each live
+  // producer and `recover`s its owed work from durable state. Called once on
+  // boot and again on hand-off rollback — the same wiring, so a rollback resumes
+  // exactly as a fresh boot would (the restored kick drains here on old code).
+  async function armSources(): Promise<void> {
+    await reconcile();
+    await recoverAll(sources);
+  }
+
   await writePidFile(state);
   // Truncate the events log on startup so subscribers don't replay
   // events from a previous (possibly-crashed) daemon process. Then emit
@@ -438,8 +474,7 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   if (recovered.length > 0) {
     console.error(`[daemon] recovered inflight for: ${recovered.join(", ")}`);
   }
-  await reconcile();
-  await recoverAll(sources);
+  await armSources();
   await writeStatusSnapshot(state, scheduler, watcher, detector);
 
   // qmd state reconciliation runs off-thread in a `daemon reconcile`
@@ -536,8 +571,10 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   async function handOff(): Promise<void> {
     // Re-entrancy + "stop dispatching" gate. Set synchronously before any
     // await, so a second trigger (or a fire mid-hand-off) is a no-op and the
-    // choke point leaves the kick for the successor.
-    if (state.handingOff || state.shuttingDown) return;
+    // choke point leaves the kick for the successor. Once `restartDisabled`
+    // (flapped past FLAP_THRESHOLD), every trigger is a no-op — the daemon stays
+    // on old code until a human restarts it.
+    if (state.handingOff || state.shuttingDown || state.restartDisabled) return;
     state.handingOff = true;
 
     const to = stampString((await readBuildInfo()) ?? undefined);
@@ -569,9 +606,7 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
     const entry = process.argv[1];
     if (!entry) {
       await appendGlobal({ kind: "daemon-restart-failed", reason: "no-entrypoint" }).catch(() => undefined);
-      // P4 SEAM: rollback (re-enable sources, resume on old code). For P3 we
-      // fall through to a graceful exit.
-      return finishHandoff();
+      return rollback("no-entrypoint");
     }
     await mkdir(dirname(daemonLogPath()), { recursive: true });
     const logFile = await open(daemonLogPath(), "a");
@@ -588,7 +623,7 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
     // can't use waitForDaemonPid — it would return our own still-live pid.
     const confirmStart = Date.now();
     let confirmed = false;
-    while (Date.now() - confirmStart < HANDOFF_CONFIRM_MS) {
+    while (Date.now() - confirmStart < handoffConfirmMs) {
       const id = await readPidIdentity();
       if (id && (id.pid !== process.pid || id.token !== state.token) && isPidAlive(id.pid)) {
         confirmed = true;
@@ -597,21 +632,39 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
       await new Promise((r) => setTimeout(r, 50));
     }
     if (!confirmed) {
-      // P4 SEAM: confirm timed out → rollback to old code (re-enable sources,
-      // clear handingOff). For P3 we log the failure and exit gracefully;
-      // P4 turns this branch into the rollback.
       await appendGlobal({ kind: "daemon-restart-failed", reason: "confirm-timeout" }).catch(() => undefined);
+      return rollback("confirm-timeout");
     }
+    // Success: this process now exits and hands the PID file to the successor.
+    // Reset the flap counter for correctness (moot — we're about to exit).
+    state.restartFails = 0;
     return finishHandoff();
   }
 
-  // Graceful exit tail shared by the hand-off paths. removePidFile is
-  // token-guarded, so it never clobbers the successor's PID file.
+  // Graceful exit tail of a SUCCESSFUL hand-off. removePidFile is token-guarded,
+  // so it never clobbers the successor's PID file.
   async function finishHandoff(): Promise<void> {
     state.shuttingDown = true;
     await appendGlobal({ kind: "daemon-restarted", pid: process.pid }).catch(() => undefined);
     await removePidFile(state);
     resolveExit();
+  }
+
+  // Rollback: the successor failed to come up (spawn/argv missing or confirm
+  // timed out). Stay alive on old code rather than exit into a dead successor.
+  // Bump the flap counter; past FLAP_THRESHOLD, latch `restartDisabled` so
+  // further triggers no-op (a human must intervene). Clear `handingOff` and
+  // re-arm sources via the exact boot wiring — the restored kick drains here.
+  async function rollback(reason: string): Promise<void> {
+    state.restartFails += 1;
+    await appendGlobal({ kind: "daemon-restart-rolledback", reason }).catch(() => undefined);
+    if (state.restartFails >= FLAP_THRESHOLD && !state.restartDisabled) {
+      state.restartDisabled = true;
+      await appendGlobal({ kind: "daemon-restart-disabled", fails: state.restartFails }).catch(() => undefined);
+    }
+    state.handingOff = false;
+    await armSources();
+    writeStatus();
   }
 
   function onHup(): void {

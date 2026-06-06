@@ -306,8 +306,10 @@ describe("daemon hand-off (version self-restart)", () => {
     await writeTestConfig(join(home, "entries"));
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks();
+    const { setHandoffConfirmMs } = await import("./daemon");
+    setHandoffConfirmMs(30_000);
     rmSync(sidecar, { force: true });
     if (prevHome === undefined) delete process.env.DITHER_DIR;
     else process.env.DITHER_DIR = prevHome;
@@ -347,6 +349,8 @@ describe("daemon hand-off (version self-restart)", () => {
       shuttingDown: false,
       reloadRequested: false,
       handingOff: true,
+      restartFails: 0,
+      restartDisabled: false,
       scheduleCount: 0,
       watchCount: 0,
     };
@@ -377,6 +381,8 @@ describe("daemon hand-off (version self-restart)", () => {
       shuttingDown: false,
       reloadRequested: false,
       handingOff: true,
+      restartFails: 0,
+      restartDisabled: false,
       scheduleCount: 0,
       watchCount: 0,
     };
@@ -453,6 +459,154 @@ describe("daemon hand-off (version self-restart)", () => {
     const left = JSON.parse(await readFile(pidPath, "utf-8")) as { token: string };
     expect(left.token).toBe("successor-token");
   }, 20_000);
+
+  it("rollback: successor never confirms → daemon stays alive on old code", async () => {
+    const { runDaemon, setHandoffConfirmMs, readStatusSnapshot } = await import("./daemon");
+    setHandoffConfirmMs(300); // don't wait the full 30s for the timeout
+
+    writeFileSync(sidecar, JSON.stringify({ version: "9.9.9", sha: "newsha", builtAt: "20260606010101" }));
+
+    const pidPath = join(home, "dither.pid");
+    // A "successor" that never writes a PID file — confirm-poll times out and
+    // the daemon must roll back rather than exit.
+    const reconcile = fakeReconcileChild();
+    const spawn = vi.fn((_exec: string, args: string[]): unknown => {
+      if (args.includes("daemon") && args.includes("run")) return { pid: 999999, unref: () => undefined };
+      return reconcile;
+    });
+
+    let resolved = false;
+    const exited = runDaemon(spawn as unknown as typeof import("node:child_process").spawn).then(() => {
+      resolved = true;
+    });
+
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      if (existsSync(pidPath)) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    const own = JSON.parse(await import("node:fs").then((m) => m.readFileSync(pidPath, "utf-8"))) as { token: string };
+
+    // Trigger the hand-off → confirm times out → rollback.
+    process.kill(process.pid, "SIGUSR1");
+
+    // Wait for the rollback event.
+    const rbDeadline = Date.now() + 5000;
+    while (Date.now() < rbDeadline) {
+      if ((await globalEvents()).some((e) => e.kind === "daemon-restart-rolledback")) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+
+    const kinds = (await globalEvents()).map((e) => e.kind);
+    expect(kinds).toContain("daemon-restart-rolledback");
+    expect(kinds).not.toContain("daemon-restarted");
+
+    // The daemon did NOT exit — its run promise is still pending and it still
+    // owns the PID file under its own (unchanged) identity.
+    expect(resolved).toBe(false);
+    const stillOurs = JSON.parse(await import("node:fs").then((m) => m.readFileSync(pidPath, "utf-8"))) as {
+      token: string;
+    };
+    expect(stillOurs.token).toBe(own.token);
+
+    // Sources re-armed: a kick written AFTER rollback fires on old code. With no
+    // installed plugins it can't actually run a plugin, but the snapshot still
+    // reflects a live, non-disabled daemon (one failure, not yet flapped).
+    const snap = await readStatusSnapshot();
+    expect(snap!.restartFails).toBe(1);
+    expect(snap!.restartDisabled).toBe(false);
+
+    process.kill(process.pid, "SIGTERM");
+    await exited;
+  }, 20_000);
+
+  it("flap: 3 failed hand-offs → restartDisabled, 4th trigger no-ops", async () => {
+    const { runDaemon, setHandoffConfirmMs, readStatusSnapshot } = await import("./daemon");
+    setHandoffConfirmMs(150);
+
+    writeFileSync(sidecar, JSON.stringify({ version: "9.9.9", sha: "newsha", builtAt: "20260606010101" }));
+
+    const pidPath = join(home, "dither.pid");
+    const reconcile = fakeReconcileChild();
+    const spawn = vi.fn((_exec: string, args: string[]): unknown => {
+      if (args.includes("daemon") && args.includes("run")) return { pid: 999999, unref: () => undefined };
+      return reconcile;
+    });
+
+    const exited = runDaemon(spawn as unknown as typeof import("node:child_process").spawn);
+
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      if (existsSync(pidPath)) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+
+    // Drive three hand-offs. Each rollback clears handingOff, so the next
+    // SIGUSR1 (still stale) starts a fresh hand-off. Wait for each rollback to
+    // land before firing the next so they don't coalesce under handingOff.
+    async function rollbacks() {
+      return (await globalEvents()).filter((e) => e.kind === "daemon-restart-rolledback").length;
+    }
+    for (let want = 1; want <= 3; want += 1) {
+      process.kill(process.pid, "SIGUSR1");
+      const d = Date.now() + 5000;
+      while (Date.now() < d) {
+        if ((await rollbacks()) >= want) break;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      expect(await rollbacks()).toBe(want);
+    }
+
+    const kinds = (await globalEvents()).map((e) => e.kind);
+    expect(kinds).toContain("daemon-restart-disabled");
+
+    const snap = await readStatusSnapshot();
+    expect(snap!.restartDisabled).toBe(true);
+    expect(snap!.restartFails).toBe(3);
+
+    // 4th trigger: handOff early-returns on restartDisabled → no new spawn.
+    const spawnsBefore = spawn.mock.calls.filter((c) => c[1].includes("daemon") && c[1].includes("run")).length;
+    process.kill(process.pid, "SIGUSR1");
+    await new Promise((r) => setTimeout(r, 400));
+    const spawnsAfter = spawn.mock.calls.filter((c) => c[1].includes("daemon") && c[1].includes("run")).length;
+    expect(spawnsAfter).toBe(spawnsBefore);
+    expect(await rollbacks()).toBe(3); // no 4th rollback either
+
+    process.kill(process.pid, "SIGTERM");
+    await exited;
+  }, 25_000);
+
+  it("re-entrancy: a second trigger mid-hand-off does not spawn twice", async () => {
+    const { fireWithSuppress } = await import("./daemon");
+    const { Watcher } = await import("./watcher");
+    const { Refirer } = await import("./refirer");
+    const { LoopDetector } = await import("./loop-detector");
+
+    // The choke point is what a re-entrant trigger flows through while a
+    // hand-off is in flight (handingOff true). It must NOT start a run.
+    const state = {
+      token: "t",
+      startedAt: new Date().toISOString(),
+      shuttingDown: false,
+      reloadRequested: false,
+      handingOff: true,
+      restartFails: 0,
+      restartDisabled: false,
+      scheduleCount: 0,
+      watchCount: 0,
+    };
+    const ran = await fireWithSuppress(
+      state,
+      new Watcher(() => undefined),
+      new Refirer(() => undefined),
+      new LoopDetector(),
+      "ghost",
+      "manual",
+      () => undefined,
+    );
+    expect(ran).toBe(false);
+    expect(existsSync(join(home, "locks", "ghost.lock"))).toBe(false);
+  });
 });
 
 describe("checkStale (staleness detection on IPC entries)", () => {

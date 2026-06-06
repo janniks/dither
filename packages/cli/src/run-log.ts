@@ -51,6 +51,8 @@ export type EventKind =
   | "daemon-restarting"
   | "daemon-restarted"
   | "daemon-restart-failed"
+  | "daemon-restart-rolledback"
+  | "daemon-restart-disabled"
   // run-scope (plugin execution)
   | "progress"
   | "stderr"
