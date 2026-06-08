@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -31,7 +31,8 @@ describe("Watcher", () => {
     }, { debounceMs: 200, debounceCapMs: 1_000 });
 
     watcher.set(libRoot, [{ name: "tagger", collections: ["messages"] }]);
-    await new Promise((r) => setTimeout(r, 200)); // chokidar warmup
+    watcher.start();
+    await new Promise((r) => setTimeout(r, 200)); // watch warmup
 
     writeFileSync(join(libRoot, "messages", "a.md"), "one");
     writeFileSync(join(libRoot, "messages", "b.md"), "two");
@@ -59,6 +60,7 @@ describe("Watcher", () => {
     }, { debounceMs: 200, debounceCapMs: 1_000 });
 
     watcher.set(libRoot, [{ name: "md-only", collections: ["messages"], glob: "**/*.md" }]);
+    watcher.start();
     await new Promise((r) => setTimeout(r, 200));
 
     writeFileSync(join(libRoot, "messages", "ignored.txt"), "x");
@@ -80,11 +82,11 @@ describe("Watcher", () => {
     const { readWatermark, watchKey } = await import("./watch-state");
 
     const watcher = new Watcher(() => {});
-    // set() wires the active entries; chokidar isn't started for this scan.
-    watcher.set(libRoot, [{ name: "tagger", collections: ["messages"] }]);
-
-    // A file that landed while the daemon was down (no live event saw it).
+    // A file that landed while the daemon was down — written before set() so the
+    // live watcher never sees it (fs.watch only emits changes after it starts);
+    // only the recover scan can pick it up.
     writeFileSync(join(libRoot, "messages", "down.md"), "missed");
+    watcher.set(libRoot, [{ name: "tagger", collections: ["messages"] }]);
 
     const fired: string[] = [];
     await watcher.recover((name) => {
@@ -105,8 +107,10 @@ describe("Watcher", () => {
     const { claimInbox } = await import("./inbox");
 
     const watcher = new Watcher(() => {});
-    watcher.set(libRoot, [{ name: "tagger", collections: ["messages"] }]);
+    // Pre-existing file (written before set()) so only recover, not the live
+    // watcher, accounts for it.
     writeFileSync(join(libRoot, "messages", "old.md"), "v1");
+    watcher.set(libRoot, [{ name: "tagger", collections: ["messages"] }]);
 
     // First recover enqueues + sets watermark to old.md's mtime.
     await watcher.recover(() => {});
@@ -129,10 +133,11 @@ describe("Watcher", () => {
     const { claimInbox } = await import("./inbox");
 
     const watcher = new Watcher(() => {});
-    watcher.set(libRoot, [{ name: "md-only", collections: ["messages"], glob: "**/*.md" }]);
+    // Pre-existing files (before set()) so only recover's walk accounts for them.
     writeFileSync(join(libRoot, "messages", "kept.md"), "y");
     // .txt isn't an .md file — walkMd never sees it.
     writeFileSync(join(libRoot, "messages", "ignored.txt"), "x");
+    watcher.set(libRoot, [{ name: "md-only", collections: ["messages"], glob: "**/*.md" }]);
 
     await watcher.recover(() => {});
     watcher.stop();
@@ -151,6 +156,7 @@ describe("Watcher", () => {
     }, { debounceMs: 200, debounceCapMs: 1_000 });
 
     watcher.set(libRoot, [{ name: "self", collections: ["messages"] }]);
+    watcher.start();
     await new Promise((r) => setTimeout(r, 200));
 
     const path = join(libRoot, "messages", "self.md");
@@ -163,4 +169,25 @@ describe("Watcher", () => {
     expect(fires).toEqual([]);
     expect(existsSync(join(home, "inboxes", "self.ndjson"))).toBe(false);
   }, 10_000);
+
+  // Regression for the chokidar fd leak: a watched collection with N files must
+  // cost O(1) fds (one OS recursive/dir handle), not O(N) (one fs.watch per
+  // file). The old chokidar path opened ~N fds here and exhausted the process.
+  it("watches a large flat collection with O(1) fds, not O(files)", async () => {
+    const { Watcher } = await import("./watcher");
+    const dir = join(libRoot, "big");
+    mkdirSync(dir, { recursive: true });
+    for (let i = 0; i < 1_000; i++) writeFileSync(join(dir, `${i}.md`), "x");
+
+    const fds = () => readdirSync("/dev/fd").length;
+    const before = fds();
+    const watcher = new Watcher(() => {}, { debounceMs: 50, debounceCapMs: 200 });
+    watcher.set(libRoot, [{ name: "big", collections: ["big"] }]);
+    watcher.start();
+    await new Promise((r) => setTimeout(r, 300));
+    const delta = fds() - before;
+    watcher.stop();
+
+    expect(delta).toBeLessThan(50); // one handle, not ~1000
+  }, 15_000);
 });

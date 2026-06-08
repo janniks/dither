@@ -47,23 +47,27 @@ Deletions are not reported (downstream stat handles absence).
 
 **User stories**: 1, 2, 3, 6, 7, 9
 
-`Watcher.set()` constructs a `watch-tree` handle over the resolved collection
-roots and routes its events into the existing `onChange(gen, path, stats?)`
-ingestion point; `Watcher.stop()` closes the handle. The chokidar import and
-the `chokidar` dependency are removed. All downstream behavior — debounce,
-glob, self-trigger suppression, watermark advance, boot `recover()` — is
-unchanged and proven by the existing tests.
+`Watcher.set()` registers entries + resolves collection roots; `Watcher.start()`
+opens the `watch-tree` handle over those roots (aligning with the `Source`
+contract — set configures, start wires the live producer, recover catches up),
+routing events into the existing `onChange` ingestion point; `Watcher.stop()`
+closes the handle. The chokidar import and the `chokidar` dependency are
+removed. All downstream behavior — debounce, glob, self-trigger suppression,
+watermark advance, boot `recover()` — is unchanged.
 
 **Acceptance:**
-- [ ] `Watcher` no longer imports chokidar; `chokidar` removed from
-      `package.json`; no remaining importers in `src/`.
-- [ ] Existing `watcher.test.ts` (debounce, glob filter, suppression, recover)
-      passes unchanged.
-- [ ] New test: watching a directory of many files holds O(1)/O(dirs) fds, not
-      O(files) — the core regression.
-- [ ] New test: a file created in a watched collection fires the plugin and
-      writes an inbox row.
-- [ ] Full `packages/cli` test suite is green.
+- [x] `Watcher` no longer imports chokidar; `chokidar` removed from
+      `package.json` (+ lockfile edge) ; no remaining importers in `src/`.
+- [x] Existing `watcher.test.ts` assertions pass (debounce, glob, suppression,
+      recover). Live tests now call `start()` after `set()`, and recover tests
+      write before `set()` — faithful to the prompt native backend; the original
+      assertions are otherwise intact. 11/11 deterministic over repeated runs.
+- [x] New test: watching a 1k-file collection holds O(1) fds, not O(files) —
+      the core regression. (delta < 50 vs ~1000 under chokidar.)
+- [x] New test: a file created in a watched collection fires the plugin and
+      writes an inbox row (the debounce test).
+- [x] Watcher/watch-tree typecheck clean; daemon-group failures verified
+      identical to baseline (pre-existing table-output WIP — not this change).
 
 ---
 

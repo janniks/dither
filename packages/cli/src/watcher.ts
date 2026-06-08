@@ -1,5 +1,3 @@
-import { FSWatcher, watch } from "chokidar";
-import type { Stats } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import picomatch from "picomatch";
@@ -7,28 +5,30 @@ import { appendToInbox, type WatchTarget } from "./inbox";
 import type { Emit, Source } from "./queue";
 import { advanceWatermark, readWatermark, watchKey } from "./watch-state";
 import { resolveWatchPath } from "./watch-paths";
+import { watchTree, type TreeWatch } from "./watch-tree";
 
 /**
  * File watcher for plugins with a `watch` block. The daemon owns one Watcher
  * across all plugins; `set(entries)` replaces the active set wholesale, like
  * the scheduler.
  *
- * Phase-1 contract: each chokidar event becomes an inbox row (path + mtime),
- * written immediately for durability. A per-plugin debounce timer schedules
- * the fire signal — the runner reads the inbox at fire start, the callback
- * doesn't carry targets. This separates durability (inbox write) from
- * scheduling (debounce timer).
+ * Live producer: `watch-tree` (native `fs.watch`) reports each add/change as
+ * an inbox row (path + mtime), written immediately for durability. A per-plugin
+ * debounce timer schedules the fire signal — the runner reads the inbox at fire
+ * start, the callback doesn't carry targets. This separates durability (inbox
+ * write) from scheduling (debounce timer).
  *
  * Self-trigger suppression: plugins are *also* writers in the entries tree,
- * so we maintain a recently-promoted-paths map (TTL ~2 s). Chokidar events
- * for paths in that map are dropped before the inbox write.
+ * so we maintain a recently-promoted-paths map (TTL ~2 s). Watch events for
+ * paths in that map are dropped before the inbox write.
  *
- * Durability across the down-window: chokidar only sees *live* changes, so a
- * file touched while the daemon was down would be lost. As a `Source`, the
- * watcher persists a per-(plugin,collection) mtime watermark (advanced on
- * every live emit) and `recover(emit)` walks the watched collections at boot,
- * re-enqueuing anything newer than the watermark. The inbox dedups by path,
- * so over-enqueueing is harmless — the watermark is the efficiency floor.
+ * Durability across the down-window: the live watcher only sees changes while
+ * running, so a file touched while the daemon was down would be lost. As a
+ * `Source`, the watcher persists a per-(plugin,collection) mtime watermark
+ * (advanced on every live emit) and `recover(emit)` walks the watched
+ * collections at boot, re-enqueuing anything newer than the watermark. The
+ * inbox dedups by path, so over-enqueueing is harmless — the watermark is the
+ * efficiency floor.
  */
 
 export interface WatchEntry {
@@ -64,13 +64,13 @@ export interface WatcherOptions {
 }
 
 export class Watcher implements Source {
-  private fsWatcher: FSWatcher | null = null;
+  private tree: TreeWatch | null = null;
   private plugins = new Map<string, PluginWatcher>();
+  private roots: string[] = [];
   private suppress = new Map<string, number>();
   private libraryRoot = "";
-  // Monotonic generation token: bumped on every stop()/set() so handlers
-  // queued against a prior FSWatcher (whose async close is in flight) can
-  // detect they're stale and drop their event.
+  // Monotonic generation token: bumped on every stop()/set() so events
+  // queued against a prior watch-tree can detect they're stale and drop.
   private generation = 0;
   private debounceMs: number;
   private debounceCapMs: number;
@@ -80,12 +80,17 @@ export class Watcher implements Source {
     this.debounceCapMs = opts.debounceCapMs ?? DEBOUNCE_CAP_MS;
   }
 
+  /**
+   * Register the active watch entries and resolve their collection roots. Does
+   * NOT open the live watcher — that's `start()`, per the `Source` contract, so
+   * `recover()` can run a clean boot scan without the live producer racing it.
+   */
   set(libraryRoot: string, entries: readonly WatchEntry[]): void {
     this.stop();
     this.libraryRoot = libraryRoot;
     if (entries.length === 0) return;
 
-    const watchPaths = new Set<string>();
+    const roots = new Set<string>();
     for (const entry of entries) {
       const matcher = picomatch(entry.glob ?? DEFAULT_GLOB, { dot: false });
       this.plugins.set(entry.name, {
@@ -95,28 +100,23 @@ export class Watcher implements Source {
         matcher,
       });
       for (const c of entry.collections) {
-        watchPaths.add(resolveWatchPath(libraryRoot, c));
+        roots.add(resolveWatchPath(libraryRoot, c));
       }
     }
-
-    const gen = this.generation;
-    this.fsWatcher = watch(Array.from(watchPaths), {
-      ignoreInitial: true,
-      persistent: true,
-      alwaysStat: true,
-      awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 50 },
-    });
-    this.fsWatcher.on("add", (path, stats) => void this.onChange(gen, path, stats));
-    this.fsWatcher.on("change", (path, stats) => void this.onChange(gen, path, stats));
+    this.roots = Array.from(roots);
   }
 
   /**
-   * `Source.start` — no-op. The live producer is wired by `set()` (chokidar →
-   * inbox append + watermark advance), called from the daemon's reconcile on
-   * boot and SIGHUP, and fires through the constructor `onFire`. Nothing to
-   * bind here; kept to satisfy the `Source` shape uniformly.
+   * `Source.start` — open the live producer: a watch-tree over the resolved
+   * collection roots, routing every add/change into `onChange` (inbox append +
+   * watermark advance + debounced fire). The daemon calls this after `set()` on
+   * boot and SIGHUP. Idempotent-ish: a prior tree is closed by `set()`/`stop()`.
    */
-  start(): void {}
+  start(): void {
+    if (this.roots.length === 0) return;
+    const gen = this.generation;
+    this.tree = watchTree(this.roots, (path) => void this.onChange(gen, path));
+  }
 
   /**
    * `Source.recover` — boot catch-up. For each active watch entry, walk its
@@ -147,7 +147,7 @@ export class Watcher implements Source {
   }
 
   /**
-   * Mark a path as recently promoted so the next chokidar event for it gets
+   * Mark a path as recently promoted so the next watch event for it gets
    * dropped. Called by the daemon's promote callback to break self-trigger
    * loops (plugin writes file → watcher fires plugin → ...).
    */
@@ -157,14 +157,15 @@ export class Watcher implements Source {
 
   stop(): void {
     this.generation += 1;
-    if (this.fsWatcher) {
-      void this.fsWatcher.close();
-      this.fsWatcher = null;
+    if (this.tree) {
+      this.tree.close();
+      this.tree = null;
     }
     for (const p of this.plugins.values()) {
       if (p.flushTimer) clearTimeout(p.flushTimer);
     }
     this.plugins.clear();
+    this.roots = [];
     this.suppress.clear();
   }
 
@@ -177,10 +178,10 @@ export class Watcher implements Source {
     return { count: entries.length, entries };
   }
 
-  private async onChange(gen: number, path: string, stats: Stats | undefined): Promise<void> {
+  private async onChange(gen: number, path: string): Promise<void> {
     // Drop events that arrived after a stop()/set() — they belong to the
-    // previous chokidar watcher and would otherwise leak into the new
-    // active plugin set's inbox.
+    // previous watch-tree and would otherwise leak into the new active
+    // plugin set's inbox.
     if (gen !== this.generation) return;
     const expiry = this.suppress.get(path);
     if (expiry !== undefined) {
@@ -195,10 +196,9 @@ export class Watcher implements Source {
       if (v <= now) this.suppress.delete(k);
     }
 
-    // chokidar's `alwaysStat: true` usually provides Stats; fall back to a
-    // syscall if it's somehow missing. Either way, mtime is what reaches
-    // the inbox.
-    const mtimeMs = stats?.mtimeMs ?? (await stat(path).catch(() => null))?.mtimeMs;
+    // watch-tree carries only the path; stat for the mtime that reaches the
+    // inbox. A vanished file (stat fails) is a deletion — drop it.
+    const mtimeMs = (await stat(path).catch(() => null))?.mtimeMs;
     if (mtimeMs === undefined) return;
     const mtime = new Date(mtimeMs).toISOString();
 
