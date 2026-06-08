@@ -109,10 +109,16 @@ export class Watcher implements Source {
   /**
    * `Source.start` — open the live producer: a watch-tree over the resolved
    * collection roots, routing every add/change into `onChange` (inbox append +
-   * watermark advance + debounced fire). The daemon calls this after `set()` on
-   * boot and SIGHUP. Idempotent-ish: a prior tree is closed by `set()`/`stop()`.
+   * watermark advance + debounced fire). The daemon's `reconcile()` calls this
+   * right after `set()`, so both boot and SIGHUP bring the tree up. Idempotent:
+   * any open tree is closed first, so a redundant boot `start()` (reconcile +
+   * recoverAll) just reopens rather than leaking.
    */
   start(): void {
+    if (this.tree) {
+      this.tree.close();
+      this.tree = null;
+    }
     if (this.roots.length === 0) return;
     const gen = this.generation;
     this.tree = watchTree(this.roots, (path) => void this.onChange(gen, path));

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { watchTree, type WatchKind } from "./watch-tree";
+import { watchTree } from "./watch-tree";
 
 const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 
@@ -15,8 +15,8 @@ describe("watchTree", () => {
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
   it("emits an absolute path for a file created under a root", async () => {
-    const seen: Array<[string, WatchKind]> = [];
-    const h = watchTree([root], (p, k) => seen.push([p, k]));
+    const seen: string[] = [];
+    const h = watchTree([root], (p) => seen.push(p));
     await settle();
 
     const file = join(root, "a.md");
@@ -24,7 +24,7 @@ describe("watchTree", () => {
     await settle();
     h.close();
 
-    expect(seen.some(([p]) => p === file)).toBe(true);
+    expect(seen.includes(file)).toBe(true);
   });
 
   it("stops emitting after close()", async () => {

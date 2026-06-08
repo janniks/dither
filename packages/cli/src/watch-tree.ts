@@ -21,8 +21,7 @@ import { join } from "node:path";
  * releases every watch.
  */
 
-export type WatchKind = "add" | "change";
-export type OnEvent = (path: string, kind: WatchKind) => void;
+export type OnEvent = (path: string) => void;
 
 export interface TreeWatch {
   close(): void;
@@ -33,14 +32,14 @@ const recursive = process.platform === "darwin" || process.platform === "win32";
 export function watchTree(roots: readonly string[], onEvent: OnEvent): TreeWatch {
   const watchers = new Map<string, FSWatcher>();
 
-  const emit = (full: string, type: string): void => {
+  const emit = (full: string): void => {
     const s = statSync(full, { throwIfNoEntry: false });
     if (!s) return; // deletion or transient
     if (s.isDirectory()) {
       if (!recursive) arm(full); // Linux: a new subtree appeared
       return;
     }
-    onEvent(full, type === "change" ? "change" : "add");
+    onEvent(full);
   };
 
   function arm(dir: string): void {
@@ -48,9 +47,9 @@ export function watchTree(roots: readonly string[], onEvent: OnEvent): TreeWatch
     const s = statSync(dir, { throwIfNoEntry: false });
     if (!s?.isDirectory()) return; // not yet created — reconcile/recover backfills
 
-    const w = watch(dir, { recursive }, (type, name) => {
+    const w = watch(dir, { recursive }, (_type, name) => {
       if (name === null) return;
-      emit(join(dir, name), type);
+      emit(join(dir, name));
     });
     w.on("error", () => {
       w.close();

@@ -428,6 +428,11 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
     const [plugins, libRoot] = await Promise.all([listPlugins(), resolveLibraryRoot()]);
     scheduler.set(scheduleEntriesOf(plugins));
     watcher.set(libRoot, watchEntriesOf(plugins));
+    // set() only configures the watcher (so boot recover() runs without a live
+    // tree racing it); start() opens the tree. Both boot and SIGHUP reconcile
+    // here, so activating the watcher belongs in reconcile — mirroring how
+    // scheduler.set() self-activates its Cron jobs. start() is idempotent.
+    watcher.start();
     state.scheduleCount = scheduler.stats().count;
     state.watchCount = watcher.stats().count;
   }
