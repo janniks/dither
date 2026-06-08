@@ -1,8 +1,11 @@
 import { defineCommand } from "citty";
+import { Cron } from "croner";
 import { existsSync, readFileSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { resolveWatchPath } from "../watch-paths";
+import { writePrivateJson } from "../secure-json";
+import { parseSchedule } from "../schedule-parser";
 import { appendToInbox, type WatchTarget } from "../inbox";
 import { assertInitialized, libraryRoot } from "../config";
 import { clearKick, hasKick, signalDaemon, writeKick, type KickOverrides } from "../kicks";
@@ -89,6 +92,62 @@ async function seedBackfillInbox(name: string): Promise<number> {
     }
   }
   return count;
+}
+
+/**
+ * Bare durations ("15min", "10m") get the `every` prefix `parseSchedule` wants;
+ * cron patterns and "daily at ..." pass through untouched.
+ */
+export function normalizeSchedule(input: string): string {
+  const s = input.trim();
+  const duration = /^\d+\s*(s|sec|seconds?|m|min|minutes?|h|hr|hours?)$/i.test(s);
+  return duration ? `every ${s}` : s;
+}
+
+/**
+ * `--every` / `--watch`: persist a schedule or watch dir to the plugin's grant
+ * and reload the daemon instead of firing now. Edits the top-level grant fields
+ * the daemon actually reads (never `manifest.*`); `ensureDaemonForPlugin`
+ * reloads (or starts) the daemon so the next reconcile picks the change up.
+ */
+async function configurePlugin(name: string, every?: string, watch?: string): Promise<void> {
+  const grantsPath = join(resolveHome(), "grants", `${name}.json`);
+  const grant = JSON.parse(await readFile(grantsPath, "utf-8")) as {
+    schedule?: string | null;
+    watch?: { collections: string[]; glob?: string } | null;
+    [key: string]: unknown;
+  };
+
+  if (every !== undefined) {
+    const sched = normalizeSchedule(every);
+    // The scheduler silently skips an unparseable cron, so validate loudly here.
+    try {
+      new Cron(parseSchedule(sched));
+    } catch {
+      process.stderr.write(
+        `error: '${every}' is not a valid schedule (cron like '0 */6 * * *' or 'every 15min').\n`,
+      );
+      process.exit(1);
+    }
+    grant.schedule = sched;
+  }
+
+  if (watch !== undefined) {
+    const dir = resolve(watch);
+    if (!existsSync(dir)) {
+      process.stderr.write(`warning: '${dir}' does not exist yet — it'll be watched once created.\n`);
+    }
+    const w = grant.watch ?? { collections: [] };
+    if (!w.collections.includes(dir)) w.collections.push(dir);
+    grant.watch = w;
+  }
+
+  await writePrivateJson(grantsPath, grant);
+  await ensureDaemonForPlugin(name).catch(() => {});
+
+  if (every !== undefined) console.log(`scheduled ${name}: ${normalizeSchedule(every)}`);
+  if (watch !== undefined) console.log(`watching for ${name}: ${resolve(watch)}`);
+  console.log(`\nnext: dither plugin list`);
 }
 
 /**
@@ -227,6 +286,15 @@ export const runSubcommand = defineCommand({
         "When the target is a path, install via symlink instead of copying (dev mode). See `plugin install --symlink`.",
       default: false,
     },
+    every: {
+      type: "string",
+      description:
+        "Set a schedule (cron like '0 */6 * * *' or 'every 15min') and reload the daemon — does not run now.",
+    },
+    watch: {
+      type: "string",
+      description: "Add a directory to fs-watch for this plugin and reload the daemon — does not run now.",
+    },
     ...grantArgs,
   },
   async run({ args }) {
@@ -255,6 +323,20 @@ export const runSubcommand = defineCommand({
       printInstallHint(installed.name, true);
     }
 
+    if (!existsSync(pluginDirOf(pluginName))) {
+      process.stderr.write(`error: plugin not installed: '${pluginName}'\n`);
+      process.stderr.write(`hint: run 'dither plugin list' to see installed plugins.\n`);
+      process.exit(1);
+    }
+
+    // --every / --watch configure the plugin's grant (schedule or watch dir)
+    // and reload the daemon; they do NOT fire a run. Branch out before the
+    // kick path so config works even while a run is in flight.
+    if (args.every !== undefined || args.watch !== undefined) {
+      await configurePlugin(pluginName, args.every, args.watch);
+      return { plugin: pluginName, configured: true };
+    }
+
     // Pre-check: a pending kick or a held lock means the plugin is already
     // queued/running. Reject rather than coalesce — keeps the model simple
     // (one kick per plugin) and surfaces a clear "tail-existing" message.
@@ -262,12 +344,6 @@ export const runSubcommand = defineCommand({
       process.stderr.write(
         `${pluginName} is already running — tail with 'dither plugin runs ${pluginName}'\n`,
       );
-      process.exit(1);
-    }
-
-    if (!existsSync(pluginDirOf(pluginName))) {
-      process.stderr.write(`error: plugin not installed: '${pluginName}'\n`);
-      process.stderr.write(`hint: run 'dither plugin list' to see installed plugins.\n`);
       process.exit(1);
     }
 
