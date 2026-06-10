@@ -474,10 +474,17 @@ export async function openRun(
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
       if (attempt === 2) throw new Error(`openRun: runId collisions exhausted for plugin ${plugin}`);
-      // A presupplied id collides with an existing run dir — surface that as
-      // an error rather than silently minting a fresh one. Callers handing
-      // in an id (the kick path) want exactly that id or a clean failure.
-      if (presuppliedId) throw new Error(`openRun: presupplied runId already exists: ${presuppliedId}`);
+      // A presupplied id collides with an existing run dir. A dir with no
+      // manifest.json is an aborted husk — an earlier openRun mkdir'd then
+      // never wrote the manifest (e.g. a foreground `plugin run` Ctrl-C'd
+      // between mkdir and the manifest write, whose kick the daemon later
+      // re-services). Reuse the husk: drop through and write the manifest
+      // below. A dir WITH a manifest is a genuine collision — fail clean so
+      // callers handing in an id get exactly that id or a clear error.
+      if (presuppliedId && existsSync(join(dir, "manifest.json"))) {
+        throw new Error(`openRun: presupplied runId already exists: ${presuppliedId}`);
+      }
+      if (presuppliedId) break;
       runId = generateRunId(plugin);
       dir = runDirOf(runId);
     }

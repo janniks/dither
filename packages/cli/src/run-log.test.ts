@@ -207,6 +207,21 @@ describe("run-log", () => {
       await expect(openRun("myplugin", "manual", id)).rejects.toThrow(/presupplied runId/);
     });
 
+    it("openRun reuses an empty husk dir (no manifest) for a presupplied runId", async () => {
+      const { openRun, generateRunId } = await import("./run-log");
+      const id = generateRunId("myplugin");
+      // Simulate an aborted prior openRun: dir exists, manifest never written.
+      const husk = join(home, "history", id);
+      await mkdir(husk, { recursive: true });
+      expect(existsSync(join(husk, "manifest.json"))).toBe(false);
+
+      const handle = await openRun("myplugin", "manual", id);
+      expect(handle.runId).toBe(id);
+      expect(handle.dir).toBe(husk);
+      const manifest = JSON.parse(readFileSync(join(husk, "manifest.json"), "utf-8")) as { runId: string };
+      expect(manifest.runId).toBe(id);
+    });
+
     it("openRun retries on runId collision and produces distinct ids with intact manifests", async () => {
       // Force a single collision: first two randomBytes calls return the
       // same suffix; third call returns a different one. With the retry
