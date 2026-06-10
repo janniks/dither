@@ -114,7 +114,7 @@ async function configurePlugin(name: string, every?: string, watch?: string): Pr
   const grantsPath = join(resolveHome(), "grants", `${name}.json`);
   const grant = JSON.parse(await readFile(grantsPath, "utf-8")) as {
     schedule?: string | null;
-    watch?: { collections: string[]; glob?: string } | null;
+    watch?: { collections: string[]; dirs?: string[]; glob?: string } | null;
     [key: string]: unknown;
   };
 
@@ -137,8 +137,12 @@ async function configurePlugin(name: string, every?: string, watch?: string): Pr
     if (!existsSync(dir)) {
       process.stderr.write(`warning: '${dir}' does not exist yet — it'll be watched once created.\n`);
     }
+    // User-added dirs are kept in `watch.dirs`, separate from `collections`
+    // (which only ever holds manifest-consented library collection names).
     const w = grant.watch ?? { collections: [] };
-    if (!w.collections.includes(dir)) w.collections.push(dir);
+    const dirs = w.dirs ?? [];
+    if (!dirs.includes(dir)) dirs.push(dir);
+    w.dirs = dirs;
     grant.watch = w;
   }
 

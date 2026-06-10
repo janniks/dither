@@ -11,8 +11,10 @@ export interface InstalledPluginInfo {
   collections: string[];
   net: string[];
   /** Parsed watch declaration. `null` = explicitly disabled,
-   *  `undefined` = absent (legacy grants — treated as disabled). */
-  watch?: { collections: string[]; glob?: string } | null;
+   *  `undefined` = absent (legacy grants — treated as disabled).
+   *  `collections` are manifest-consented library collections; `dirs` are
+   *  arbitrary absolute paths the user added via `plugin run --watch`. */
+  watch?: { collections: string[]; dirs?: string[]; glob?: string } | null;
 }
 
 interface GrantsFile {
@@ -23,7 +25,7 @@ interface GrantsFile {
   /** User's effective schedule. `null` = manual-only, absent = legacy
    *  grants file (treated as manual-only). */
   schedule?: string | null;
-  watch?: { collections: string[]; glob?: string } | null;
+  watch?: { collections: string[]; dirs?: string[]; glob?: string } | null;
 }
 
 export async function listPlugins(): Promise<InstalledPluginInfo[]> {

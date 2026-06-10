@@ -105,8 +105,13 @@ function scheduleEntriesOf(plugins: InstalledPluginInfo[]): ScheduleEntry[] {
 function watchEntriesOf(plugins: InstalledPluginInfo[]): WatchEntry[] {
   return plugins.flatMap((p) => {
     const w = p.watch;
-    if (!w || !Array.isArray(w.collections) || w.collections.length === 0) return [];
-    return [{ name: p.name, collections: w.collections, ...(w.glob ? { glob: w.glob } : {}) }];
+    if (!w) return [];
+    // Watch roots = manifest collections + user-added absolute dirs. They
+    // resolve identically (`resolveWatchPath` passes absolutes through), so
+    // they merge into one root list here; the grant keeps them separate.
+    const roots = [...(w.collections ?? []), ...(w.dirs ?? [])];
+    if (roots.length === 0) return [];
+    return [{ name: p.name, collections: roots, ...(w.glob ? { glob: w.glob } : {}) }];
   });
 }
 

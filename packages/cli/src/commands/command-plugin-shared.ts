@@ -148,7 +148,12 @@ export async function dryRunInstall(opts: InstallOptions): Promise<void> {
 
 interface ConsentedGrants {
   schedule?: string | null;
-  watch?: { collections?: string[] } | null;
+  watch?: { collections?: string[]; dirs?: string[] } | null;
+}
+
+/** Every watched root: manifest collections plus user-added absolute dirs. */
+function watchRoots(watch: NonNullable<ConsentedGrants["watch"]>): string[] {
+  return [...(watch.collections ?? []), ...(watch.dirs ?? [])];
 }
 
 function readConsentedGrants(name: string): ConsentedGrants | null {
@@ -185,7 +190,7 @@ export function printInstallHint(name: string, fromRunPath: boolean): void {
     process.stdout.write(pc.dim(`next: dither plugin run ${name} (manual one-shot fire)\n`));
     return;
   }
-  const watch = grants.watch?.collections ?? [];
+  const watch = grants.watch ? watchRoots(grants.watch) : [];
   if (watch.length > 0) {
     process.stdout.write(
       pc.dim(`\nnote: runs automatically when files change in: ${watch.join(", ")}\n` +
@@ -206,7 +211,7 @@ export async function ensureDaemonForPlugin(name: string): Promise<void> {
   if (!grants) return;
   const needsDaemon =
     Boolean(grants.schedule) ||
-    Boolean(grants.watch?.collections && grants.watch.collections.length > 0);
+    Boolean(grants.watch && watchRoots(grants.watch).length > 0);
   if (!needsDaemon) return;
 
   const alive = await readDaemonPid();
