@@ -7,11 +7,15 @@ export interface RemoveOptions {
   name: string;
 }
 
+export function isInstalled(name: string): boolean {
+  return existsSync(pluginDir(name)) || existsSync(join(resolveHome(), "grants", `${name}.json`));
+}
+
 export async function removePlugin(opts: RemoveOptions): Promise<void> {
   const dir = pluginDir(opts.name);
   const grantsPath = join(resolveHome(), "grants", `${opts.name}.json`);
 
-  if (!existsSync(dir) && !existsSync(grantsPath)) {
+  if (!isInstalled(opts.name)) {
     throw new Error(`Plugin '${opts.name}' is not installed.`);
   }
 
