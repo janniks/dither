@@ -2,7 +2,7 @@ import { defineCommand } from "citty";
 import { Cron } from "croner";
 import { existsSync, readFileSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, resolve, isAbsolute } from "node:path";
 import { resolveWatchPath } from "../watch-paths";
 import { writePrivateJson } from "../secure-json";
 import { parseSchedule } from "../schedule-parser";
@@ -133,16 +133,21 @@ async function configurePlugin(name: string, every?: string, watch?: string): Pr
   }
 
   if (watch !== undefined) {
-    const dir = resolve(watch);
-    if (!existsSync(dir)) {
-      process.stderr.write(`warning: '${dir}' does not exist yet — it'll be watched once created.\n`);
-    }
-    // User-added dirs are kept in `watch.dirs`, separate from `collections`
-    // (which only ever holds manifest-consented library collection names).
+    // Route by notation, mirroring resolveWatchPath: a path (`/abs` or `./rel`)
+    // is a literal dir → `watch.dirs`; a bare name is a library collection →
+    // `watch.collections` (stored as the name, resolved to a dir at runtime).
+    const isDir = isAbsolute(watch) || watch.startsWith("./") || watch.startsWith("../");
     const w = grant.watch ?? { collections: [] };
-    const dirs = w.dirs ?? [];
-    if (!dirs.includes(dir)) dirs.push(dir);
-    w.dirs = dirs;
+    if (isDir) {
+      const dir = resolve(watch);
+      if (!existsSync(dir)) {
+        process.stderr.write(`warning: '${dir}' does not exist yet — it'll be watched once created.\n`);
+      }
+      const dirs = w.dirs ?? [];
+      if (!dirs.includes(dir)) dirs.push(dir);
+      w.dirs = dirs;
+    }
+    if (!isDir && !w.collections.includes(watch)) w.collections.push(watch);
     grant.watch = w;
   }
 
@@ -150,7 +155,10 @@ async function configurePlugin(name: string, every?: string, watch?: string): Pr
   await ensureDaemonForPlugin(name).catch(() => {});
 
   if (every !== undefined) console.log(`scheduled ${name}: ${normalizeSchedule(every)}`);
-  if (watch !== undefined) console.log(`watching for ${name}: ${resolve(watch)}`);
+  if (watch !== undefined) {
+    const isDir = isAbsolute(watch) || watch.startsWith("./") || watch.startsWith("../");
+    console.log(`watching for ${name}: ${isDir ? resolve(watch) : watch}`);
+  }
   console.log(`\nnext: dither plugin list`);
 }
 
@@ -297,7 +305,8 @@ export const runSubcommand = defineCommand({
     },
     watch: {
       type: "string",
-      description: "Add a directory to fs-watch for this plugin and reload the daemon — does not run now.",
+      description:
+        "Add a watch target and reload the daemon (does not run now). A path ('/abs' or './rel') is watched literally; a bare name is a library collection.",
     },
     ...grantArgs,
   },
