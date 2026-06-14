@@ -218,7 +218,7 @@ directory of the same shape.
 ```
 <home>/                       # ~/.config/dither
 ├── dither.pid                # {pid, token, startedAt}
-├── status.json               # 1Hz snapshot
+├── status.json               # event-driven snapshot (not periodic)
 ├── run-log.jsonl             # global events; trunc on daemon start
 ├── env.json                  # globalEnv (grants.envRefs targets)
 ├── qmd-index.sqlite
@@ -270,8 +270,11 @@ asserted at write (`refire.ts:36-40`).
 
 **Daemon lifecycle.** `runDaemon()` writes the PID file, truncates the
 global run-log, clears stale `jobs/`, restores orphan `inflight/`, then
-reconciles (`daemon.ts:233-261`). 1s `setInterval` heartbeat rewrites
-`status.json` (`daemon.ts:26, 314-316`). Shutdown verifies its own
+reconciles (`daemon.ts:233-261`). No periodic heartbeat: the status
+snapshot is rewritten only on real events — startup, SIGHUP reload, run
+start/end, loop-detector halt, shutdown — via a `writeStatus` closure
+threaded through the fire sources as a `notify` callback
+(`daemon.ts:26-30, 337-349`). Shutdown verifies its own
 `{pid, token}` against the PID file before unlinking — a respawned
 daemon's file is never clobbered (`daemon.ts:115-125`). CLI auto-starts
 the daemon via `ensureDaemonForPlugin` after install/consent re-grant for
@@ -295,10 +298,16 @@ inference (`readSummary`): `result.json` present → that status; missing
 (`run-log.ts:531-567`). `followRun`/`followGlobal` poll+stat (no
 `fs.watch`) and survive rotation via dev/inode (`run-log.ts:264-350`).
 
-**Status snapshot freshness.** Read-side `probeDaemon()` requires both a
-15s freshness window AND a `pid/token/startedAt` triple-match against
-the PID file; mismatches surface as typed reasons (`no-pidfile`,
-`dead-process`, `snapshot-stale`, etc., `daemon-control.ts:30-126`).
+**Daemon liveness.** Liveness is the PID file + `kill(pid, 0)` + token
+match — nothing time-based. The status snapshot is opportunistic context,
+NOT a liveness signal: an idle daemon legitimately leaves it old, so
+staleness never implies death (`status` shows "updated 3m ago" so the
+user judges freshness by relative time). `probeDaemon()` walks PID-file
+exists → `kill(0)` alive → snapshot `pid/token/startedAt` matches, and
+surfaces the first failing gate as a typed reason (`no-pidfile`,
+`bad-pidfile`, `dead-process`, `snapshot-mismatch`,
+`daemon-control.ts:70-97`). A live daemon with no snapshot yet still
+reports `reason: null`.
 
 **Plugin process model.** `runPlugin` writes `runs/<runId>/input.json`
 (`{trigger, env, files, targets, net}`) plus an import map, then `spawn`
