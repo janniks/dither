@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, Quote } from "lucide-react";
+import { GitHubLogoIcon } from "@radix-ui/react-icons";
 import { RotatingHeadline } from "./rotating-headline";
 import { FooterSection } from "./footer-section";
 import { FeatureGrid } from "./marketing/feature-grid";
@@ -44,12 +45,15 @@ export default function HomePage() {
               Get started
               <ArrowRight size={16} />
             </Link>
-            <Link
-              href="/docs/cli"
-              className="border bg-fd-card hover:bg-fd-accent inline-flex items-center justify-center rounded-[10px] px-4 py-3 text-sm font-semibold"
+            <a
+              href="https://github.com/janniks/dither"
+              target="_blank"
+              rel="noreferrer"
+              className="border bg-fd-card hover:bg-fd-accent inline-flex items-center justify-center gap-2 rounded-[10px] px-4 py-3 text-sm font-semibold no-underline transition-colors"
             >
-              CLI Reference
-            </Link>
+              <GitHubLogoIcon className="size-4" />
+              GitHub
+            </a>
           </div>
         </section>
 

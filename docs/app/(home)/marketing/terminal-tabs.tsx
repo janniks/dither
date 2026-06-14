@@ -71,7 +71,7 @@ function PluginRunDemo() {
         $ dither plugin install github:dither-plugins/rss
       </TypingAnimation>
       <AnimatedSpan className="text-fd-muted-foreground">
-        granting: read ~/.dither/library/feeds · net rss.* · 2 collections
+        granting: read ~/.dither/library/feeds — net rss.* — 2 collections
       </AnimatedSpan>
       <AnimatedSpan className="text-[#99D892]">
         ✔ installed rss
@@ -81,7 +81,7 @@ function PluginRunDemo() {
         rss: pulling 4 feeds...
       </AnimatedSpan>
       <AnimatedSpan className="text-[#99D892]">
-        ✔ 12 new entries · feeds/
+        ✔ 12 new entries — feeds/
       </AnimatedSpan>
     </Terminal>
   );
@@ -91,25 +91,25 @@ function SearchDemo() {
   return (
     <Terminal className="!max-h-none min-h-[440px]">
       <AnimatedSpan className="text-fd-muted-foreground">
-        <span className="text-fd-foreground">5</span> collections ·{" "}
+        <span className="text-fd-foreground">5</span> collections —{" "}
         <span className="text-fd-foreground">131,582</span> entries
       </AnimatedSpan>
       <TypingAnimation>
         $ dither search &quot;ranking signals&quot;
       </TypingAnimation>
       <AnimatedSpan className="text-fd-muted-foreground">
-        3 results · 18ms
+        3 results — 18ms
       </AnimatedSpan>
       <AnimatedSpan>
         <span className="text-[#4AB5EC]">notes/idea.md</span>{" "}
-        <span className="text-fd-muted-foreground">· 3 days ago</span>
+        <span className="text-fd-muted-foreground">— 3 days ago</span>
       </AnimatedSpan>
       <AnimatedSpan className="text-fd-muted-foreground pl-4">
         ...recency should decay by query intent, not the clock...
       </AnimatedSpan>
       <AnimatedSpan>
         <span className="text-[#4AB5EC]">feeds/hn/2026-04-22.md</span>{" "}
-        <span className="text-fd-muted-foreground">· 3 weeks ago</span>
+        <span className="text-fd-muted-foreground">— 3 weeks ago</span>
       </AnimatedSpan>
       <AnimatedSpan className="text-fd-muted-foreground pl-4">
         ...BM25 alone misses synonymy; pure embeddings drift on rare terms...
@@ -118,11 +118,11 @@ function SearchDemo() {
         $ dither search &quot;deno permission flags&quot; --in pocket
       </TypingAnimation>
       <AnimatedSpan className="text-fd-muted-foreground">
-        2 results · 9ms
+        2 results — 9ms
       </AnimatedSpan>
       <AnimatedSpan>
         <span className="text-[#4AB5EC]">pocket/deno-runtime-deep-dive.md</span>{" "}
-        <span className="text-fd-muted-foreground">· last month</span>
+        <span className="text-fd-muted-foreground">— last month</span>
       </AnimatedSpan>
       <AnimatedSpan className="text-fd-muted-foreground pl-4">
         ...--allow-read accepts directory globs, not just paths...

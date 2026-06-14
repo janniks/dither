@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import pc from "picocolors";
 import { markTerms, renderSnippet } from "./command-search";
 
 const B = (s: string) => `<B>${s}</B>`;
@@ -43,5 +44,10 @@ describe("renderSnippet", () => {
 
   it("collapses internal whitespace into single spaces", () => {
     expect(renderSnippet("foo\n\n   bar\tbaz", [], 100, false)).toBe("foo bar baz");
+  });
+
+  it("dims the whole line when no term matches (e.g. match truncated off)", () => {
+    const out = renderSnippet("source_url: https://x.com/blog", ["markdown"], 100, true);
+    expect(out).toBe(pc.dim("source_url: https://x.com/blog"));
   });
 });

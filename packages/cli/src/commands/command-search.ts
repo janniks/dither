@@ -17,6 +17,30 @@ function truncate(s: string, max: number): string {
   return `${s.slice(0, max - 1)}…`;
 }
 
+// Parse a grep-style context count (`-A`/`-B`/`-C`). Undefined when absent;
+// non-numeric or negative collapses to 0.
+function ctxCount(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const n = Number.parseInt(raw.replace(/^=/, "").trim(), 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+// Resolve the preview window from the flags. `-A`/`-B` set their own side;
+// `-C` sets both unless a side was given explicitly. Any context flag implies
+// preview; bare `-p` previews just the matched line (before/after = 0).
+function previewWindow(args: {
+  preview?: boolean;
+  after?: string;
+  before?: string;
+  context?: string;
+}): { before: number; after: number } | undefined {
+  const c = ctxCount(args.context);
+  const after = ctxCount(args.after) ?? c;
+  const before = ctxCount(args.before) ?? c;
+  if (!args.preview && after === undefined && before === undefined) return undefined;
+  return { before: before ?? 0, after: after ?? 0 };
+}
+
 // Whitespace-tokenize the raw query into the terms that get bolded inside
 // the snippet. Lowercased and length-filtered to avoid pathological regexes
 // (`q ` would otherwise match every position).
@@ -73,7 +97,11 @@ export function renderSnippet(
 ): string {
   const clipped = truncate(oneLine(text), maxWidth);
   if (!useColor) return clipped;
-  return markTerms(clipped, terms, pc.bold, pc.dim);
+  const marked = markTerms(clipped, terms, pc.bold, pc.dim);
+  // markTerms leaves text raw when no term matched (e.g. the match got
+  // truncated off the tail). Dim the whole line so preview rows read
+  // consistently instead of some dim, some plain.
+  return marked === clipped ? pc.dim(clipped) : marked;
 }
 
 // Render the bare hash. `d get` accepts both `abc123` and `#abc123` (qmd's
@@ -86,11 +114,19 @@ function printHits(hits: SearchHit[], query: string): void {
 
   // Piped output: stable tab-separated format. Lead with docid since it's the
   // copy-paste get-key; path follows for human context. When a snippet is
-  // attached (--preview), append it as a 6th column. One row per hit.
+  // attached (--preview), append each snippet line as a 6th column on its own
+  // row — so a multi-line preview yields one row per line. (Scripts wanting
+  // structure should consume JSON.)
   if (!tty) {
     for (const hit of hits) {
       const base = `${hit.docid}\t${hit.score.toFixed(3)}\t${hit.collection}\t${hit.path}\t${oneLine(hit.title)}`;
-      console.log(hit.snippet ? `${base}\t${oneLine(hit.snippet.text)}` : base);
+      if (!hit.snippet) {
+        console.log(base);
+        continue;
+      }
+      for (const line of hit.snippet.text.split("\n")) {
+        console.log(`${base}\t${oneLine(line)}`);
+      }
     }
     return;
   }
@@ -152,7 +188,22 @@ export const searchCommand = defineCommand({
     preview: {
       type: "boolean",
       alias: "p",
-      description: "Show a one-line snippet of the matched region under each hit",
+      description: "Show a snippet of the matched line under each hit",
+    },
+    after: {
+      type: "string",
+      alias: "A",
+      description: "Preview N lines after the match (grep -A); implies --preview",
+    },
+    before: {
+      type: "string",
+      alias: "B",
+      description: "Preview N lines before the match (grep -B); implies --preview",
+    },
+    context: {
+      type: "string",
+      alias: "C",
+      description: "Preview N lines of context around the match (grep -C); implies --preview",
     },
   },
   async run({ args }) {
@@ -166,7 +217,7 @@ export const searchCommand = defineCommand({
       limit,
       rerank: args.rerank,
       mode,
-      preview: args.preview,
+      preview: previewWindow(args),
     });
 
     printHits(hits, args.query);

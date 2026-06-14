@@ -1,3 +1,8 @@
+---
+priority: 1
+status: null
+---
+
 # spec: cli table output
 
 ## problem

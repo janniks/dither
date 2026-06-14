@@ -11,8 +11,12 @@ export interface SearchOptions {
    */
   mode?: "hybrid" | "lex";
   rerank?: boolean;
-  /** Attach a one-line snippet from the matched region to each hit. */
-  preview?: boolean;
+  /**
+   * Attach a snippet from the matched region to each hit. `before`/`after` are
+   * grep-style context line counts around the matched line (both 0 → just the
+   * matched line). Omit/undefined for no snippet.
+   */
+  preview?: { before: number; after: number };
 }
 
 export interface SearchHit {
@@ -21,7 +25,11 @@ export interface SearchHit {
   docid: string;
   title: string;
   score: number;
-  /** Present iff `preview: true` was passed and a snippet could be extracted. */
+  /**
+   * Present iff `preview` was requested and a snippet could be extracted.
+   * `text` may span multiple lines (joined by "\n") when more than one line
+   * was requested; `line` is the first line of the window.
+   */
   snippet?: { text: string; line: number };
 }
 
@@ -48,7 +56,7 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
           score: r.score,
         };
         if (opts.preview) {
-          const snippet = await extractLexSnippet(store, r.docid, opts.query, r.chunkPos);
+          const snippet = await extractLexSnippet(store, r.docid, opts.query, r.chunkPos, opts.preview);
           if (snippet) hit.snippet = snippet;
         }
         return hit;
@@ -72,7 +80,7 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
     };
     // Hybrid results already carry body + bestChunkPos — no extra DB hit.
     if (opts.preview && r.body) {
-      const snippet = safeSnippet(r.body, opts.query, r.bestChunkPos, r.bestChunk?.length);
+      const snippet = safeSnippet(r.body, opts.query, r.bestChunkPos, r.bestChunk?.length, opts.preview);
       if (snippet) hit.snippet = snippet;
     }
     return hit;
@@ -86,14 +94,33 @@ async function extractLexSnippet(
   docid: string,
   query: string,
   chunkPos: number | undefined,
+  ctx: { before: number; after: number },
 ): Promise<{ text: string; line: number } | undefined> {
   try {
     const body = await store.getDocumentBody(docid);
     if (!body) return undefined;
-    return safeSnippet(body, query, chunkPos, undefined);
+    return safeSnippet(body, query, chunkPos, undefined, ctx);
   } catch {
     return undefined;
   }
+}
+
+// Cut a grep-style window: `before` lines above and `after` lines below the
+// matched line (always included), clamped at file edges. Blank lines at the
+// window's edges are trimmed so previews don't lead/trail with empty rows;
+// trailing whitespace and the window's common leading indent are stripped so
+// the snippet reads flush-left while keeping relative structure. Returns the
+// joined text and the window's start line.
+function window(all: string[], idx: number, before: number, after: number): { text: string; start: number } | undefined {
+  let start = Math.max(0, idx - before);
+  let end = Math.min(all.length - 1, idx + after);
+  while (start < idx && all[start]!.trim() === "") start++;
+  while (end > idx && all[end]!.trim() === "") end--;
+  const slice = all.slice(start, end + 1).map((l) => l.replace(/\s+$/, ""));
+  const indents = slice.filter((l) => l !== "").map((l) => l.match(/^\s*/)![0].length);
+  const dedent = indents.length > 0 ? Math.min(...indents) : 0;
+  const text = slice.map((l) => l.slice(dedent)).join("\n");
+  return text.trim() ? { text, start } : undefined;
 }
 
 export function safeSnippet(
@@ -101,25 +128,29 @@ export function safeSnippet(
   query: string,
   chunkPos: number | undefined,
   chunkLen: number | undefined,
+  ctx: { before: number; after: number } = { before: 0, after: 0 },
 ): { text: string; line: number } | undefined {
   if (!body) return undefined;
-  const lines = body.split("\n");
-  try {
-    // qmd returns the matched line index + a multi-line `snippet` with a
-    // diff-style `@@ -X,Y @@` header. We don't want either format for an
-    // inline terminal preview — just pluck the matched line itself.
-    const s = extractSnippet(body, query, undefined, chunkPos, chunkLen);
-    const matched = lines[s.line - 1]?.trim();
-    if (matched) return { text: matched, line: s.line };
-  } catch {
-    // fall through
-  }
-  // Fallback: no match in the chunk (all stopwords, empty result, or qmd
-  // threw). Pick the first non-empty line so the preview still shows
-  // context instead of going missing.
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i]!.trim();
-    if (trimmed) return { text: trimmed, line: i + 1 };
-  }
-  return undefined;
+  const all = body.split("\n");
+
+  // qmd returns the matched line index + a multi-line `snippet` with a
+  // diff-style `@@ -X,Y @@` header — we want neither format, just the line
+  // index so we can cut our own window from the body.
+  const idx = (() => {
+    try {
+      const s = extractSnippet(body, query, undefined, chunkPos, chunkLen);
+      if (all[s.line - 1]?.trim()) return s.line - 1;
+    } catch {
+      // fall through
+    }
+    // Fallback: no match in the chunk (all stopwords, empty result, or qmd
+    // threw). Anchor on the first non-empty line so the preview still shows
+    // context instead of going missing.
+    return all.findIndex((l) => l.trim() !== "");
+  })();
+  if (idx < 0) return undefined;
+
+  const win = window(all, idx, Math.max(0, ctx.before), Math.max(0, ctx.after));
+  if (!win) return undefined;
+  return { text: win.text, line: win.start + 1 };
 }

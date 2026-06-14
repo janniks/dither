@@ -190,3 +190,4 @@ Two coordinated moves in one commit:
 | `57f92a6` | phase 4 — CONTEXT.md: drop Snapshot/Reconciler/Lock-theme; Marker as lazy Signal |
 | `25670b7` | phase 5 — kill 1Hz heartbeat; event-driven status writes |
 | `c5b9a4a` | phase 6 — markers extraction + `<home>/markers/` layout |
+| `5a35248` | phase 7 — command- prefix rename + plugin.ts split |

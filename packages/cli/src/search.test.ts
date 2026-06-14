@@ -20,6 +20,20 @@ describe("safeSnippet", () => {
     expect(out?.text.toLowerCase()).toContain("authentication");
     expect(out?.line).toBeGreaterThan(0);
   });
+
+  it("includes grep-style context lines around the match", () => {
+    const body = "line one\nline two\nthe authentication flow\nline four\nline five";
+    const out = safeSnippet(body, "authentication", undefined, undefined, { before: 1, after: 1 });
+    expect(out?.text).toBe("line two\nthe authentication flow\nline four");
+    expect(out?.line).toBe(2); // window starts on the line before the match
+  });
+
+  it("clamps the context window at file edges", () => {
+    const body = "the authentication flow\nsecond line";
+    const out = safeSnippet(body, "authentication", undefined, undefined, { before: 5, after: 5 });
+    expect(out?.text).toBe("the authentication flow\nsecond line");
+    expect(out?.line).toBe(1);
+  });
 });
 
 describe("search", () => {
@@ -150,7 +164,7 @@ describe("search", () => {
     await updateIndex();
 
     const { search } = await import("./search");
-    const results = await search({ query: "authentication", preview: true });
+    const results = await search({ query: "authentication", preview: { before: 0, after: 0 } });
 
     expect(results.length).toBeGreaterThan(0);
     expect(results[0]?.snippet).toBeDefined();
@@ -172,7 +186,7 @@ describe("search", () => {
     await updateIndex();
 
     const { search } = await import("./search");
-    const results = await search({ query: "widget", mode: "lex", preview: true });
+    const results = await search({ query: "widget", mode: "lex", preview: { before: 0, after: 0 } });
 
     expect(results.length).toBeGreaterThan(0);
     expect(results[0]?.snippet).toBeDefined();
@@ -191,7 +205,7 @@ describe("search", () => {
     await updateIndex();
 
     const { search } = await import("./search");
-    const previewed = await search({ query: "authentication", mode: "lex", preview: true });
+    const previewed = await search({ query: "authentication", mode: "lex", preview: { before: 0, after: 0 } });
     const plain = await search({ query: "authentication", mode: "lex" });
 
     expect(previewed.length).toBeGreaterThan(0);
