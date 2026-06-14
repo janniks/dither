@@ -202,7 +202,7 @@ stdout to keep cursor control intact.
 
 Cross-cutting idioms in `packages/cli/src/` for daemon + plugin
 coordination. New IPC channels should mirror these shapes; new daemon code
-should slot into the existing seams. Refs are `file:line`.
+should slot into the existing seams. Refs are `file.ts:functionName`.
 
 It's okay to question these, especially during refactors, but try to find
 new abstractions and rules that are simple and work across the whole
@@ -222,8 +222,9 @@ directory of the same shape.
 ├── run-log.jsonl             # global events; trunc on daemon start
 ├── env.json                  # globalEnv (grants.envRefs targets)
 ├── qmd-index.sqlite
-├── needs-reindex             # marker
-├── embed-disabled            # marker
+├── markers/
+│   ├── needs-reindex         # request marker
+│   └── embed-disabled        # state marker
 ├── logs/daemon.log
 ├── bin/                      # managed deno
 ├── plugins/<name>/           # installed plugin + state/
@@ -235,6 +236,9 @@ directory of the same shape.
 ├── refires/<plugin>.json     # plugin reschedule + retry
 ├── inboxes/<plugin>.ndjson   # watch events queued
 ├── inflight/<plugin>.ndjson  # claimed but unfinished
+├── kicks/                    # pending manual run triggers
+├── schedule-state/           # per-plugin lastRun timestamps
+├── watch-state/              # per-plugin mtime watermarks
 ├── jobs/<jobId>.json         # qmd inflight snapshots
 ├── history/<runId>/          # per-run journal
 │   ├── manifest.json         # identity (+ childPid post-spawn)
@@ -246,17 +250,17 @@ directory of the same shape.
 Fire sources funnel through one choke point:
 
 ```
-Scheduler (cron)            ─┐
-Watcher (chokidar → inbox)  ─┼─→ fireWithSuppress(name, trigger)
-Refirer (timer-per-row)     ─┘     1. LoopDetector.shouldHalt? skip
-                                   2. await runPlugin({name, trigger})
-                                   3. watcher.suppressOnce(added paths)
-                                   4. pick up any refire row the run wrote
+Scheduler (cron)                    ─┐
+Watcher (native watch-tree → inbox) ─┼─→ fireWithSuppress(name, trigger)
+Refirer (timer-per-row)             ─┘     1. LoopDetector.shouldHalt? skip
+                                           2. await runPlugin({name, trigger})
+                                           3. watcher.suppressOnce(added paths)
+                                           4. pick up any refire row the run wrote
 ```
 
 Sources don't import `runPlugin` — the callback is the seam; the three
-`set/stop/stats` shapes are deliberately identical (`scheduler.ts:32-82`,
-`watcher.ts:73-132`, `refirer.ts:22-77`, `daemon.ts:210-220`).
+`set/stop/stats` shapes are deliberately identical (`scheduler.ts:Scheduler`,
+`watcher.ts:Watcher`, `refirer.ts:Refirer`).
 
 Signals: `SIGTERM`/`SIGINT` → graceful shutdown with a 30s child-drain
 window; `SIGHUP` → reload config/grants/refires + qmd reconcile.
@@ -264,39 +268,40 @@ window; `SIGHUP` → reload config/grants/refires + qmd reconcile.
 **Filesystem channels.** One file per identity, body is JSON (or NDJSON
 when append-heavy). API is uniformly `read/write/clear/list`. Atomic
 `writeFile(tmp) + rename` for tmp+rename where readers race writers
-(`run-log.ts:477-487`); plain `writeFile` where partial reads are
-tolerable. Listing is `readdir` with `ENOENT → []`. Plugin-name safety
-asserted at write (`refire.ts:36-40`).
+(`run-log.ts:openRun` — result.json and manifest); plain `writeFile` where
+partial reads are tolerable. Listing is `readdir` with `ENOENT → []`.
+Plugin-name safety asserted at write (`refire.ts:assertSafePluginName`).
 
 **Daemon lifecycle.** `runDaemon()` writes the PID file, truncates the
 global run-log, clears stale `jobs/`, restores orphan `inflight/`, then
-reconciles (`daemon.ts:233-261`). No periodic heartbeat: the status
-snapshot is rewritten only on real events — startup, SIGHUP reload, run
-start/end, loop-detector halt, shutdown — via a `writeStatus` closure
-threaded through the fire sources as a `notify` callback
-(`daemon.ts:26-30, 337-349`). Shutdown verifies its own
+arms all sources via `armSources()` (`daemon.ts:runDaemon`). No periodic
+heartbeat: the status snapshot is rewritten only on real events — startup,
+SIGHUP reload, run start/end, loop-detector halt, shutdown — via a
+`writeStatus` closure threaded through the fire sources as a `notify`
+callback (`daemon.ts:writeStatusSnapshot`). Shutdown verifies its own
 `{pid, token}` against the PID file before unlinking — a respawned
-daemon's file is never clobbered (`daemon.ts:115-125`). CLI auto-starts
-the daemon via `ensureDaemonForPlugin` after install/consent re-grant for
-plugins with `schedule` or `watch` (`commands/plugin.ts:221-256`);
-`startDaemon()` is itself gated by `acquire("daemon-start")` to serialize
-spawns (`daemon-control.ts:156-205`).
+daemon's file is never clobbered (`daemon.ts:removePidFile`). CLI
+auto-starts the daemon via `ensureDaemonForPlugin` after install/consent
+re-grant for plugins with `schedule` or `watch`
+(`command-plugin-shared.ts:ensureDaemonForPlugin`); `startDaemon()` is
+itself gated by `acquire("daemon-start")` to serialize spawns
+(`daemon-control.ts:startDaemon`).
 
 **Locks.** O_EXCL `open(path, "wx")`, retry up to 3× with `isPidAlive`
-probe on `EEXIST` (`locks.ts:62-125`). Two surfaces over the same code:
+probe on `EEXIST` (`locks.ts:acquire`). Two surfaces over the same code:
 named locks (`acquire("name")` for plugins, daemon-start) and typed
 themes (`acquireTheme("download"|"index"|"embed")` → `qmd-<theme>` on
 disk). Read-side `status(theme)` returns `{startedAt, pid}` only for
-live holders (`locks.ts:165-178`).
+live holders (`locks.ts:status`).
 
 **Run journal.** Lifecycle: `openRun(plugin, trigger)` → `setChildPid`
 (post-spawn) → `append({kind, ...})` per event → `close({status,
-finishedAt, ...})` (`run-log.ts:440-489`, `plugin-run.ts:452-459`).
-Run-id is sortable: `YYYYMMDDTHHMMSS-<safe-plugin>-<4byte-hex>`. Status
-inference (`readSummary`): `result.json` present → that status; missing
-+ `childPid` dead → `interrupted`; else → `running`
-(`run-log.ts:531-567`). `followRun`/`followGlobal` poll+stat (no
-`fs.watch`) and survive rotation via dev/inode (`run-log.ts:264-350`).
+finishedAt, ...})` (`run-log.ts:openRun`). Run-id is sortable:
+`YYYYMMDDTHHMMSS-<safe-plugin>-<4byte-hex>`. Status inference
+(`readSummary`): `result.json` present → that status; missing + `childPid`
+dead → `interrupted`; else → `running` (`run-log.ts:readSummary`).
+`followRun`/`followGlobal` poll+stat (no `fs.watch`) and survive rotation
+via dev/inode (`run-log.ts:followRun`, `followGlobal`).
 
 **Daemon liveness.** Liveness is the PID file + `kill(pid, 0)` + token
 match — nothing time-based. The status snapshot is opportunistic context,
@@ -305,58 +310,60 @@ staleness never implies death (`status` shows "updated 3m ago" so the
 user judges freshness by relative time). `probeDaemon()` walks PID-file
 exists → `kill(0)` alive → snapshot `pid/token/startedAt` matches, and
 surfaces the first failing gate as a typed reason (`no-pidfile`,
-`bad-pidfile`, `dead-process`, `snapshot-mismatch`,
-`daemon-control.ts:70-97`). A live daemon with no snapshot yet still
+`bad-pidfile`, `dead-process`, `snapshot-mismatch`;
+`daemon-control.ts:probeDaemon`). A live daemon with no snapshot yet still
 reports `reason: null`.
 
 **Plugin process model.** `runPlugin` writes `runs/<runId>/input.json`
-(`{trigger, env, files, targets, net}`) plus an import map, then `spawn`
+(`{trigger, env, files, targets, net}`) plus an import map, then spawns
 Deno with `--allow-{read,write,env,net}` derived from grants (per-run
-overrides layered on top) (`plugin-run.ts:342-452`). SDK env contract:
-`DITHER_{RUN_DIR,INPUT_FILE,STATE_FILE,TRIGGER,PLUGIN_NAME}`
-(`plugin-run.ts:65-72`). NDJSON control messages on stderr — `_dither:
-"progress"` / `"reschedule"` parsed by `parseControl`
-(`plugin-run.ts:104-129`); other stderr lines journal as
-`{kind: "stderr"}`. On clean exit, `planPromotion` validates each
+overrides layered on top) (`plugin-run.ts:runPluginLocked`). SDK env
+contract: `DITHER_{RUN_DIR,INPUT_FILE,STATE_FILE,TRIGGER,PLUGIN_NAME}`
+(`plugin-run.ts:DITHER_ENV_VARS`). NDJSON control messages on stderr —
+`_dither: "progress"` / `"reschedule"` parsed by `parseControl`
+(`supervisor.ts:parseControl`); other stderr lines journal as
+`{kind: "stderr"}`. On clean exit, `promote()` validates each
 `runs/<runId>/*.md` (`source === plugin`, `collection ∈ grants`) before
-`copyAdded` moves them into the library. `runs/<runId>` is always
-`rm -rf`-ed in `finally` so plaintext secrets in `input.json` don't
-linger (`plugin-run.ts:565-568`).
+moving them into the library (`promotion.ts:promote`). `runs/<runId>` is
+always `rm -rf`-ed in `finally` so plaintext secrets in `input.json`
+don't linger (`plugin-run.ts:runPluginLocked`).
 
 **Inbox / inflight — at-least-once.** Watcher appends NDJSON rows into
 `inboxes/<plugin>.ndjson`. Fire start: `claimInbox` atomically
 `rename(inbox → inflight)`, reads, dedups by path keeping latest mtime
-(`inbox.ts:82-108`). Clean run → `clearInflight`; any failure path →
-`restoreInflight` appends rows back to inbox (`plugin-run.ts:258, 275`).
-Startup `recoverOrphanInflight()` restores files left by a crashed prior
-daemon (`inbox.ts:148-164`).
+(`inbox.ts:claimInbox`). Clean run → `clearInflight`; any failure path →
+`restoreInflight` appends rows back to inbox (`inbox.ts:clearInflight`,
+`restoreInflight`). Startup `recoverOrphanInflight()` restores files left
+by a crashed prior daemon (`inbox.ts:recoverOrphanInflight`).
 
 **Refire decision (pure).** `decideRunOutcome({exitCode, rescheduleMs,
 prior})` returns `ok-cleared | ok-rescheduled | failed-retry |
-failed-suspended` (`refire.ts:93-148`). Failures backoff 1m then 5m;
-`POISON_PILL_THRESHOLD = 3` consecutive non-clean exits → `suspended:
+failed-suspended` (`refire.ts:decideRunOutcome`). Failures backoff 1m then
+5m; `POISON_PILL_THRESHOLD = 3` consecutive non-clean exits → `suspended:
 true` until a manual run succeeds. `setTimeout` delays past 32-bit max
-chunk-and-reschedule (`refirer.ts:59-83`).
+chunk-and-reschedule (`refirer.ts:scheduleAt`).
 
 **Loop detector.** Chain-depth count keyed on `triggerSource`
 (`"scheduled:foo"`). `DEFAULT_THRESHOLD = 3`, `DEFAULT_TTL_MS = 30_000`;
 post-TTL triggers are fresh roots. `shouldHalt` true when `depth + 1 >
 threshold`. Halts → bounded ring (cap 16), surfaced via
 `status.recentHalts.slice(0, 5)`. In-memory; resets on daemon restart
-(`loop-detector.ts:47-72`).
+(`loop-detector.ts:shouldHalt`).
 
-**Markers.** Single-purpose flag files at `<home>/<marker>`.
-`needs-reindex`: any non-daemon writer touches it; daemon coalesces via
-atomic `rename → .processing → unlink` so requests arriving mid-cycle
-aren't lost (`daemon-jobs.ts:241-259`). `embed-disabled`: checked between
-embed iterations (`daemon-jobs.ts:270`). The reconciler is stateless
-w.r.t. work intent — markers + SQLite state are the source of truth.
+**Markers.** Single-purpose flag files at `<home>/markers/<name>`
+(`markers.ts`). `needs-reindex`: any non-daemon writer calls
+`requestReindex()`; daemon coalesces via atomic `rename → .processing →
+unlink` so requests arriving mid-cycle aren't lost
+(`markers.ts:claimReindex`). `embed-disabled`: written by `disableEmbed()`
+/ `enableEmbed()`; checked by the reconciler between embed iterations
+(`markers.ts:readMarkerState`). The reconciler is stateless w.r.t. work
+intent — markers + SQLite state are the source of truth.
 
 **CLI ↔ daemon kick-and-watch.** `daemonClient.triggerAndWatch()` is the
 canonical pattern: snapshot global-log byte offset → send SIGHUP →
-follow log from the pinned offset (`daemon-client.ts:197-212`). Pinning
-closes the race where `reconcile-started` is emitted before the follower
-opens. `watchReconcile` yields a filtered `DaemonEvent` union, terminates
-on `reconcile-done`, throws typed errors for stopped/failed/died
-(`daemon-client.ts:137-195`). Seams hidden behind a `DaemonTransport`
+follow log from the pinned offset (`daemon-client.ts:triggerAndWatch`).
+Pinning closes the race where `reconcile-started` is emitted before the
+follower opens. `watchReconcile` yields a filtered `DaemonEvent` union,
+terminates on `reconcile-done`, throws typed errors for stopped/failed/died
+(`daemon-client.ts:watchReconcile`). Seams hidden behind a `DaemonTransport`
 interface so tests substitute deterministic stubs.
