@@ -326,7 +326,7 @@ await writeEntry({ collection: "messages", body: "bare parent" });
     rmSync(dir, { recursive: true, force: true });
   }, 30000);
 
-  it("promote refuses to clobber a hand-authored entry at the same path", async () => {
+  it("promote skips a hand-authored entry at the same path (no edit grant)", async () => {
     // Pre-existing user-authored file (no plugin source frontmatter).
     const collectionDir = join(home, "entries", "imported");
     mkdirSync(collectionDir, { recursive: true });
@@ -360,9 +360,11 @@ await writeEntry({
     const { runPlugin } = await import("./plugin-run");
 
     await installPlugin({ source: dir });
-    await expect(runPlugin({ name: "clobberer" })).rejects.toThrow(/clobber/);
+    // Cross-source dest without an edit grant: the output is skipped,
+    // the run stays ok, the hand-authored entry survives.
+    const result = await runPlugin({ name: "clobberer" });
+    expect(result.added).toHaveLength(0);
 
-    // Original content is intact.
     const after = readFileSync(join(collectionDir, `${targetId}.md`), "utf-8");
     expect(after).toContain("Do not overwrite me.");
 

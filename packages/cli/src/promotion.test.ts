@@ -122,23 +122,68 @@ describe("promote", () => {
     ).rejects.toThrow(/missing 'collection' frontmatter/);
   });
 
-  it("rejects an output that would clobber another plugin's entry", async () => {
-    // Existing entry written by a different plugin.
+  it("skips (not fails) another plugin's entry without an edit grant", async () => {
     mkdirSync(join(libraryPath, "notes"), { recursive: true });
     writeFileSync(join(libraryPath, "notes", "a.md"), entry("rival", "notes", "older"));
     writeFileSync(join(runDir, "a.md"), entry("p", "notes"));
+    writeFileSync(join(runDir, "b.md"), entry("p", "notes", "fresh"));
 
     const { promote } = await import("./promotion");
     const j = fakeJournal();
-    await expect(
-      promote({
-        runDir,
-        plugin: "p",
-        config: cfg(),
-        grants: ["notes"],
-        journal: j.handle,
-      }),
-    ).rejects.toThrow(/would clobber/);
+    const out = await promote({
+      runDir,
+      plugin: "p",
+      config: cfg(),
+      grants: ["notes"],
+      journal: j.handle,
+    });
+    // a.md skipped, b.md promoted — the run stays ok.
+    expect(out.skipped).toHaveLength(1);
+    expect(out.added).toHaveLength(1);
+    expect(readFileSync(join(libraryPath, "notes", "a.md"), "utf-8")).toContain("older");
+    expect(existsSync(join(libraryPath, "notes", "b.md"))).toBe(true);
+    const skip = j.events.find((e) => e.kind === "skipped");
+    expect(skip?.path).toContain("a.md");
+    expect(String(skip?.reason)).toMatch(/edit grant/);
+  });
+
+  it("overwrites another plugin's entry when an edit grant covers the collection", async () => {
+    mkdirSync(join(libraryPath, "notes"), { recursive: true });
+    writeFileSync(join(libraryPath, "notes", "a.md"), entry("rival", "notes", "older"));
+    writeFileSync(join(runDir, "a.md"), entry("p", "notes", "enriched"));
+
+    const { promote } = await import("./promotion");
+    const j = fakeJournal();
+    const out = await promote({
+      runDir,
+      plugin: "p",
+      config: cfg(),
+      grants: ["notes"],
+      edits: ["notes"],
+      journal: j.handle,
+    });
+    expect(out.added).toHaveLength(1);
+    expect(out.skipped).toHaveLength(0);
+    expect(readFileSync(join(libraryPath, "notes", "a.md"), "utf-8")).toContain("enriched");
+  });
+
+  it("same-source overwrite needs no edit grant", async () => {
+    mkdirSync(join(libraryPath, "notes"), { recursive: true });
+    writeFileSync(join(libraryPath, "notes", "a.md"), entry("p", "notes", "v1"));
+    writeFileSync(join(runDir, "a.md"), entry("p", "notes", "v2"));
+
+    const { promote } = await import("./promotion");
+    const j = fakeJournal();
+    const out = await promote({
+      runDir,
+      plugin: "p",
+      config: cfg(),
+      grants: ["notes"],
+      journal: j.handle,
+    });
+    expect(out.added).toHaveLength(1);
+    expect(out.skipped).toHaveLength(0);
+    expect(readFileSync(join(libraryPath, "notes", "a.md"), "utf-8")).toContain("v2");
   });
 
   it("when qmd-index lock is held, writes needs-reindex and journals reindex-deferred", async () => {

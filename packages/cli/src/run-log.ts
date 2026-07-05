@@ -57,6 +57,7 @@ export type EventKind =
   | "progress"
   | "stderr"
   | "added"
+  | "skipped"
   | "error"
   | "reschedule"
   | "reindex-deferred";

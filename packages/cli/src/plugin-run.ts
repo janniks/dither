@@ -334,6 +334,7 @@ async function runPluginLocked(
       plugin: opts.name,
       config: cfg,
       grants: creates,
+      edits,
       journal,
     });
     // Commit run-local state alongside promotion, under the same

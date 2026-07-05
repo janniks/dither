@@ -21,7 +21,10 @@ import type { RunHandle } from "./run-log";
  * daemon coalesces this into its next post-job reconciliation; the
  * added files are already on disk.
  *
- * Single entry point: `promote(opts) → { added, reindexDeferred }`.
+ * Cross-plugin dests without an edit grant are skipped (journaled as
+ * `skipped`), never an error — see specs/twitter-hydrate.md.
+ *
+ * Single entry point: `promote(opts) → { added, skipped, reindexDeferred }`.
  */
 
 interface ParsedFrontmatter {
@@ -40,19 +43,31 @@ export interface PromoteOptions {
   runDir: string;
   plugin: string;
   config: DitherConfig;
-  /** Collections this plugin is granted write access to. */
+  /** Collections this plugin may create entries in. */
   grants: readonly string[];
+  /** Collections where this plugin may overwrite entries other plugins
+   *  created. Without cover here, a cross-source dest is skipped (never
+   *  an error) so enriched entries survive re-imports untouched. */
+  edits?: readonly string[];
   journal: RunHandle;
 }
 
 export interface PromoteResult {
   added: string[];
+  /** Outputs left behind because the dest belongs to another plugin and
+   *  no edit grant covers the collection. */
+  skipped: string[];
   reindexDeferred: boolean;
 }
 
-async function planPromotion(opts: PromoteOptions): Promise<Candidate[]> {
+interface Plan {
+  copy: Candidate[];
+  skipped: Candidate[];
+}
+
+async function planPromotion(opts: PromoteOptions): Promise<Plan> {
   const entries = await readdir(opts.runDir);
-  const out: Candidate[] = [];
+  const out: Plan = { copy: [], skipped: [] };
   for (const filename of entries) {
     if (!filename.endsWith(".md")) continue;
     const src = join(opts.runDir, filename);
@@ -94,15 +109,15 @@ async function planPromotion(opts: PromoteOptions): Promise<Candidate[]> {
     if (existsSync(dest)) {
       const existing = await readFile(dest, "utf-8");
       const existingSource = (matter(existing).data as ParsedFrontmatter).source;
-      if (existingSource !== opts.plugin) {
-        throw new Error(
-          `output ${filename} would clobber an existing entry at '${collection}/${filename}' (source=${
-            typeof existingSource === "string" ? existingSource : "(missing)"
-          }, this plugin=${opts.plugin})`,
-        );
+      // Same source → normal sync refresh. Different source → allowed
+      // only under an edit grant; otherwise skip this output (library is
+      // append-only across plugins without consent).
+      if (existingSource !== opts.plugin && !grantsCover(opts.edits ?? [], collection)) {
+        out.skipped.push({ src, dest, collection, filename });
+        continue;
       }
     }
-    out.push({ src, dest, collection, filename });
+    out.copy.push({ src, dest, collection, filename });
   }
   return out;
 }
@@ -118,13 +133,21 @@ async function copyAdded(candidates: Candidate[]): Promise<string[]> {
 }
 
 export async function promote(opts: PromoteOptions): Promise<PromoteResult> {
-  const candidates = await planPromotion(opts);
-  const added = await copyAdded(candidates);
+  const plan = await planPromotion(opts);
+  for (const c of plan.skipped) {
+    await opts.journal.append({
+      kind: "skipped",
+      path: c.dest,
+      reason: `entry belongs to another plugin and '${opts.plugin}' has no edit grant for '${c.collection}'`,
+    });
+  }
+  const added = await copyAdded(plan.copy);
   for (const path of added) {
     await opts.journal.append({ kind: "added", path });
   }
+  const skipped = plan.skipped.map((c) => c.dest);
 
-  if (added.length === 0) return { added, reindexDeferred: false };
+  if (added.length === 0) return { added, skipped, reindexDeferred: false };
 
   // qmd collections are top-level library subdirs (see store.ts), so a
   // multi-segment frontmatter `collection: "messages/inbox"` must be
@@ -132,7 +155,7 @@ export async function promote(opts: PromoteOptions): Promise<PromoteResult> {
   // otherwise qmd's exact-name filter matches nothing and the index
   // silently stays stale.
   const touched = Array.from(
-    new Set(candidates.map((c) => c.collection.split("/")[0]!)),
+    new Set(plan.copy.map((c) => c.collection.split("/")[0]!)),
   );
   // qmd-index.lock coordinates with the daemon's job runner; if it's busy
   // (daemon is mid-indexing), defer by touching needs-reindex so the
@@ -146,12 +169,12 @@ export async function promote(opts: PromoteOptions): Promise<PromoteResult> {
       reason: "qmd-index.lock busy",
       touchedCollections: touched,
     });
-    return { added, reindexDeferred: true };
+    return { added, skipped, reindexDeferred: true };
   }
   try {
     await updateIndex(touched);
   } finally {
     await releaseTheme(lock);
   }
-  return { added, reindexDeferred: false };
+  return { added, skipped, reindexDeferred: false };
 }
