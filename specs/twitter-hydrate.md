@@ -56,6 +56,12 @@ Core — grant vocabulary:
   result) — do NOT fail the run. Skipped files are never copied, so no
   watch event fires and enriched entries are never reset.
 - `edit` does not imply `create`; plugins declare both if they need both.
+- Interactive install only surfaces grants the manifest requests: `edit`
+  gets its consent line iff the plugin declares it. Granting beyond the
+  manifest (e.g. user adds `edit` to a create-only plugin) is CLI-flags
+  only — `--create` / `--edit` on install/run, alongside the existing
+  `--env`/`--file`/`--allow-net` overrides. Same validation, same grants
+  file; only the prompt UI is manifest-driven.
 - No delete capability for plugins, ever. `remove` deliberately not
   reserved/implemented. Future direction (noted, not built): a `read`
   mode unifying watch's implicit read access.
