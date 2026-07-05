@@ -99,13 +99,13 @@ describe("runPlugin — state is transactional", () => {
       JSON.stringify({
         name: plugin,
         version: "0.0.1",
-        dither: { display_name: "Statey", collections: ["notes"] },
+        dither: { display_name: "Statey", create: ["notes"] },
       }),
     );
     mkdirSync(join(home, "grants"), { recursive: true });
     writeFileSync(
       join(home, "grants", `${plugin}.json`),
-      JSON.stringify({ collections: ["notes"] }),
+      JSON.stringify({ create: ["notes"] }),
     );
   });
 

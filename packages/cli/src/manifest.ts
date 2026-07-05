@@ -35,7 +35,12 @@ const ManifestSchema = z.object({
   env: z.array(EnvDef).optional(),
   files: z.array(FileDef).optional(),
   net: z.array(z.string()).optional(),
-  collections: z.array(z.string()).optional(),
+  /** Collections this plugin may create entries in (glob patterns). */
+  create: z.array(z.string()).optional(),
+  /** Collections where this plugin may replace entries other plugins
+   *  created (glob patterns). Whole-entry replace via the normal promote
+   *  path; does not imply `create`. */
+  edit: z.array(z.string()).optional(),
 });
 
 export type Manifest = z.infer<typeof ManifestSchema>;
@@ -68,6 +73,11 @@ export function parsePackage(pkg: unknown): ParsedPackage {
   }
   if (!obj["dither"] || typeof obj["dither"] !== "object") {
     throw new Error("package.json missing 'dither' block");
+  }
+  if ((obj["dither"] as Record<string, unknown>)["collections"] !== undefined) {
+    throw new Error(
+      "manifest 'collections' was renamed: use 'create' (and optionally 'edit') instead",
+    );
   }
   const manifest = ManifestSchema.parse(obj["dither"]);
   return {

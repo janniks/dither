@@ -139,8 +139,8 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
   // rolls back cleanly with no half-installed state.
   const plan = await planInstall(parsed, opts);
   if (!plan.ok) throw new MissingInputsError(plan.missing);
-  const { env, envRefs, files, net, collections, schedule, watch } = plan.resolved;
-  for (const pattern of collections) validateGrantPattern(pattern);
+  const { env, envRefs, files, net, create, edit, schedule, watch } = plan.resolved;
+  for (const pattern of [...create, ...edit]) validateGrantPattern(pattern);
 
   const home = resolveHome();
   const destDir = pluginDir(parsed.name);
@@ -163,7 +163,8 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
     envRefs,
     files,
     net,
-    collections,
+    create,
+    edit,
   };
 
   try {

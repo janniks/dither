@@ -10,13 +10,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-function writePlugin(dir: string, version: string, body: string, collections: string[]): void {
+function writePlugin(dir: string, version: string, body: string, create: string[]): void {
   writeFileSync(
     join(dir, "package.json"),
     JSON.stringify({
       name: "rollback",
       version,
-      dither: { collections },
+      dither: { create },
     }),
   );
   writeFileSync(join(dir, "plugin.ts"), body);
@@ -80,7 +80,7 @@ describe("installPlugin", () => {
 
       const grants = JSON.parse(readFileSync(join(home, "grants", "rollback.json"), "utf-8"));
       expect(grants.version).toBe("1.0.0");
-      expect(grants.collections).toEqual(["old"]);
+      expect(grants.create).toEqual(["old"]);
       expect(existsSync(join(home, "plugins", "rollback"))).toBe(true);
     } finally {
       rmSync(oldSource, { recursive: true, force: true });
@@ -126,7 +126,7 @@ describe("installPlugin", () => {
       );
       const grants = JSON.parse(readFileSync(join(home, "grants", "rollback.json"), "utf-8"));
       expect(grants.version).toBe("1.0.0");
-      expect(grants.collections).toEqual(["old"]);
+      expect(grants.create).toEqual(["old"]);
     } finally {
       rmSync(oldSource, { recursive: true, force: true });
       rmSync(newSource, { recursive: true, force: true });
@@ -153,7 +153,7 @@ describe("installPlugin", () => {
         dither: {
           schedule: "*/15 * * * *",
           watch: { collections: ["msg/**"] },
-          collections: ["msg/**"],
+          create: ["msg/**"],
         },
       }),
     );
@@ -193,7 +193,7 @@ describe("installPlugin", () => {
       JSON.stringify({
         name: "custom",
         version: "1.0.0",
-        dither: { schedule: "*/15 * * * *", collections: ["c/**"] },
+        dither: { schedule: "*/15 * * * *", create: ["c/**"] },
       }),
     );
     writeFileSync(join(src, "plugin.ts"), "// x\n");

@@ -14,7 +14,7 @@
         "required": true
       }
     ],
-    "collections": [
+    "create": [
       "read"
     ]
   }

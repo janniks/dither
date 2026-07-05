@@ -40,7 +40,8 @@ function buildOverrides(grants: ReturnType<typeof readGrantArgs>): KickOverrides
   if (grants.envRefs.length > 0) out.envRefs = grants.envRefs;
   if (Object.keys(grants.files).length > 0) out.files = grants.files;
   if (grants.net.length > 0) out.net = grants.net;
-  if (grants.collections.length > 0) out.collections = grants.collections;
+  if (grants.create.length > 0) out.create = grants.create;
+  if (grants.edit.length > 0) out.edit = grants.edit;
   return out;
 }
 

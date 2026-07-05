@@ -181,7 +181,7 @@ describe("daemon lifecycle (in-process)", () => {
         version: "0.0.1",
         dither: {
           schedule: "every 1s",
-          collections: ["ticks"],
+          create: ["ticks"],
         },
       }),
     );

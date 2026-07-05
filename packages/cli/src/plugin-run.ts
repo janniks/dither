@@ -28,8 +28,10 @@ export interface RunOptions {
   files?: Record<string, string>;
   /** Per-run net additions. Layered on top of grants for this run only. */
   net?: string[];
-  /** Per-run collection grant additions. */
-  collections?: string[];
+  /** Per-run create-grant additions. */
+  create?: string[];
+  /** Per-run edit-grant additions (overwrite other plugins' entries). */
+  edit?: string[];
   /** Files that triggered this run. Surfaced in input.json.targets. Watch
    *  fires usually leave this unset — the runner claims the inbox itself. */
   targets?: WatchTarget[];
@@ -61,7 +63,8 @@ interface GrantsFile {
   envRefs?: string[];
   files?: Record<string, string>;
   net?: string[];
-  collections?: string[];
+  create?: string[];
+  edit?: string[];
 }
 
 function denoPermissionList(kind: string, entries: string[]): string {
@@ -179,10 +182,11 @@ async function runPluginLocked(
   const envRefs = Array.from(new Set([...(grants.envRefs ?? []), ...(opts.envRefs ?? [])]));
   const grantFiles = { ...grants.files, ...opts.files };
   const grantNet = Array.from(new Set([...(grants.net ?? []), ...(opts.net ?? [])]));
-  const grantCollections = Array.from(
-    new Set([...(grants.collections ?? []), ...(opts.collections ?? [])]),
+  const creates = Array.from(
+    new Set([...(grants.create ?? []), ...(opts.create ?? [])]),
   );
-  for (const pattern of grantCollections) validateGrantPattern(pattern);
+  const edits = Array.from(new Set([...(grants.edit ?? []), ...(opts.edit ?? [])]));
+  for (const pattern of [...creates, ...edits]) validateGrantPattern(pattern);
 
   const resolvedEnv: Record<string, string> = { ...grantEnv };
   for (const name of envRefs) {
@@ -329,7 +333,7 @@ async function runPluginLocked(
       runDir,
       plugin: opts.name,
       config: cfg,
-      grants: grantCollections,
+      grants: creates,
       journal,
     });
     // Commit run-local state alongside promotion, under the same

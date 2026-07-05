@@ -59,7 +59,8 @@ export interface InstallInputs {
   envRefs?: string[];
   files?: Record<string, string>;
   net?: string[];
-  collections?: string[];
+  create?: string[];
+  edit?: string[];
   schedule?: string | null;
   watch?: WatchChoice | null;
 }
@@ -72,7 +73,8 @@ export interface ResolvedInputs {
   envRefs: string[];
   files: Record<string, string>;
   net: string[];
-  collections: string[];
+  create: string[];
+  edit: string[];
   schedule: string | null;
   watch: WatchChoice | null;
 }
@@ -138,7 +140,8 @@ export function formatDryRun(parsed: ParsedPackage, plan: PlanResult): string {
     ...(m.env ?? []).filter((e) => e.default !== undefined).map((e) => `env ${e.name} (default ${e.default})`),
     ...(m.files ?? []).filter((f) => !f.required).map((f) => `file ${f.id} (optional)`),
     ...(m.net?.length ? [`net ${m.net.join(", ")}`] : []),
-    ...(m.collections?.length ? [`collections ${m.collections.join(", ")}`] : []),
+    ...(m.create?.length ? [`create ${m.create.join(", ")}`] : []),
+    ...(m.edit?.length ? [`edit ${m.edit.join(", ")} (may overwrite other plugins' entries)`] : []),
     ...(m.schedule ? [`schedule ${m.schedule}`] : []),
     ...(m.watch ? [`watch ${m.watch.collections.join(", ")}`] : []),
   ];
@@ -230,7 +233,8 @@ export async function planInstall(
   const env = resolveEnvCollect(parsed.manifest.env, inputs.env, envRefs, missing);
   const files = await resolveFilesCollect(parsed.manifest.files, inputs.files, missing);
   const net = resolveAllowList(parsed.manifest.net, inputs.net);
-  const collections = resolveAllowList(parsed.manifest.collections, inputs.collections);
+  const create = resolveAllowList(parsed.manifest.create, inputs.create);
+  const edit = resolveAllowList(parsed.manifest.edit, inputs.edit);
   // Schedule / watch default to the manifest declaration when the user
   // hasn't decided — preserves the legacy non-TTY install path. The TTY
   // prompt layer sets these explicitly (string or null) before planning.
@@ -243,9 +247,9 @@ export async function planInstall(
       : null
     : inputs.watch;
   if (missing.length > 0) {
-    return { ok: false, missing, partial: { env, envRefs, files, net, collections, schedule, watch } };
+    return { ok: false, missing, partial: { env, envRefs, files, net, create, edit, schedule, watch } };
   }
-  return { ok: true, resolved: { env, envRefs, files, net, collections, schedule, watch } };
+  return { ok: true, resolved: { env, envRefs, files, net, create, edit, schedule, watch } };
 }
 
 /**
@@ -268,14 +272,16 @@ export async function readExistingGrants(name: string): Promise<InstallInputs | 
       envRefs?: string[];
       files?: Record<string, string>;
       net?: string[];
-      collections?: string[];
+      create?: string[];
+      edit?: string[];
     };
     return {
       env: blob.env,
       envRefs: blob.envRefs,
       files: blob.files,
       net: blob.net,
-      collections: blob.collections,
+      create: blob.create,
+      edit: blob.edit,
     };
   } catch {
     // Corrupt grants file shouldn't block reinstall — treat as fresh.
@@ -392,17 +398,26 @@ export async function promptInteractive(
   // start unchecked with a `(new)` hint — silent-widen across plugin updates
   // becomes impossible. See specs/plugin-install-consent.md.
   const net = await consentList("net", opts.net, existing?.net, parsed.manifest.net);
-  const collections = await consentList(
-    "collections",
-    opts.collections,
-    existing?.collections,
-    parsed.manifest.collections,
+  const create = await consentList(
+    "create",
+    opts.create,
+    existing?.create,
+    parsed.manifest.create,
+  );
+  // `edit` allows overwriting entries other plugins created — only
+  // surfaced when the manifest asks for it (or a prior grant / flag
+  // exists); widening a create-only plugin is a CLI-flags act.
+  const edit = await consentList(
+    "edit",
+    opts.edit,
+    existing?.edit,
+    parsed.manifest.edit,
   );
 
   const schedule = await promptScheduleConsent(parsed, current.schedule);
   const watch = await promptWatchConsent(parsed, current.watch);
 
-  return { env, envRefs, files, net, collections, schedule, watch };
+  return { env, envRefs, files, net, create, edit, schedule, watch };
 }
 
 /**
@@ -648,7 +663,8 @@ export function mergeInputs(base: InstallInputs, extra: InstallInputs): InstallI
     envRefs: Array.from(new Set([...(base.envRefs ?? []), ...(extra.envRefs ?? [])])),
     files: { ...base.files, ...extra.files },
     net: extra.net ?? base.net,
-    collections: extra.collections ?? base.collections,
+    create: extra.create ?? base.create,
+    edit: extra.edit ?? base.edit,
     schedule: extra.schedule !== undefined ? extra.schedule : base.schedule,
     watch: extra.watch !== undefined ? extra.watch : base.watch,
   };

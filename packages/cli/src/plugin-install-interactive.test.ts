@@ -28,7 +28,8 @@ describe("planInstall", () => {
         envRefs: [],
         files: {},
         net: [],
-        collections: [],
+        create: [],
+        edit: [],
         schedule: null,
         watch: null,
       });
@@ -104,25 +105,25 @@ describe("planInstall", () => {
 
   it("net / collections fall back to manifest declarations when no flag passed", async () => {
     const r = await planInstall(
-      pkg({ net: ["api.example.com"], collections: ["a/**"] }),
+      pkg({ net: ["api.example.com"], create: ["a/**"] }),
       {},
     );
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.resolved.net).toEqual(["api.example.com"]);
-      expect(r.resolved.collections).toEqual(["a/**"]);
+      expect(r.resolved.create).toEqual(["a/**"]);
     }
   });
 
   it("net / collections flag overrides the manifest declaration", async () => {
     const r = await planInstall(
-      pkg({ net: ["api.example.com"], collections: ["a/**"] }),
-      { net: ["only.example.com"], collections: ["b/**"] },
+      pkg({ net: ["api.example.com"], create: ["a/**"] }),
+      { net: ["only.example.com"], create: ["b/**"] },
     );
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.resolved.net).toEqual(["only.example.com"]);
-      expect(r.resolved.collections).toEqual(["b/**"]);
+      expect(r.resolved.create).toEqual(["b/**"]);
     }
   });
 
@@ -176,13 +177,13 @@ describe("formatDryRun", () => {
     const p = pkg({
       env: [{ name: "API_TOKEN" }, { name: "REGION", default: "us" }],
       net: ["api.example.com"],
-      collections: ["articles"],
+      create: ["articles"],
       schedule: "0 9 * * *",
     });
     const out = formatDryRun(p, await planInstall(p, { env: { API_TOKEN: "secret" } }));
     expect(out).toContain("env REGION (default us)");
     expect(out).toContain("net api.example.com");
-    expect(out).toContain("collections articles");
+    expect(out).toContain("create articles");
     expect(out).toContain("schedule 0 9 * * *");
     expect(out).not.toContain("secret");
   });
@@ -365,7 +366,7 @@ describe("readExistingGrants", () => {
         envRefs: ["TOKEN"],
         files: { cfg: "/tmp/c" },
         net: ["x.example.com"],
-        collections: ["a/**"],
+        create: ["a/**"],
       }),
     );
     const g = await readExistingGrants("p");
@@ -374,7 +375,8 @@ describe("readExistingGrants", () => {
       envRefs: ["TOKEN"],
       files: { cfg: "/tmp/c" },
       net: ["x.example.com"],
-      collections: ["a/**"],
+      create: ["a/**"],
+      edit: undefined,
     });
   });
 

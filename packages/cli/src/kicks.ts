@@ -28,7 +28,8 @@ export interface KickOverrides {
   envRefs?: string[];
   files?: Record<string, string>;
   net?: string[];
-  collections?: string[];
+  create?: string[];
+  edit?: string[];
 }
 
 /**

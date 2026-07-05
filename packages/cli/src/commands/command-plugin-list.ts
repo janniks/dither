@@ -16,7 +16,7 @@ export const listSubcommand = defineCommand({
       return plugins;
     }
     const rows = plugins.map((p) => {
-      const cols = p.collections.length ? p.collections.join(",") : "-";
+      const cols = p.create.length ? p.create.join(",") : "-";
       const sched = p.schedule ?? "-";
       let next = "";
       if (p.schedule) {

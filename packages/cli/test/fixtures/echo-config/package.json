@@ -20,7 +20,7 @@
         "description": "A secret-like value the plugin will echo (proves delivery)."
       }
     ],
-    "collections": [
+    "create": [
       "echoed"
     ]
   }

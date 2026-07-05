@@ -44,8 +44,8 @@ describe("plugin lifecycle (list / remove)", () => {
     expect(list).toHaveLength(2);
     const byName = Object.fromEntries(list.map((p) => [p.name, p]));
     expect(byName["import-folder"]?.version).toBe("0.0.1");
-    expect(byName["import-folder"]?.collections).toContain("imported");
-    expect(byName["echo-config"]?.collections).toContain("echoed");
+    expect(byName["import-folder"]?.create).toContain("imported");
+    expect(byName["echo-config"]?.create).toContain("echoed");
   });
 
   it("removePlugin deletes plugin dir + grants and listPlugins reflects it", async () => {

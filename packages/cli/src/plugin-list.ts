@@ -8,7 +8,8 @@ export interface InstalledPluginInfo {
   version: string;
   installedAt?: string;
   schedule?: string;
-  collections: string[];
+  create: string[];
+  edit: string[];
   net: string[];
   /** Parsed watch declaration. `null` = explicitly disabled,
    *  `undefined` = absent (legacy grants — treated as disabled).
@@ -21,7 +22,8 @@ interface GrantsFile {
   version?: string;
   installedAt?: string;
   net?: string[];
-  collections?: string[];
+  create?: string[];
+  edit?: string[];
   /** User's effective schedule. `null` = manual-only, absent = legacy
    *  grants file (treated as manual-only). */
   schedule?: string | null;
@@ -43,7 +45,8 @@ export async function listPlugins(): Promise<InstalledPluginInfo[]> {
         version: grants.version ?? "?",
         ...(grants.installedAt ? { installedAt: grants.installedAt } : {}),
         ...(grants.schedule ? { schedule: grants.schedule } : {}),
-        collections: grants.collections ?? [],
+        create: grants.create ?? [],
+        edit: grants.edit ?? [],
         net: grants.net ?? [],
         ...(grants.watch !== undefined ? { watch: grants.watch } : {}),
       };

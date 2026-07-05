@@ -47,10 +47,15 @@ export const grantArgs = {
     type: "string" as const,
     description: "Comma-separated hosts this plugin may reach. Subset of manifest `net`.",
   },
-  "allow-collection": {
+  create: {
     type: "string" as const,
     description:
-      "Comma-separated collections this plugin may write to. Subset of manifest `collections`.",
+      "Comma-separated collection globs this plugin may create entries in. Subset of manifest `create` (or a manual widen).",
+  },
+  edit: {
+    type: "string" as const,
+    description:
+      "Comma-separated collection globs where this plugin may overwrite entries other plugins created. Grants beyond the manifest are flags-only — the interactive flow never offers them.",
   },
 };
 
@@ -59,7 +64,8 @@ export interface GrantArgs {
   "allow-env"?: string;
   file?: string;
   "allow-net"?: string;
-  "allow-collection"?: string;
+  create?: string;
+  edit?: string;
 }
 
 function parsePairs(value: string | undefined): Record<string, string> {
@@ -89,7 +95,8 @@ export function readGrantArgs(args: GrantArgs) {
     envRefs: parseList(args["allow-env"]),
     files: parsePairs(args.file),
     net: parseList(args["allow-net"]),
-    collections: parseList(args["allow-collection"]),
+    create: parseList(args.create),
+    edit: parseList(args.edit),
   };
 }
 

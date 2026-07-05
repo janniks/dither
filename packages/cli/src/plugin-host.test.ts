@@ -108,7 +108,7 @@ describe("plugin host", () => {
       JSON.stringify({
         name: "escaper",
         version: "0.0.1",
-        dither: { collections: ["allowed"] },
+        dither: { create: ["allowed"] },
       }),
     );
     writeFileSync(
@@ -146,7 +146,7 @@ await writeEntry({
       JSON.stringify({
         name: "nested-ok",
         version: "0.0.1",
-        dither: { collections: ["messages/**"] },
+        dither: { create: ["messages/**"] },
       }),
     );
     writeFileSync(
@@ -180,7 +180,7 @@ await writeEntry({ collection: "messages/tom", body: "hi tom" });
       JSON.stringify({
         name: "traverser",
         version: "0.0.1",
-        dither: { collections: ["**"] },
+        dither: { create: ["**"] },
       }),
     );
     writeFileSync(
@@ -208,7 +208,7 @@ await writeEntry({ collection: "../../etc/passwd", body: "escape" });
       JSON.stringify({
         name: "tom-only",
         version: "0.0.1",
-        dither: { collections: ["messages/tom/**"] },
+        dither: { create: ["messages/tom/**"] },
       }),
     );
     writeFileSync(
@@ -238,7 +238,7 @@ await writeEntry({ collection: "messages/jane", body: "leak" });
       JSON.stringify({
         name: "messages-only",
         version: "0.0.1",
-        dither: { collections: ["messages/**"] },
+        dither: { create: ["messages/**"] },
       }),
     );
     writeFileSync(
@@ -268,7 +268,7 @@ await writeEntry({ collection: "messages-archive/x", body: "leak" });
       JSON.stringify({
         name: "nested-bare",
         version: "0.0.1",
-        dither: { collections: ["messages/**"] },
+        dither: { create: ["messages/**"] },
       }),
     );
     writeFileSync(
@@ -295,13 +295,13 @@ await writeEntry({ collection: "messages", body: "bare parent" });
       JSON.stringify({
         name: "emptyish",
         version: "0.0.1",
-        dither: { collections: ["ok"] },
+        dither: { create: ["ok"] },
       }),
     );
     writeFileSync(join(dir, "plugin.ts"), `// noop\n`);
 
     const { installPlugin } = await import("./plugin-install");
-    await expect(installPlugin({ source: dir, collections: [""] })).rejects.toThrow(
+    await expect(installPlugin({ source: dir, create: [""] })).rejects.toThrow(
       /grant pattern is empty/,
     );
 
@@ -315,7 +315,7 @@ await writeEntry({ collection: "messages", body: "bare parent" });
       JSON.stringify({
         name: "bad-manifest",
         version: "0.0.1",
-        dither: { collections: ["../*"] },
+        dither: { create: ["../*"] },
       }),
     );
     writeFileSync(join(dir, "plugin.ts"), `// noop\n`);
@@ -342,7 +342,7 @@ await writeEntry({ collection: "messages", body: "bare parent" });
       JSON.stringify({
         name: "clobberer",
         version: "0.0.1",
-        dither: { collections: ["imported"] },
+        dither: { create: ["imported"] },
       }),
     );
     writeFileSync(
@@ -384,7 +384,7 @@ await writeEntry({
       JSON.stringify({
         name: "extwriter",
         version: "0.0.1",
-        dither: { collections: ["work-notes/**", "work-notes"] },
+        dither: { create: ["work-notes/**", "work-notes"] },
       }),
     );
     writeFileSync(
@@ -423,7 +423,7 @@ await writeEntry({ collection: "work-notes", body: "in external" });
       JSON.stringify({
         name: "extnest",
         version: "0.0.1",
-        dither: { collections: ["work-notes/**"] },
+        dither: { create: ["work-notes/**"] },
       }),
     );
     writeFileSync(
@@ -455,7 +455,7 @@ await writeEntry({ collection: "work-notes/sub/2026", body: "deep" });
       JSON.stringify({
         name: "autocreator",
         version: "0.0.1",
-        dither: { collections: ["fresh"] },
+        dither: { create: ["fresh"] },
       }),
     );
     writeFileSync(
@@ -493,7 +493,7 @@ await writeEntry({ collection: "fresh", body: "library auto" });
       JSON.stringify({
         name: "missingwriter",
         version: "0.0.1",
-        dither: { collections: ["vanished/**", "vanished"] },
+        dither: { create: ["vanished/**", "vanished"] },
       }),
     );
     writeFileSync(
@@ -518,7 +518,7 @@ await writeEntry({ collection: "vanished", body: "ghost" });
       JSON.stringify({
         name: "sdk-traverser",
         version: "0.0.1",
-        dither: { collections: ["safe"] },
+        dither: { create: ["safe"] },
       }),
     );
     writeFileSync(
@@ -552,7 +552,7 @@ await writeEntry({
       JSON.stringify({
         name: "fail-promote",
         version: "0.0.1",
-        dither: { collections: ["allowed"] },
+        dither: { create: ["allowed"] },
       }),
     );
     writeFileSync(
@@ -586,7 +586,7 @@ await writeEntry({ collection: "forbidden", body: "this will fail to promote" })
         name: "widener",
         version: "0.0.1",
         // Manifest declares one collection; user grants a different, broader one.
-        dither: { collections: ["messages"] },
+        dither: { create: ["messages"] },
       }),
     );
     writeFileSync(
@@ -599,7 +599,7 @@ await writeEntry({ collection: "notes/personal", body: "ok" });
     const { installPlugin } = await import("./plugin-install");
     const { runPlugin } = await import("./plugin-run");
 
-    await installPlugin({ source: dir, collections: ["notes/**"] });
+    await installPlugin({ source: dir, create: ["notes/**"] });
     const result = await runPlugin({ name: "widener" });
     expect(result.added.length).toBe(1);
 
@@ -616,7 +616,7 @@ await writeEntry({ collection: "notes/personal", body: "ok" });
       JSON.stringify({
         name: "progresser",
         version: "0.0.1",
-        dither: { collections: ["notes"] },
+        dither: { create: ["notes"] },
       }),
     );
     writeFileSync(
@@ -658,7 +658,7 @@ progress({ message: "done", done: 2, total: 2 });
       JSON.stringify({
         name: "counter",
         version: "0.0.1",
-        dither: { collections: ["counts"] },
+        dither: { create: ["counts"] },
       }),
     );
     writeFileSync(
@@ -775,7 +775,7 @@ await writeEntry({
       JSON.stringify({
         name: "lock-fail",
         version: "0.0.1",
-        dither: { collections: ["x"] },
+        dither: { create: ["x"] },
       }),
     );
     writeFileSync(join(failDir, "plugin.ts"), `throw new Error("boom");\n`);
