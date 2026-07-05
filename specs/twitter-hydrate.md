@@ -50,8 +50,11 @@ Core — grant vocabulary:
   flat glob lists over the collection namespace, same grant-pattern
   grammar and validation. Grants file mirrors both.
 - Promotion clobber rule: same `source` → overwrite OK (unchanged,
-  normal sync refresh); different `source` → OK iff an `edit` glob
-  covers the collection; else the existing hard error.
+  normal sync refresh); different `source` + `edit` glob covers the
+  collection → overwrite OK; different `source`, no `edit` grant →
+  **skip the file** (warn in the run journal, count skipped in the
+  result) — do NOT fail the run. Skipped files are never copied, so no
+  watch event fires and enriched entries are never reset.
 - `edit` does not imply `create`; plugins declare both if they need both.
 - No delete capability for plugins, ever. `remove` deliberately not
   reserved/implemented. Future direction (noted, not built): a `read`
@@ -90,6 +93,10 @@ Plugin — twitter-hydrate:
 
 twitter-import (same change set):
 
+- Create-only: declares `create: ["twitter/**"]`, no `edit`. Re-import
+  with a fresh takeout only adds new entries; existing (possibly
+  hydrated) entries are skipped at promote — no reset, no re-hydration
+  spend, no watch storm.
 - Delete blocks/mutes emitters and their render paths.
 - Keep following/followers; body becomes empty (URL already lives in
   `user_link` frontmatter) until hydration fills it with the bio.
@@ -116,8 +123,9 @@ Modules:
 - `api.ts`: injected-fetch tests for the three outcomes (success with
   all ids, success with absent ids, request failure).
 - Core: extend existing promotion tests with edit-grant cases —
-  cross-plugin overwrite allowed with grant, denied without, same-source
-  unchanged.
+  cross-plugin overwrite allowed with grant, skipped (not failed)
+  without, skip journaled + counted, no watch-visible write for skipped
+  files, same-source overwrite unchanged.
 - `plugin.ts` orchestration untested (glue; daemon integration tests
   cover the watch path). Prior art: url-scraper-test's render/extract
   test split.
