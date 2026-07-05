@@ -31,11 +31,11 @@ hint), planner/prompts/grants file/status carry both, `--create`/`--edit`
 flags on install+run, all test.local manifests migrated.
 
 **Acceptance:**
-- [ ] `create`/`edit` parse + validate with grant-pattern grammar
-- [ ] `collections` key → parse error naming the rename
-- [ ] interactive install prompts `edit` only when manifest declares it
-- [ ] `--create`/`--edit` flags override/extend like `--allow-net`
-- [ ] all 13 test.local manifests migrated; tests green
+- [x] `create`/`edit` parse + validate with grant-pattern grammar
+- [x] `collections` key → parse error naming the rename
+- [x] interactive install prompts `edit` only when manifest declares it
+- [x] `--create`/`--edit` flags override/extend like `--allow-net`
+- [x] all 13 test.local manifests migrated; tests green (3 failures pre-exist on main)
 
 ## Phase 2: Promote skip/edit branch
 
@@ -45,10 +45,10 @@ Promotion enforces the decision table; skipped files journaled
 (`{kind: "skipped"}` + warn) and counted in the result, run stays ok.
 
 **Acceptance:**
-- [ ] cross-source overwrite allowed with `edit` grant
-- [ ] cross-source without `edit` → file skipped, run ok
-- [ ] skip journaled + surfaced in result counts
-- [ ] same-source overwrite unchanged; tests cover all branches
+- [x] cross-source overwrite allowed with `edit` grant
+- [x] cross-source without `edit` → file skipped, run ok
+- [x] skip journaled + surfaced in result counts
+- [x] same-source overwrite unchanged; tests cover all branches
 
 ## Phase 3: twitter-hydrate — tweets
 
@@ -60,10 +60,10 @@ hydrated/gone stamps. Watch + backfill + MAX_ITEMS. Smoke: MAX_ITEMS=10
 against real library, eyeball entries.
 
 **Acceptance:**
-- [ ] api client: ok/absent/failed outcomes distinguished (tests)
-- [ ] render pure tests: t.co, quotes, urls union, gone, engagement
-- [ ] hydrated_at skip makes watch/backfill idempotent
-- [ ] smoke slice of 10 verified in library; index updated
+- [x] api client: ok/absent/failed outcomes distinguished (tests)
+- [x] render pure tests: t.co, quotes, urls union, gone, engagement
+- [x] hydrated_at skip makes watch/backfill idempotent (skip precedes any API call)
+- [ ] smoke slice of 10 verified in library; index updated — needs TWITTERAPI_KEY
 
 ## Phase 4: Profiles + import trim
 
@@ -74,9 +74,9 @@ into `urls`. twitter-import: create-only manifest, blocks/mutes deleted,
 follows body empty.
 
 **Acceptance:**
-- [ ] profile render tests: bio body, urls union, counts frontmatter
-- [ ] import emits no blocks/mutes; follows body empty
-- [ ] re-import over hydrated entries: all skipped, nothing reset
+- [x] profile render tests: bio body, urls union, counts frontmatter
+- [x] import emits no blocks/mutes; follows body empty
+- [ ] re-import over hydrated entries: all skipped, nothing reset — verify during P5
 
 ## Phase 5: Seed corpus (ops)
 
@@ -93,4 +93,6 @@ count sane, url-scraper picks up new urls.
 
 |  |  |
 |--|--|
-|  |  |
+| 42282a8 | P1: create/edit grant rename end-to-end; fixtures + test.local + installed grants migrated (backup grants.bak-create-rename); daemon restarted on new build |
+| 2535767 | P2: promote decision table — cross-source skip (journaled) unless edit grant; result gains skipped[]; tests for all branches |
+| (test.local, untracked) | P3+P4: twitter-hydrate plugin (api/render/plugin, 15 deno tests green, deno check clean); twitter-import trimmed (blocks/mutes deleted, follows body empty, create-only) |
