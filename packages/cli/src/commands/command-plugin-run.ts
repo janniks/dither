@@ -379,6 +379,8 @@ export const runSubcommand = defineCommand({
     await writeKick(pluginName, {
       runId,
       kickedAt: new Date().toISOString(),
+      // Backfill seeds the inbox; only a watch-trigger run claims it.
+      ...(args.backfill ? { trigger: "watch" as const } : {}),
       ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
     });
     await ensureDaemonRunning();

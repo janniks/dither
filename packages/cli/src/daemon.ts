@@ -226,7 +226,7 @@ export async function fireKick(
   // on boot recover) and re-fires next drain. The one case that returns
   // `false` is a hand-off in progress — the run was NOT started, so we report
   // `"retry"` and the Queue restores the kick to pending for the successor.
-  const ran = await fireWithSuppress(state, watcher, refirer, detector, name, "manual", notify, {
+  const ran = await fireWithSuppress(state, watcher, refirer, detector, name, payload.trigger ?? "manual", notify, {
     runId: payload.runId,
     ...(payload.overrides ? { overrides: payload.overrides } : {}),
   });

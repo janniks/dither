@@ -20,6 +20,9 @@ import { Queue, type Outcome, type Source } from "./queue";
 export interface KickPayload {
   runId: string;
   kickedAt: string;
+  /** Fire trigger for the kicked run. Backfill kicks set "watch" so the
+   *  run claims the inbox seeded by the CLI; default is "manual". */
+  trigger?: "watch" | "manual";
   overrides?: KickOverrides;
 }
 
