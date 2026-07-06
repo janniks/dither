@@ -218,4 +218,21 @@ describe("search", () => {
       expect(hit.snippet).toBeUndefined();
     }
   });
+
+  it("semantic-only hit previews first content line, not the frontmatter fence", () => {
+    const body = "---\nid: \"1\"\nurl: \"https://nypost.com/x\"\n---\n\nThe actual article text.\n";
+    const s = safeSnippet(body, "unrelatedquery", undefined, undefined);
+    expect(s?.text).toBe("The actual article text.");
+  });
+
+  it("lexical match inside frontmatter falls through to content", () => {
+    const body = "---\nid: \"1\"\ntag: nypost\n---\n\nBody line here.\n";
+    const s = safeSnippet(body, "nypost", undefined, undefined);
+    expect(s?.text).toBe("Body line here.");
+  });
+
+  it("body without frontmatter still previews its first line", () => {
+    const s = safeSnippet("plain text doc\nmore", "zzz", undefined, undefined);
+    expect(s?.text).toBe("plain text doc");
+  });
 });

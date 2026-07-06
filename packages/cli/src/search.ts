@@ -133,20 +133,29 @@ export function safeSnippet(
   if (!body) return undefined;
   const all = body.split("\n");
 
+  // Document bodies arrive raw, frontmatter included. Previews should
+  // never show YAML — everything below anchors after the closing fence.
+  const content = (() => {
+    if (all[0]?.trim() !== "---") return 0;
+    const close = all.findIndex((l, i) => i > 0 && l.trim() === "---");
+    return close === -1 ? 0 : close + 1;
+  })();
+
   // qmd returns the matched line index + a multi-line `snippet` with a
   // diff-style `@@ -X,Y @@` header — we want neither format, just the line
   // index so we can cut our own window from the body.
   const idx = (() => {
     try {
       const s = extractSnippet(body, query, undefined, chunkPos, chunkLen);
-      if (all[s.line - 1]?.trim()) return s.line - 1;
+      if (s.line - 1 >= content && all[s.line - 1]?.trim()) return s.line - 1;
     } catch {
       // fall through
     }
-    // Fallback: no match in the chunk (all stopwords, empty result, or qmd
-    // threw). Anchor on the first non-empty line so the preview still shows
-    // context instead of going missing.
-    return all.findIndex((l) => l.trim() !== "");
+    // Fallback: no lexical match (semantic-only hit, all stopwords, or qmd
+    // threw) or the match sat inside frontmatter. Anchor on the first
+    // non-empty content line so the preview shows the doc's opening text.
+    const first = all.slice(content).findIndex((l) => l.trim() !== "");
+    return first === -1 ? -1 : content + first;
   })();
   if (idx < 0) return undefined;
 
