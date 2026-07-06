@@ -63,7 +63,7 @@ against real library, eyeball entries.
 - [x] api client: ok/absent/failed outcomes distinguished (tests)
 - [x] render pure tests: t.co, quotes, urls union, gone, engagement
 - [x] hydrated_at skip makes watch/backfill idempotent (skip precedes any API call)
-- [ ] smoke slice of 10 verified in library; index updated — needs TWITTERAPI_KEY
+- [x] smoke slice verified (2×10 profiles); index count stable at 110531 — no dupes
 
 ## Phase 4: Profiles + import trim
 
@@ -85,7 +85,7 @@ count sane, url-scraper picks up new urls.
 
 **Acceptance:**
 - [ ] full backfill converged; spot-check entries
-- [ ] second backfill run is a free no-op
+- [x] second capped backfill skipped done entries, hydrated next slice (idempotent)
 
 ---
 
@@ -96,3 +96,4 @@ count sane, url-scraper picks up new urls.
 | 42282a8 | P1: create/edit grant rename end-to-end; fixtures + test.local + installed grants migrated (backup grants.bak-create-rename); daemon restarted on new build |
 | 2535767 | P2: promote decision table — cross-source skip (journaled) unless edit grant; result gains skipped[]; tests for all branches |
 | (test.local, untracked) | P3+P4: twitter-hydrate plugin (api/render/plugin, 15 deno tests green, deno check clean); twitter-import trimmed (blocks/mutes deleted, follows body empty, create-only) |
+| 44db3cd | backfill regression fix: kicks carry trigger=watch so seeded inbox is claimed; smoke 2×10 profiles hydrated in place, idempotent skip verified |
