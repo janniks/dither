@@ -1,0 +1,12 @@
+{
+  "name": "echo-targets",
+  "version": "0.0.1",
+  "description": "Test fixture plugin: writes one entry per input target.",
+  "license": "MIT",
+  "dither": {
+    "display_name": "Echo Targets",
+    "tagline": "Test fixture for watch/backfill target delivery.",
+    "create": ["echoed"],
+    "watch": { "collections": ["seed"] }
+  }
+}

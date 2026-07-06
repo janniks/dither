@@ -791,4 +791,58 @@ await writeEntry({
 
     rmSync(failDir, { recursive: true, force: true });
   }, 60000);
+
+  it("backfill contract: a watch-trigger kick claims the seeded inbox as targets", async () => {
+    // Regression for the seedBackfillInbox contract: the CLI seeds the
+    // inbox and fires a kick; the run only sees those targets when the
+    // kick carries trigger="watch". A daemon that fires kicks as
+    // "manual" silently ignores the seeded inbox (bug fixed in 44db3cd).
+    const { installPlugin } = await import("./plugin-install");
+    const { appendToInbox } = await import("./inbox");
+    const { fireKick } = await import("./daemon");
+    const { Watcher } = await import("./watcher");
+    const { Refirer } = await import("./refirer");
+    const { LoopDetector } = await import("./loop-detector");
+
+    const src = resolve(__dirname, "..", "test", "fixtures", "echo-targets");
+    await installPlugin({ source: src });
+
+    // Seeded entries the plugin should receive as targets.
+    const seedDir = join(home, "entries", "seed");
+    mkdirSync(seedDir, { recursive: true });
+    for (const n of ["a", "b", "c"]) {
+      const p = join(seedDir, `${n}.md`);
+      writeFileSync(p, `---\nid: ${n}\n---\n\nseed ${n}\n`);
+      await appendToInbox("echo-targets", { path: p, mtimeMs: Date.now() });
+    }
+
+    const state = {
+      token: "t",
+      startedAt: new Date().toISOString(),
+      shuttingDown: false,
+      reloadRequested: false,
+      handingOff: false,
+      restartFails: 0,
+      restartDisabled: false,
+      scheduleCount: 0,
+      watchCount: 0,
+    };
+    const outcome = await fireKick(
+      state,
+      new Watcher(() => undefined),
+      new Refirer(() => undefined),
+      new LoopDetector(),
+      "echo-targets",
+      { runId: "kick-backfill-test", kickedAt: new Date().toISOString(), trigger: "watch" },
+      () => undefined,
+    );
+    expect(outcome).toBe("done");
+
+    // One echoed entry per seeded target proves the inbox was claimed.
+    const echoed = join(home, "entries", "echoed");
+    const files = existsSync(echoed) ? readdirSync(echoed).filter((f) => f.endsWith(".md")) : [];
+    expect(files.length).toBe(3);
+    const bodies = files.map((f) => readFileSync(join(echoed, f), "utf-8")).join("\n");
+    for (const n of ["a", "b", "c"]) expect(bodies).toContain(`seed/${n}.md`);
+  }, 60000);
 });
