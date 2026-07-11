@@ -24,4 +24,4 @@
 
 |  |  |
 |--|--|
-|  |  |
+| eabedc5 | Phase 1: pure plan(), derived allow-env, in-memory tests |

@@ -25,4 +25,4 @@
 
 |  |  |
 |--|--|
-|  |  |
+| 187adc3 | Phase 1: makeFire, busy-kick retry, post-run re-drain |

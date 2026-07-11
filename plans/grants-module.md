@@ -26,4 +26,4 @@
 
 |  |  |
 |--|--|
-|  |  |
+| f5f7daf | Phase 1: Grants type + readers converted, plugin-list.ts deleted |
