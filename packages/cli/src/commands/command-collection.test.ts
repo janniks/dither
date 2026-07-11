@@ -156,6 +156,26 @@ describe("dither collection", () => {
     ).rejects.toThrow(/library subdir/);
   });
 
+  it("add defers the rescan via needs-reindex when qmd-index lock is held", async () => {
+    // Seed a live-held index lock (our own pid) — as if the daemon is
+    // mid-index. Registration must still succeed; the rescan defers.
+    const { themeLockPath } = await import("../locks");
+    const { needsReindexPath } = await import("../markers");
+    mkdirSync(join(home, "locks"), { recursive: true });
+    writeFileSync(themeLockPath("index"), String(process.pid));
+
+    const ext = realpathSync(mkdtempSync(join(home, "work-")));
+    const { main } = await import("../main");
+    const { out, err } = await captureLogs(async () => {
+      await runCommand(main, { rawArgs: ["collection", "add", ext, "--name", "work"] });
+    });
+    const { loadConfig } = await import("../config");
+    expect((await loadConfig())?.collections.external.length).toBe(1);
+    expect(existsSync(needsReindexPath())).toBe(true);
+    expect(err).toContain("busy");
+    expect(out).toContain("registered 'work'");
+  });
+
   it("remove errors when name isn't registered", async () => {
     const { main } = await import("../main");
     await expect(

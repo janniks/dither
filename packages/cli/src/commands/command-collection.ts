@@ -3,7 +3,7 @@ import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { assertInitialized, saveConfig } from "../config";
 import { addExternal, loadRegistry, removeExternal } from "../collection-registry";
-import { updateIndex } from "../update-index";
+import { reindex } from "../update-index";
 import { printTable } from "../prompt";
 
 const addSubcommand = defineCommand({
@@ -29,17 +29,9 @@ const addSubcommand = defineCommand({
     const { cfg: next, entry } = addExternal(cfg, args.path, args.name);
     await saveConfig(next);
     // Index the new mount inline so the very next `dither search` sees
-    // its contents. Failure here doesn't roll back the registration —
-    // a stale index recovers on the next scheduled `index update`.
-    try {
-      await updateIndex([entry.name]);
-    } catch (err) {
-      console.warn(
-        `[dither] indexed registration but inline reindex failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
+    // its contents. Registration never rolls back — busy/failed rescans
+    // defer to the daemon.
+    await reindex([entry.name]);
     console.log(`registered '${entry.name}' → ${entry.path}`);
   },
 });
@@ -96,15 +88,7 @@ const removeSubcommand = defineCommand({
     // Drop this collection's rows from the index. Reopen the store with
     // the new registry; qmd's update over the remaining collections will
     // not re-touch the removed one.
-    try {
-      await updateIndex();
-    } catch (err) {
-      console.warn(
-        `[dither] unregistered but index refresh failed: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
+    await reindex();
     console.log(`unregistered '${args.name}'`);
   },
 });
