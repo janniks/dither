@@ -1,8 +1,8 @@
 import { spawn as nodeSpawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { appendGlobal } from "./run-log";
-import { journalSink } from "./reconcile-sink";
-import { parseReconcile } from "./reconcile-protocol";
+import { journalSink, type JobDoneSummary } from "./reconcile-sink";
+import type { JobType } from "./daemon-jobs";
 
 /**
  * Daemon-side supervisor for the `daemon reconcile` child (Phase 3).
@@ -19,8 +19,8 @@ import { parseReconcile } from "./reconcile-protocol";
  * (`dither status`, init's foreground watch) depend on.
  *
  * This module is qmd-free: it touches only the journal surface (via
- * `journalSink` / `appendGlobal`) + `parseReconcile`. qmd natives stay in the
- * child's address space.
+ * `journalSink` / `appendGlobal`). qmd natives stay in the child's
+ * address space.
  */
 
 export interface ReconcileSupervisor {
@@ -30,46 +30,83 @@ export interface ReconcileSupervisor {
   child: ChildProcess;
 }
 
+const jobTypes = new Set<JobType>(["model-download", "indexing", "embedding"]);
+
+function str(v: unknown): string | undefined {
+  return typeof v === "string" ? v : undefined;
+}
+
+function num(v: unknown): number {
+  return typeof v === "number" ? v : 0;
+}
+
+// job-done carries an open summary that varies by type: keep the numeric
+// fields, drop the envelope tag + type.
+function summaryOf(obj: Record<string, unknown>): JobDoneSummary {
+  const out: Record<string, number> = {};
+  for (const key of Object.keys(obj)) {
+    if (typeof obj[key] === "number") out[key] = obj[key];
+  }
+  return out as unknown as JobDoneSummary;
+}
+
 /**
- * Translate the child's parsed NDJSON into journal writes. Factored out of the
- * spawn plumbing so tests feed lines directly into a real `journalSink` (no
- * subprocess) and assert the resulting `jobs/` + global-log match the inline
- * path. Returns the running `jobsRun` count carried by `reconcile-done`.
+ * Route the child's NDJSON lines onto a sink — the wire kind is the sink
+ * method (kebab vs camel). Factored out of the spawn plumbing so tests feed
+ * lines directly into a real `journalSink` (no subprocess) and assert the
+ * resulting `jobs/` + global-log match the inline path. Non-`_dither` lines
+ * journal as `{kind:"stderr"}`; malformed `_dither` envelopes are skipped.
  */
 export function reconcileHandler(sink = journalSink()) {
   let jobsRun = 0;
+  let failed = false;
   const line = async (raw: string): Promise<void> => {
-    const msg = parseReconcile(raw);
-    if (!msg) {
+    const obj = tryJson(raw);
+    const kind = str(obj?._dither);
+    if (!obj || !kind) {
       // Non-`_dither` diagnostic — journal verbatim (same as supervisor.ts).
       await appendGlobal({ kind: "stderr", line: raw });
       return;
     }
-    if (msg.kind === "job-started") {
-      await sink.jobStarted(msg.type, msg.reason);
+    if (kind === "reconcile-done") {
+      // Remember the count; the daemon emits the bookend on close.
+      jobsRun = num(obj.jobsRun);
       return;
     }
-    if (msg.kind === "job-progress") {
-      await sink.jobProgress(msg.type, msg.cur, msg.total);
+    if (kind === "reconcile-failed") {
+      failed = true;
+      await sink.reconcileFailed(String(obj.error ?? "unknown"));
       return;
     }
-    if (msg.kind === "job-done") {
-      const { kind, type, ...summary } = msg;
-      await sink.jobDone(type, summary);
+    const type = str(obj.type);
+    if (!type || !jobTypes.has(type as JobType)) {
+      // Malformed envelope — journal as a diagnostic rather than dropping it.
+      await appendGlobal({ kind: "stderr", line: raw });
       return;
     }
-    if (msg.kind === "job-skipped") {
-      await sink.jobSkipped(msg.type, msg.reason);
-      return;
-    }
-    // reconcile-done: remember the count; the daemon emits the bookend on close.
-    jobsRun = msg.jobsRun;
+    const t = type as JobType;
+    if (kind === "job-started") await sink.jobStarted(t, str(obj.reason));
+    if (kind === "job-progress") await sink.jobProgress(t, num(obj.cur), num(obj.total));
+    if (kind === "job-done") await sink.jobDone(t, summaryOf(obj));
+    if (kind === "job-failed") await sink.jobFailed(t, String(obj.error ?? "unknown"));
+    if (kind === "job-skipped") await sink.jobSkipped(t, String(obj.reason ?? ""));
   };
   return {
     sink,
     line,
     jobsRun: () => jobsRun,
+    failed: () => failed,
   };
+}
+
+function tryJson(raw: string): Record<string, unknown> | null {
+  if (!raw || raw[0] !== "{") return null;
+  try {
+    const v = JSON.parse(raw) as unknown;
+    return typeof v === "object" && v !== null ? (v as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -122,7 +159,12 @@ export function superviseReconcile(spawn = nodeSpawn): ReconcileSupervisor {
             void chain
               .then(async () => {
                 if (code !== 0) {
-                  await handler.sink.reconcileFailed(`reconcile child exited ${code}`);
+                  // The wire usually carried the real error (reconcile-failed
+                  // already journaled); exit-code inference is the fallback
+                  // for a child that died without emitting one.
+                  if (!handler.failed()) {
+                    await handler.sink.reconcileFailed(`reconcile child exited ${code}`);
+                  }
                   await handler.sink.reconcileDone(handler.jobsRun(), "failed");
                   return;
                 }

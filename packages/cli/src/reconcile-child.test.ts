@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runReconcileChild } from "./reconcile-run";
-import { parseReconcile } from "./reconcile-protocol";
 import { readGlobal } from "./run-log";
 import { needsReindexPath, requestReindexSync } from "./markers";
 import { existsSync, readFileSync } from "node:fs";
@@ -22,6 +21,14 @@ import { writeTestConfig } from "../test/helpers/config";
  * download (cf. command-index.test.ts, which only indexes), so we mirror
  * that precedent and cover index + the clean no-work / no-library exits.
  */
+// The wire is plain NDJSON: `{_dither: <kind>, ...fields}`. Decode with
+// JSON.parse; alias the envelope tag to `kind` for readable assertions.
+function parseReconcile(line: string): Record<string, unknown> & { kind?: string } | null {
+  if (!line.startsWith("{")) return null;
+  const obj = JSON.parse(line) as Record<string, unknown>;
+  return typeof obj._dither === "string" ? { ...obj, kind: obj._dither } : null;
+}
+
 describe("runReconcileChild", () => {
   let home: string;
   let prev: string | undefined;

@@ -2,18 +2,37 @@ import { randomUUID } from "node:crypto";
 import { appendGlobal } from "./run-log";
 import type { JobType } from "./daemon-jobs";
 import { markJobStarted, markJobProgress, markJobEnded } from "./daemon-jobs";
-import type { JobDoneSummary } from "./reconcile-protocol";
-
 /**
- * Reporting seam for the reconcile work. `qmdReconcile` calls these
- * lifecycle methods; *how* the events are reported (journal vs NDJSON) is
- * the sink's business. Two impls below:
+ * Reporting for the reconcile work. `qmdReconcile` calls these lifecycle
+ * methods; *how* the events are reported (journal vs NDJSON) is the sink's
+ * business. Two impls below:
  *
  *   - journalSink — what the daemon-inline path always did: mint jobIds,
  *     write `jobs/<id>.json`, append global-log events. Sole journal writer.
- *   - stderrSink — the child path: emit `_dither` NDJSON on stderr. The
- *     daemon parses + journals (Phase 3).
+ *   - stderrSink — the child path: emit `_dither` NDJSON on stderr, one
+ *     line per method, kind = method name in kebab-case. The daemon's
+ *     `reconcileHandler` reads the kind and calls the same method on a
+ *     journalSink — the wire IS the sink interface; there is no separate
+ *     protocol layer.
  */
+
+export interface EmbedDoneSummary {
+  chunks: number;
+  truncated: number;
+  iterations: number;
+  durationMs: number;
+}
+
+export interface IndexDoneSummary {
+  filesIndexed: number;
+  filesTotal: number;
+}
+
+export interface DownloadDoneSummary {
+  durationMs: number;
+}
+
+export type JobDoneSummary = EmbedDoneSummary | IndexDoneSummary | DownloadDoneSummary;
 export interface ReconcileSink {
   reconcileStarted(cycleId: string): Promise<void>;
   jobStarted(type: JobType, reason?: string): Promise<void>;
@@ -111,15 +130,15 @@ export function stderrSink(emit: Emit = stderrEmit): ReconcileSink {
     async jobDone(type, summary) {
       send({ _dither: "job-done", type, ...summary });
     },
-    // No NDJSON for failure: the child throws + exits non-zero, which the
-    // daemon reads as the failure signal (Phase 3). No wire shape needed.
-    async jobFailed() {},
+    async jobFailed(type, error) {
+      send({ _dither: "job-failed", type, error });
+    },
     async jobSkipped(type, reason) {
       send({ _dither: "job-skipped", type, reason });
     },
-    // No NDJSON: the child throws + exits non-zero on a cycle-level failure;
-    // the daemon reads exit code (Phase 3), so no wire shape is needed.
-    async reconcileFailed() {},
+    async reconcileFailed(error) {
+      send({ _dither: "reconcile-failed", error });
+    },
     async reconcileDone(jobsRun, reason) {
       send({ _dither: "reconcile-done", jobsRun, ...(reason ? { reason } : {}) });
     },

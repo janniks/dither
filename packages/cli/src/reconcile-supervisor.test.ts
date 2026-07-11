@@ -86,6 +86,33 @@ describe("reconcile-supervisor handler", () => {
     expect(events[0]).toMatchObject({ kind: "stderr", line: "some native warning from qmd" });
   });
 
+  it("carries jobFailed + reconcileFailed error strings over the wire", async () => {
+    const lines: string[] = [];
+    const child = stderrSink((line) => lines.push(line));
+    await child.jobStarted("embedding");
+    await child.jobFailed("embedding", "native OOM in llama batch");
+    await child.reconcileFailed("native OOM in llama batch");
+
+    const handler = reconcileHandler();
+    await handler.sink.reconcileStarted("cycle-3");
+    for (const line of lines) await handler.line(line);
+    expect(handler.failed()).toBe(true);
+    // Wire already carried the failure → close path skips the generic
+    // exit-code message and only emits the bookend.
+    await handler.sink.reconcileDone(handler.jobsRun(), "failed");
+
+    const events = await readGlobal();
+    expect(events.map((e) => e.kind)).toEqual([
+      "reconcile-started",
+      "job-started",
+      "job-failed",
+      "reconcile-failed",
+      "reconcile-done",
+    ]);
+    expect(events[2]).toMatchObject({ error: "native OOM in llama batch" });
+    expect(events[3]).toMatchObject({ error: "native OOM in llama batch" });
+  });
+
   it("emits reconcile-failed + reconcile-done(failed) for a nonzero child", async () => {
     // Mirror the close-path branch the supervisor runs on a nonzero exit.
     const handler = reconcileHandler();
