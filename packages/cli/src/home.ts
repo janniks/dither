@@ -46,6 +46,14 @@ export function globalEnvPath(): string {
   return join(resolveHome(), "env.json");
 }
 
+export function grantsDirPath(): string {
+  return join(resolveHome(), "grants");
+}
+
+export function grantsPath(name: string): string {
+  return join(grantsDirPath(), `${name}.json`);
+}
+
 export function pidFilePath(): string {
   return join(resolveHome(), "dither.pid");
 }

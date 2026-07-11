@@ -11,7 +11,7 @@ import {
   untildePath,
 } from "./prompt";
 import { getGlobalEnv } from "./global-env";
-import { resolveHome } from "./home";
+import { readGrants } from "./grants";
 import { parseSchedule } from "./schedule-parser";
 import { Cron } from "croner";
 import pc from "picocolors";
@@ -264,29 +264,22 @@ export async function planInstall(
  * is Enter-through unless the user wants to change something.
  */
 export async function readExistingGrants(name: string): Promise<InstallInputs | null> {
-  const grantsPath = join(resolveHome(), "grants", `${name}.json`);
-  if (!existsSync(grantsPath)) return null;
+  let blob;
   try {
-    const blob = JSON.parse(await readFile(grantsPath, "utf-8")) as {
-      env?: Record<string, string>;
-      envRefs?: string[];
-      files?: Record<string, string>;
-      net?: string[];
-      create?: string[];
-      edit?: string[];
-    };
-    return {
-      env: blob.env,
-      envRefs: blob.envRefs,
-      files: blob.files,
-      net: blob.net,
-      create: blob.create,
-      edit: blob.edit,
-    };
+    blob = await readGrants(name);
   } catch {
     // Corrupt grants file shouldn't block reinstall — treat as fresh.
     return null;
   }
+  if (!blob) return null;
+  return {
+    env: blob.env,
+    envRefs: blob.envRefs,
+    files: blob.files,
+    net: blob.net,
+    create: blob.create,
+    edit: blob.edit,
+  };
 }
 
 export async function readPackage(source: string): Promise<ParsedPackage> {

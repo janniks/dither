@@ -376,7 +376,7 @@ describe("readExistingGrants", () => {
       files: { cfg: "/tmp/c" },
       net: ["x.example.com"],
       create: ["a/**"],
-      edit: undefined,
+      edit: [],
     });
   });
 

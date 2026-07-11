@@ -2,7 +2,7 @@ import { access } from "node:fs/promises";
 import { existsSync, constants } from "node:fs";
 import { resolveHome } from "./home";
 import { loadConfig } from "./config";
-import { listPlugins } from "./plugin-list";
+import { listGrants } from "./grants";
 import { getDaemonStatus, type DaemonStatus } from "./daemon-control";
 import { readJobsSnapshot, type JobsSnapshot } from "./daemon-jobs";
 import { openStore } from "./store";
@@ -78,7 +78,7 @@ async function probeLibraryHealth(libraryPath: string | null): Promise<LibraryHe
 export async function getStatus(): Promise<DitherStatus> {
   const configDir = resolveHome();
   const configDirSource = detectConfigDirSource();
-  const plugins = (await listPlugins()).length;
+  const plugins = (await listGrants()).length;
   const cfg = await loadConfig();
   const library = cfg ? cfg.library.path : null;
   let libraryHealth = await probeLibraryHealth(library);

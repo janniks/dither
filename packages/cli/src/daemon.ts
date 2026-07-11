@@ -5,7 +5,7 @@ import { dirname } from "node:path";
 import { pidFilePath, parsePidFile, statusSnapshotPath, daemonLogPath, resolveHome, type DaemonPidFile } from "./home";
 import { libraryRoot as resolveLibraryRoot } from "./config";
 import { appendGlobal, listRuns, truncateGlobal, type RunSummary } from "./run-log";
-import { listPlugins, type InstalledPluginInfo } from "./plugin-list";
+import { listGrants, type Grants } from "./grants";
 import { Scheduler, type ScheduleEntry } from "./scheduler";
 import { Watcher, type WatchEntry } from "./watcher";
 import { runPlugin } from "./plugin-run";
@@ -93,11 +93,11 @@ export interface DaemonState {
   watchCount: number;
 }
 
-function scheduleEntriesOf(plugins: InstalledPluginInfo[]): ScheduleEntry[] {
+function scheduleEntriesOf(plugins: Grants[]): ScheduleEntry[] {
   return plugins.flatMap((p) => (p.schedule ? [{ name: p.name, schedule: p.schedule }] : []));
 }
 
-function watchEntriesOf(plugins: InstalledPluginInfo[]): WatchEntry[] {
+function watchEntriesOf(plugins: Grants[]): WatchEntry[] {
   return plugins.flatMap((p) => {
     const w = p.watch;
     if (!w) return [];
@@ -388,7 +388,7 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   // change after `dither init --force`. We do NOT auto-reload on config
   // file change — see notes/qmd-library-edge-cases.md (#5).
   async function reconcile(): Promise<void> {
-    const [plugins, libRoot] = await Promise.all([listPlugins(), resolveLibraryRoot()]);
+    const [plugins, libRoot] = await Promise.all([listGrants(), resolveLibraryRoot()]);
     scheduler.set(scheduleEntriesOf(plugins));
     watcher.set(libRoot, watchEntriesOf(plugins));
     // set() only configures the watcher (so boot recover() runs without a live

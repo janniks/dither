@@ -3,11 +3,10 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { pluginDir, resolveHome } from "./home";
-import { validateGrantPattern } from "./grants";
+import { pluginDir } from "./home";
+import { validateGrantPattern, writeGrants, type Grants } from "./grants";
 import { detectProtectedInstall, type ProtectedInstall } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
-import { writePrivateJson } from "./secure-json";
 import {
   MissingInputsError,
   planInstall,
@@ -96,8 +95,8 @@ async function pathExists(path: string): Promise<boolean> {
 async function replacePlugin(
   destDir: string,
   stageDir: string,
-  grantsPath: string,
-  grants: unknown,
+  name: string,
+  grants: Grants,
 ): Promise<void> {
   const backupDir = join(
     dirname(destDir),
@@ -111,7 +110,7 @@ async function replacePlugin(
     await rename(stageDir, destDir);
     staged = true;
     try {
-      await writePrivateJson(grantsPath, grants);
+      await writeGrants(name, grants);
     } catch (err) {
       await rm(destDir, { recursive: true, force: true }).catch(() => undefined);
       if (hadOld) await rename(backupDir, destDir).catch(() => undefined);
@@ -142,13 +141,10 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
   const { env, envRefs, files, net, create, edit, schedule, watch } = plan.resolved;
   for (const pattern of [...create, ...edit]) validateGrantPattern(pattern);
 
-  const home = resolveHome();
   const destDir = pluginDir(parsed.name);
   const parentDir = dirname(destDir);
   const stageDir = join(parentDir, `.${parsed.name}.${process.pid}.${randomUUID()}.tmp`);
-  const grantsDir = join(home, "grants");
-  const grantsPath = join(grantsDir, `${parsed.name}.json`);
-  const grants = {
+  const grants: Grants = {
     name: parsed.name,
     version: parsed.version,
     installedAt: new Date().toISOString(),
@@ -195,7 +191,7 @@ export async function installPlugin(opts: InstallOptions): Promise<InstalledPlug
       await prefetchDeps(stageDir);
     }
 
-    await replacePlugin(destDir, stageDir, grantsPath, grants);
+    await replacePlugin(destDir, stageDir, parsed.name, grants);
   } catch (err) {
     await rm(stageDir, { recursive: true, force: true }).catch(() => undefined);
     throw err;

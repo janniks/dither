@@ -6,7 +6,7 @@ import { pluginDir as pluginDirOf, resolveHome } from "./home";
 import { assertInitialized, libraryRoot as resolveLibraryRoot } from "./config";
 import { parsePackage } from "./manifest";
 import { getGlobalEnv } from "./global-env";
-import { validateGrantPattern } from "./grants";
+import { readGrants, validateGrantPattern } from "./grants";
 import { openRun, type RunHandle } from "./run-log";
 import { formatFdaError, FDA_REQUIRED } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";
@@ -57,15 +57,6 @@ const DITHER_ENV_VARS = [
   "DITHER_TRIGGER",
   "DITHER_PLUGIN_NAME",
 ];
-
-interface GrantsFile {
-  env?: Record<string, string>;
-  envRefs?: string[];
-  files?: Record<string, string>;
-  net?: string[];
-  create?: string[];
-  edit?: string[];
-}
 
 function denoPermissionList(kind: string, entries: string[]): string {
   const entry = entries.find((e) => e.includes(","));
@@ -171,10 +162,9 @@ async function runPluginLocked(
   const pkgRaw = JSON.parse(await readFile(join(pluginDir, "package.json"), "utf-8")) as unknown;
   const parsed = parsePackage(pkgRaw);
 
-  const grantsPath = join(home, "grants", `${opts.name}.json`);
-  const grants: GrantsFile = existsSync(grantsPath)
-    ? (JSON.parse(await readFile(grantsPath, "utf-8")) as GrantsFile)
-    : {};
+  // Missing grants (e.g. a dev-symlinked plugin run before install) layer
+  // as all-empty; per-run overrides below still apply.
+  const grants = (await readGrants(opts.name)) ?? { name: opts.name, net: [], create: [], edit: [] };
 
   // Layer per-run overrides on top of grants. Per-run additions are ephemeral —
   // they don't get written back to the grants file.

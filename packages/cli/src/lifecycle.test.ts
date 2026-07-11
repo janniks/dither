@@ -25,14 +25,14 @@ describe("plugin lifecycle (list / remove)", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  it("listPlugins returns empty array on a fresh install", async () => {
-    const { listPlugins } = await import("./plugin-list");
-    expect(await listPlugins()).toEqual([]);
+  it("listGrants returns empty array on a fresh install", async () => {
+    const { listGrants } = await import("./grants");
+    expect(await listGrants()).toEqual([]);
   });
 
-  it("listPlugins returns installed plugins with name/version/collections", async () => {
+  it("listGrants returns installed plugins with name/version/collections", async () => {
     const { installPlugin } = await import("./plugin-install");
-    const { listPlugins } = await import("./plugin-list");
+    const { listGrants } = await import("./grants");
 
     await installPlugin({ source: IMPORT_FIXTURE });
     await installPlugin({
@@ -40,7 +40,7 @@ describe("plugin lifecycle (list / remove)", () => {
       env: { GREETING: "x", API_TOKEN: "y" },
     });
 
-    const list = await listPlugins();
+    const list = await listGrants();
     expect(list).toHaveLength(2);
     const byName = Object.fromEntries(list.map((p) => [p.name, p]));
     expect(byName["import-folder"]?.version).toBe("0.0.1");
@@ -48,13 +48,13 @@ describe("plugin lifecycle (list / remove)", () => {
     expect(byName["echo-config"]?.create).toContain("echoed");
   });
 
-  it("removePlugin deletes plugin dir + grants and listPlugins reflects it", async () => {
+  it("removePlugin deletes plugin dir + grants and listGrants reflects it", async () => {
     const { installPlugin } = await import("./plugin-install");
-    const { listPlugins } = await import("./plugin-list");
+    const { listGrants } = await import("./grants");
     const { removePlugin } = await import("./plugin-remove");
 
     await installPlugin({ source: IMPORT_FIXTURE });
-    expect((await listPlugins()).map((p) => p.name)).toContain("import-folder");
+    expect((await listGrants()).map((p) => p.name)).toContain("import-folder");
     expect(existsSync(join(home, "plugins", "import-folder"))).toBe(true);
     expect(existsSync(join(home, "grants", "import-folder.json"))).toBe(true);
 
@@ -62,7 +62,7 @@ describe("plugin lifecycle (list / remove)", () => {
 
     expect(existsSync(join(home, "plugins", "import-folder"))).toBe(false);
     expect(existsSync(join(home, "grants", "import-folder.json"))).toBe(false);
-    expect(await listPlugins()).toEqual([]);
+    expect(await listGrants()).toEqual([]);
   });
 
   it("removePlugin throws when the plugin is not installed", async () => {

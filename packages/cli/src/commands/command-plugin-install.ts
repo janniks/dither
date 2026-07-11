@@ -128,7 +128,7 @@ export const installSubcommand = defineCommand({
     console.log(`  → ${result.dest}`);
     if (result.protectedInstall) await handleProtectedInstall(result.protectedInstall);
     await ensureDaemonForPlugin(result.name).catch(() => {});
-    printInstallHint(result.name, false);
+    await printInstallHint(result.name, false);
     return result;
   },
 });

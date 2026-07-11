@@ -1,5 +1,73 @@
 import picomatch from "picomatch";
+import { readdir, readFile } from "node:fs/promises";
 import { validateCollectionPathSegment } from "./collection-registry";
+import { grantsDirPath, grantsPath } from "./home";
+import { writePrivateJson } from "./secure-json";
+import type { Manifest } from "./manifest";
+
+/**
+ * The grants file at `~/.dither/grants/<name>.json` — the user's consented
+ * permissions, written at install. This type IS the on-disk shape; there is
+ * no translation layer. The daemon reads top-level `schedule`/`watch` (the
+ * consented values), never `manifest.schedule`/`manifest.watch` (the
+ * declared ones, kept for reporting).
+ */
+export interface Grants {
+  name: string;
+  version?: string;
+  installedAt?: string;
+  manifest?: Manifest;
+  /** `null` = explicitly disabled; absent = legacy file (also disabled). */
+  schedule?: string | null;
+  watch?: { collections: string[]; dirs?: string[]; glob?: string } | null;
+  env?: Record<string, string>;
+  envRefs?: string[];
+  files?: Record<string, string>;
+  net: string[];
+  create: string[];
+  edit: string[];
+}
+
+/**
+ * The single reader. Returns the parsed object itself (unknown fields
+ * survive a read-modify-write round trip), with `create`/`edit`/`net`
+ * defaulted to `[]` and `name` defaulted from the filename. `null` on a
+ * missing file; corrupt JSON throws — a run must not silently proceed
+ * with empty permissions.
+ */
+export async function readGrants(name: string): Promise<Grants | null> {
+  let raw: string;
+  try {
+    raw = await readFile(grantsPath(name), "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+  const parsed = JSON.parse(raw) as Grants;
+  parsed.name ??= name;
+  parsed.net ??= [];
+  parsed.create ??= [];
+  parsed.edit ??= [];
+  return parsed;
+}
+
+export async function writeGrants(name: string, g: Grants): Promise<void> {
+  await writePrivateJson(grantsPath(name), g);
+}
+
+/** Every installed plugin's grants, sorted by name. */
+export async function listGrants(): Promise<Grants[]> {
+  let files: string[];
+  try {
+    files = await readdir(grantsDirPath());
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+  const names = files.filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -".json".length));
+  const out = await Promise.all(names.map(readGrants));
+  return out.filter((g): g is Grants => g !== null).sort((a, b) => a.name.localeCompare(b.name));
+}
 
 /**
  * Grant patterns and coverage queries.

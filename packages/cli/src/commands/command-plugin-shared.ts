@@ -1,8 +1,6 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { Cron } from "croner";
 import pc from "picocolors";
-import { resolveHome } from "../home";
+import { readGrants, type Grants } from "../grants";
 import { formatRelTime } from "../relative-time";
 import {
   installPlugin,
@@ -153,23 +151,9 @@ export async function dryRunInstall(opts: InstallOptions): Promise<void> {
   process.stdout.write(formatDryRun(parsed, plan));
 }
 
-interface ConsentedGrants {
-  schedule?: string | null;
-  watch?: { collections?: string[]; dirs?: string[] } | null;
-}
-
 /** Every watched root: manifest collections plus user-added absolute dirs. */
-function watchRoots(watch: NonNullable<ConsentedGrants["watch"]>): string[] {
+function watchRoots(watch: NonNullable<Grants["watch"]>): string[] {
   return [...(watch.collections ?? []), ...(watch.dirs ?? [])];
-}
-
-function readConsentedGrants(name: string): ConsentedGrants | null {
-  const grantsPath = join(resolveHome(), "grants", `${name}.json`);
-  try {
-    return JSON.parse(readFileSync(grantsPath, "utf-8")) as ConsentedGrants;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -178,8 +162,8 @@ function readConsentedGrants(name: string): ConsentedGrants | null {
  * <path>` triggered the install — the run is already happening, so the
  * focus shifts to future runs.
  */
-export function printInstallHint(name: string, fromRunPath: boolean): void {
-  const grants = readConsentedGrants(name);
+export async function printInstallHint(name: string, fromRunPath: boolean): Promise<void> {
+  const grants = await readGrants(name).catch(() => null);
   if (!grants) return;
   if (fromRunPath) {
     process.stdout.write(`\nnote: grants persisted. future runs: 'dither plugin run ${name}'.\n`);
@@ -214,7 +198,7 @@ export function printInstallHint(name: string, fromRunPath: boolean): void {
  * resident. Best-effort: failures print a note and return.
  */
 export async function ensureDaemonForPlugin(name: string): Promise<void> {
-  const grants = readConsentedGrants(name);
+  const grants = await readGrants(name).catch(() => null);
   if (!grants) return;
   const needsDaemon =
     Boolean(grants.schedule) ||

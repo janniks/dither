@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 import { Cron } from "croner";
-import { listPlugins } from "../plugin-list";
+import { listGrants } from "../grants";
 import { printTable } from "../prompt";
 import { formatRelTime } from "../relative-time";
 
@@ -10,7 +10,7 @@ export const listSubcommand = defineCommand({
     description: "List installed plugins.",
   },
   async run() {
-    const plugins = await listPlugins();
+    const plugins = await listGrants();
     if (plugins.length === 0) {
       console.log("(no plugins installed)");
       return plugins;
@@ -27,7 +27,7 @@ export const listSubcommand = defineCommand({
           // malformed cron — leave next blank rather than crash the list.
         }
       }
-      return [p.name, p.version, cols, sched, next];
+      return [p.name, p.version ?? "?", cols, sched, next];
     });
     // Clamp the collections column so a plugin with many collections
     // doesn't push schedule + next off-screen.

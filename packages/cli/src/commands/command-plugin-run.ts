@@ -1,17 +1,17 @@
 import { defineCommand } from "citty";
 import { Cron } from "croner";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, resolve, isAbsolute } from "node:path";
 import { resolveWatchPath } from "../watch-paths";
-import { writePrivateJson } from "../secure-json";
+import { readGrants, writeGrants } from "../grants";
 import { parseSchedule } from "../schedule-parser";
 import { appendToInbox, type WatchTarget } from "../inbox";
 import { assertInitialized, libraryRoot } from "../config";
 import { clearKick, hasKick, signalDaemon, writeKick, type KickOverrides } from "../kicks";
 import { followRun, generateRunId, readRun, type RunResultRecord } from "../run-log";
 import { isLockHeld } from "../locks";
-import { pluginDir as pluginDirOf, resolveHome, runResultPath } from "../home";
+import { pluginDir as pluginDirOf, runResultPath } from "../home";
 import { readDaemonPid, startDaemon } from "../daemon-control";
 import {
   grantArgs,
@@ -72,11 +72,8 @@ async function walkMd(dir: string): Promise<WatchTarget[]> {
  * with trigger="watch", which claims the inbox at fire start.
  */
 async function seedBackfillInbox(name: string): Promise<number> {
-  const grantsPath = join(resolveHome(), "grants", `${name}.json`);
-  const blob = JSON.parse(readFileSync(grantsPath, "utf-8")) as {
-    manifest?: { watch?: { collections?: string[] } };
-  };
-  const collections = blob.manifest?.watch?.collections ?? [];
+  const blob = await readGrants(name);
+  const collections = blob?.manifest?.watch?.collections ?? [];
   if (collections.length === 0) {
     process.stderr.write(
       `error: --backfill needs a 'watch.collections' grant; '${name}' has none.\n`,
@@ -112,12 +109,11 @@ export function normalizeSchedule(input: string): string {
  * reloads (or starts) the daemon so the next reconcile picks the change up.
  */
 async function configurePlugin(name: string, every?: string, watch?: string): Promise<void> {
-  const grantsPath = join(resolveHome(), "grants", `${name}.json`);
-  const grant = JSON.parse(await readFile(grantsPath, "utf-8")) as {
-    schedule?: string | null;
-    watch?: { collections: string[]; dirs?: string[]; glob?: string } | null;
-    [key: string]: unknown;
-  };
+  const grant = await readGrants(name);
+  if (!grant) {
+    process.stderr.write(`error: plugin '${name}' has no grants file — install it first.\n`);
+    process.exit(1);
+  }
 
   if (every !== undefined) {
     const sched = normalizeSchedule(every);
@@ -152,7 +148,7 @@ async function configurePlugin(name: string, every?: string, watch?: string): Pr
     grant.watch = w;
   }
 
-  await writePrivateJson(grantsPath, grant);
+  await writeGrants(name, grant);
   await ensureDaemonForPlugin(name).catch(() => {});
 
   if (every !== undefined) console.log(`scheduled ${name}: ${normalizeSchedule(every)}`);
@@ -334,7 +330,7 @@ export const runSubcommand = defineCommand({
       console.log(`installed ${installed.name}@${installed.version}${args.symlink ? " (symlinked)" : ""}`);
       if (installed.protectedInstall) await handleProtectedInstall(installed.protectedInstall);
       await ensureDaemonForPlugin(installed.name).catch(() => {});
-      printInstallHint(installed.name, true);
+      await printInstallHint(installed.name, true);
     }
 
     if (!existsSync(pluginDirOf(pluginName))) {
