@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
-import { mkdir, writeFile, readFile, readdir, unlink, open } from "node:fs/promises";
+import { mkdir, writeFile, readFile, unlink, open } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { join, dirname } from "node:path";
-import { pidFilePath, statusSnapshotPath, locksDirPath, daemonLogPath, resolveHome } from "./home";
+import { dirname } from "node:path";
+import { pidFilePath, statusSnapshotPath, daemonLogPath, resolveHome } from "./home";
 import { libraryRoot as resolveLibraryRoot } from "./config";
 import { appendGlobal, listRuns, truncateGlobal, type RunSummary } from "./run-log";
 import { listPlugins, type InstalledPluginInfo } from "./plugin-list";
@@ -15,7 +15,7 @@ import { Refirer } from "./refirer";
 import { readRefire } from "./refire";
 import { kickSource, type KickPayload } from "./kicks";
 import type { Outcome, Source, Emit } from "./queue";
-import { acquire as acquireLock, release as releaseLock, isPluginLock, isPidAlive } from "./locks";
+import { acquire as acquireLock, release as releaseLock, holders, isPidAlive, type LockHolder } from "./locks";
 import { clearInflightJobs } from "./daemon-jobs";
 import { superviseReconcile } from "./reconcile-supervisor";
 import { needsReindexPath } from "./markers";
@@ -67,16 +67,11 @@ export interface StatusSnapshot {
   restartFails: number;
   schedules: number;
   watches: number;
-  running: RunningPlugin[];
+  running: LockHolder[];
   recentRuns: RunSummary[];
   recentHalts: HaltRecord[];
   scheduleEntries: Array<{ name: string; pattern: string; nextRun: string | null }>;
   watchEntries: Array<{ name: string; collections: string[]; glob: string }>;
-}
-
-export interface RunningPlugin {
-  name: string;
-  pid: number;
 }
 
 export interface DaemonState {
@@ -296,34 +291,6 @@ async function readPidIdentity(): Promise<{ pid: number; token: string } | null>
   return { pid: parsed.pid, token: parsed.token };
 }
 
-export async function readRunningPlugins(): Promise<RunningPlugin[]> {
-  let entries: string[];
-  try {
-    entries = await readdir(locksDirPath());
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
-  }
-  const out: RunningPlugin[] = [];
-  for (const filename of entries) {
-    if (!filename.endsWith(".lock")) continue;
-    const name = filename.slice(0, -".lock".length);
-    // Skip reserved daemon locks (qmd-* themes held by the reconcile child,
-    // daemon-start) — they share locks/ but aren't plugins.
-    if (!isPluginLock(name)) continue;
-    let raw: string;
-    try {
-      raw = await readFile(join(locksDirPath(), filename), "utf-8");
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
-      throw err;
-    }
-    const pid = Number.parseInt(raw.trim(), 10);
-    if (Number.isFinite(pid) && pid > 0) out.push({ name, pid });
-  }
-  return out;
-}
-
 export async function readStatusSnapshot(): Promise<StatusSnapshot | null> {
   try {
     const raw = await readFile(statusSnapshotPath(), "utf-8");
@@ -340,7 +307,7 @@ async function writeStatusSnapshot(
   watcher: Watcher,
   detector: LoopDetector,
 ): Promise<void> {
-  const running = await readRunningPlugins();
+  const running = await holders();
   const recentRuns = await listRuns(5).catch(() => []);
   const snapshot: StatusSnapshot = {
     pid: process.pid,
@@ -560,7 +527,7 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
     // running and the reconcile child has closed (or grace elapses).
     const start = Date.now();
     while (Date.now() - start < SHUTDOWN_GRACE_MS) {
-      const running = await readRunningPlugins();
+      const running = await holders();
       const reconcileLive = reconcileChild !== null && reconcileChild.exitCode === null;
       if (running.length === 0 && !reconcileLive) break;
       await new Promise((r) => setTimeout(r, 250));
@@ -604,7 +571,7 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
     if (child && child.exitCode === null) child.kill("SIGTERM");
     const drainStart = Date.now();
     while (Date.now() - drainStart < RESTART_DRAIN_MS) {
-      const running = await readRunningPlugins();
+      const running = await holders();
       const reconcileLive = reconcileChild !== null && reconcileChild.exitCode === null;
       if (running.length === 0 && !reconcileLive) break;
       await new Promise((r) => setTimeout(r, 250));

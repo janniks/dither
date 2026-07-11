@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { open, readFile, unlink, mkdir } from "node:fs/promises";
+import { open, readdir, readFile, unlink, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveHome } from "./home";
 
@@ -206,6 +206,42 @@ export function status(theme: LockTheme): LockEntry | null {
   } catch {
     return null;
   }
+}
+
+export interface LockHolder {
+  readonly name: string;
+  readonly pid: number;
+}
+
+/**
+ * Every plugin lock currently held by a live process. Reserved daemon
+ * locks (`qmd-*`, `daemon-start`) are excluded; stale locks (dead PID)
+ * are dropped — the next acquirer reclaims them.
+ */
+export async function holders(): Promise<LockHolder[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(locksDir());
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+  const out: LockHolder[] = [];
+  for (const filename of entries) {
+    if (!filename.endsWith(".lock")) continue;
+    const name = filename.slice(0, -".lock".length);
+    if (!isPluginLock(name)) continue;
+    let raw: string;
+    try {
+      raw = await readFile(join(locksDir(), filename), "utf-8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw err;
+    }
+    const pid = Number.parseInt(raw.trim(), 10);
+    if (isPidAlive(pid)) out.push({ name, pid });
+  }
+  return out;
 }
 
 /** Snapshot of every theme's lock state. Stale/missing entries are `null`. */
