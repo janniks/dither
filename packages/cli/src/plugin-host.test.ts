@@ -799,7 +799,7 @@ await writeEntry({
     // "manual" silently ignores the seeded inbox (bug fixed in 44db3cd).
     const { installPlugin } = await import("./plugin-install");
     const { appendToInbox } = await import("./inbox");
-    const { fireKick } = await import("./daemon");
+    const { makeFire } = await import("./daemon");
     const { Watcher } = await import("./watcher");
     const { Refirer } = await import("./refirer");
     const { LoopDetector } = await import("./loop-detector");
@@ -813,7 +813,7 @@ await writeEntry({
     for (const n of ["a", "b", "c"]) {
       const p = join(seedDir, `${n}.md`);
       writeFileSync(p, `---\nid: ${n}\n---\n\nseed ${n}\n`);
-      await appendToInbox("echo-targets", { path: p, mtimeMs: Date.now() });
+      await appendToInbox("echo-targets", { path: p, mtime: new Date().toISOString() });
     }
 
     const state = {
@@ -827,15 +827,14 @@ await writeEntry({
       scheduleCount: 0,
       watchCount: 0,
     };
-    const outcome = await fireKick(
-      state,
-      new Watcher(() => undefined),
-      new Refirer(() => undefined),
-      new LoopDetector(),
-      "echo-targets",
-      { runId: "kick-backfill-test", kickedAt: new Date().toISOString(), trigger: "watch" },
-      () => undefined,
-    );
+    const fire = makeFire(state, {
+      watcher: new Watcher(() => undefined),
+      refirer: new Refirer(() => undefined),
+      detector: new LoopDetector(),
+      notify: () => undefined,
+      postRun: () => undefined,
+    });
+    const outcome = await fire("echo-targets", "watch", { runId: "kick-backfill-test" });
     expect(outcome).toBe("done");
 
     // One echoed entry per seeded target proves the inbox was claimed.

@@ -90,9 +90,10 @@ export type FireKick = (plugin: string, payload: KickPayload) => Promise<Outcome
  * was down). Both paths run the same `fire` per claimed kick. Thin adapter —
  * all durability (claim/ack/restore, atomic write) lives in the Queue.
  *
- * The extra `drain()` on the return is a **test seam only** — the daemon
- * drives kicks purely through `start`/`recover`/`stop`. Tests call `drain()`
- * to exercise one drain without the SIGUSR1 plumbing. Not part of `Source`.
+ * The extra `drain()` on the return (not part of `Source`) serves two
+ * callers: the daemon's post-run hook re-drains kicks restored while a
+ * plugin lock was held, and tests exercise one drain without the SIGUSR1
+ * plumbing.
  */
 export function kickSource(fire: FireKick): Source & { drain(): Promise<void> } {
   const drainAll = async (): Promise<void> => {

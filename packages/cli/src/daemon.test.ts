@@ -339,69 +339,80 @@ describe("daemon hand-off (version self-restart)", () => {
     expect(drain).not.toBe(grace);
   });
 
-  it("handingOff gates fireWithSuppress — no run starts", async () => {
-    const { fireWithSuppress } = await import("./daemon");
+  async function testFire(overrides: { handingOff?: boolean } = {}) {
+    const { makeFire } = await import("./daemon");
     const { Watcher } = await import("./watcher");
     const { Refirer } = await import("./refirer");
     const { LoopDetector } = await import("./loop-detector");
-
+    const postRuns: string[] = [];
     const state = {
       token: "t",
       startedAt: new Date().toISOString(),
       shuttingDown: false,
       reloadRequested: false,
-      handingOff: true,
+      handingOff: false,
       restartFails: 0,
       restartDisabled: false,
       scheduleCount: 0,
       watchCount: 0,
+      ...overrides,
     };
-    const ran = await fireWithSuppress(
-      state,
-      new Watcher(() => undefined),
-      new Refirer(() => undefined),
-      new LoopDetector(),
-      "ghost",
-      "manual",
-      () => undefined,
-    );
+    const fire = makeFire(state, {
+      watcher: new Watcher(() => undefined),
+      refirer: new Refirer(() => undefined),
+      detector: new LoopDetector(),
+      notify: () => undefined,
+      postRun: (name) => postRuns.push(name),
+    });
+    return { fire, postRuns };
+  }
+
+  it("handingOff gates fire — no run starts", async () => {
+    const { fire } = await testFire({ handingOff: true });
+    const ran = await fire("ghost", "manual");
     // Gated: returned without acquiring the lock or running. No lock file left.
-    expect(ran).toBe(false);
+    expect(ran).toBe("retry");
     expect(existsSync(join(home, "locks", "ghost.lock"))).toBe(false);
   });
 
   it("kick-not-consumed: a kick present at hand-off stays claimable (retry→restore)", async () => {
-    const { fireKick } = await import("./daemon");
-    const { Watcher } = await import("./watcher");
-    const { Refirer } = await import("./refirer");
-    const { LoopDetector } = await import("./loop-detector");
     const { writeKick, hasKick, kickSource } = await import("./kicks");
-
-    const state = {
-      token: "t",
-      startedAt: new Date().toISOString(),
-      shuttingDown: false,
-      reloadRequested: false,
-      handingOff: true,
-      restartFails: 0,
-      restartDisabled: false,
-      scheduleCount: 0,
-      watchCount: 0,
-    };
+    const { fire } = await testFire({ handingOff: true });
 
     // A kick is pending on disk at hand-off time.
     await writeKick("ghost", { runId: "r1", kickedAt: new Date().toISOString() });
     expect(hasKick("ghost")).toBe(true);
 
-    // Drain through the real kick Source with the gated fireKick. The gate
-    // makes fireKick return "retry" → the Queue restores the lease to pending.
+    // Drain through the real kick Source with the gated fire. The gate makes
+    // fire return "retry" → the Queue restores the lease to pending.
     const source = kickSource((name, payload) =>
-      fireKick(state, new Watcher(() => undefined), new Refirer(() => undefined), new LoopDetector(), name, payload, () => undefined),
+      fire(name, payload.trigger ?? "manual", { runId: payload.runId }),
     );
     await source.drain();
 
     // Invariant: the kick was NOT acked away — it's claimable again.
     expect(hasKick("ghost")).toBe(true);
+  });
+
+  it("busy plugin: a kick that finds the lock held stays claimable and spawns no post-run", async () => {
+    const { writeKick, hasKick, kickSource } = await import("./kicks");
+    const { fire, postRuns } = await testFire();
+
+    // Another process holds ghost's plugin lock (live PID).
+    mkdirSync(join(home, "locks"), { recursive: true });
+    writeFileSync(join(home, "locks", "ghost.lock"), String(process.pid));
+
+    await writeKick("ghost", { runId: "r1", kickedAt: new Date().toISOString() });
+    const source = kickSource((name, payload) =>
+      fire(name, payload.trigger ?? "manual", { runId: payload.runId }),
+    );
+    await source.drain();
+
+    // Previously this acked as "done" and the kick vanished — the CLI's
+    // tail then hung forever. Now it stays pending for the post-run drain.
+    expect(hasKick("ghost")).toBe(true);
+    // No run happened → no post-run → the re-drain can't loop.
+    expect(postRuns).toEqual([]);
   });
 
   it("stale + SIGUSR1 → spawns successor, logs restarting→restarted, exits", async () => {
@@ -579,7 +590,7 @@ describe("daemon hand-off (version self-restart)", () => {
   }, 25_000);
 
   it("re-entrancy: a second trigger mid-hand-off does not spawn twice", async () => {
-    const { fireWithSuppress } = await import("./daemon");
+    const { makeFire } = await import("./daemon");
     const { Watcher } = await import("./watcher");
     const { Refirer } = await import("./refirer");
     const { LoopDetector } = await import("./loop-detector");
@@ -597,16 +608,14 @@ describe("daemon hand-off (version self-restart)", () => {
       scheduleCount: 0,
       watchCount: 0,
     };
-    const ran = await fireWithSuppress(
-      state,
-      new Watcher(() => undefined),
-      new Refirer(() => undefined),
-      new LoopDetector(),
-      "ghost",
-      "manual",
-      () => undefined,
-    );
-    expect(ran).toBe(false);
+    const fire = makeFire(state, {
+      watcher: new Watcher(() => undefined),
+      refirer: new Refirer(() => undefined),
+      detector: new LoopDetector(),
+      notify: () => undefined,
+      postRun: () => undefined,
+    });
+    expect(await fire("ghost", "manual")).toBe("retry");
     expect(existsSync(join(home, "locks", "ghost.lock"))).toBe(false);
   });
 });

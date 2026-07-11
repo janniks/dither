@@ -136,96 +136,100 @@ interface KickContext {
   overrides?: KickPayload["overrides"];
 }
 
-// Exported for tests only — the daemon drives these through `runDaemon`'s
-// closures. Tests assert the hand-off gate (handingOff → no run) and the
-// kick-not-consumed mapping (gated kick → "retry" → restore).
-export async function fireWithSuppress(
-  state: DaemonState,
-  watcher: Watcher,
-  refirer: Refirer,
-  detector: LoopDetector,
-  name: string,
-  trigger: "scheduled" | "watch" | "manual",
-  notify: () => void,
-  kick?: KickContext,
-): Promise<boolean> {
-  // Hand-off gate: once handing off we stop dispatching new runs. The trigger
-  // that arrives mid-hand-off must NOT be consumed — for a kick this surfaces
-  // as `false` (→ "retry" → restore → successor drains it). We return BEFORE
-  // acquiring the lock or running anything.
-  if (state.handingOff) return false;
-  const source = `${trigger}:${name}`;
-  if (detector.shouldHalt(source, name)) {
-    detector.record(source, name, false);
-    console.error(`[daemon] halting ${trigger} fire of '${name}' — loop threshold reached`);
-    notify();
-    return false;
-  }
-  detector.record(source, name, true);
-
-  // Single-arbiter for "is this plugin running right now". All four fire
-  // sources (Scheduler, Watcher, Refirer, kick path) flow through here, so
-  // a contested plugin fires in lock-acquire order rather than fanning out.
-  // The lock used to live in `runPlugin`; moving it here makes runPlugin a
-  // pure orchestrator that doesn't import locks at all.
-  const lock = await acquireLock(name);
-  if (!lock) {
-    console.error(`[daemon] ${trigger} fire of '${name}' skipped — already running`);
-    return true;
-  }
-  notify();
-
-  try {
-    const result = await runPlugin({
-      name,
-      trigger,
-      ...(kick?.runId ? { runId: kick.runId } : {}),
-      ...(kick?.overrides ?? {}),
-    });
-    for (const path of result.added) watcher.suppressOnce(path);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[daemon] ${trigger} fire of '${name}' failed: ${message}`);
-  } finally {
-    await releaseLock(lock);
-    notify();
-  }
-
-  // Pick up any refire row the run just wrote (plugin asked to be refired,
-  // or the post-failure backoff scheduled a retry). Without this, the row
-  // sits on disk until SIGHUP / restart.
-  const row = await readRefire(name).catch(() => null);
-  if (row && !row.suspended) refirer.set(name, Date.parse(row.fireAt));
-
-  // Drain loop: if events landed in the inbox during the run, keep firing
-  // until the inbox is empty (or the next event lands a fresh debounce).
-  if (trigger === "watch") {
-    const stillPending = await inboxHasItems(name).catch(() => false);
-    if (stillPending) void fireWithSuppress(state, watcher, refirer, detector, name, "watch", notify);
-  }
-  return true;
+export interface FireDeps {
+  watcher: Watcher;
+  refirer: Refirer;
+  detector: LoopDetector;
+  notify: () => void;
+  /** Fires after an actual run (lock released, refire row picked up). The
+   *  daemon re-drains pending kicks here — a busy fire never runs, so it
+   *  spawns no post-run and the re-drain can't loop. The deferred-reindex
+   *  sweep joins this same hook. */
+  postRun: (name: string) => void;
 }
 
-export async function fireKick(
-  state: DaemonState,
-  watcher: Watcher,
-  refirer: Refirer,
-  detector: LoopDetector,
-  name: string,
-  payload: KickPayload,
-  notify: () => void,
-): Promise<Outcome> {
-  // `fireWithSuppress` swallows its own run errors (logs + returns true), so a
-  // claimed kick acks once attempted. The durability that matters is
-  // crash-before-attempt: the kick stays pending (or restores from inflight
-  // on boot recover) and re-fires next drain. The one case that returns
-  // `false` is a hand-off in progress — the run was NOT started, so we report
-  // `"retry"` and the Queue restores the kick to pending for the successor.
-  const ran = await fireWithSuppress(state, watcher, refirer, detector, name, payload.trigger ?? "manual", notify, {
-    runId: payload.runId,
-    ...(payload.overrides ? { overrides: payload.overrides } : {}),
-  });
-  return ran ? "done" : "retry";
+/**
+ * The fire choke point. Every source — Scheduler, Watcher, Refirer, kicks —
+ * flows through the returned `fire`, so a contested plugin fires in
+ * lock-acquire order rather than fanning out. Collaborators bind once here;
+ * call sites pass `(name, trigger, kick?)`. Tests build a fire with stub
+ * deps instead of reaching into daemon internals.
+ *
+ * Returns the queue vocabulary: `"done"` = the run was attempted (run errors
+ * are logged, not re-thrown — crash-before-attempt is what durability
+ * protects); `"retry"` = nothing ran (hand-off gate, loop halt, or the
+ * plugin lock is held) and a kick must stay pending. The busy case matters:
+ * acking it as done dropped the kick and left the CLI's `plugin run` tail
+ * waiting forever on a journal that never appeared.
+ */
+export function makeFire(state: DaemonState, deps: FireDeps) {
+  const fire = async (
+    name: string,
+    trigger: "scheduled" | "watch" | "manual",
+    kick?: KickContext,
+  ): Promise<Outcome> => {
+    // Hand-off gate: once handing off we stop dispatching new runs. The
+    // trigger that arrives mid-hand-off must NOT be consumed — "retry"
+    // restores a kick to pending for the successor. We return BEFORE
+    // acquiring the lock or running anything.
+    if (state.handingOff) return "retry";
+    const source = `${trigger}:${name}`;
+    if (deps.detector.shouldHalt(source, name)) {
+      deps.detector.record(source, name, false);
+      console.error(`[daemon] halting ${trigger} fire of '${name}' — loop threshold reached`);
+      deps.notify();
+      return "retry";
+    }
+    deps.detector.record(source, name, true);
+
+    const lock = await acquireLock(name);
+    if (!lock) {
+      // Already running. Keep a kick pending — the contending run's postRun
+      // re-drains it (with its original runId, so the CLI tail resolves).
+      console.error(`[daemon] ${trigger} fire of '${name}' skipped — already running`);
+      return "retry";
+    }
+    deps.notify();
+
+    try {
+      const result = await runPlugin({
+        name,
+        trigger,
+        ...(kick?.runId ? { runId: kick.runId } : {}),
+        ...(kick?.overrides ?? {}),
+      });
+      for (const path of result.added) deps.watcher.suppressOnce(path);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[daemon] ${trigger} fire of '${name}' failed: ${message}`);
+    } finally {
+      await releaseLock(lock);
+      deps.notify();
+    }
+
+    // Pick up any refire row the run just wrote (plugin asked to be refired,
+    // or the post-failure backoff scheduled a retry). Without this, the row
+    // sits on disk until SIGHUP / restart. A read error is a real failure —
+    // log it (silently nulling it resets the retry chain and the poison-pill
+    // threshold never trips).
+    const row = await readRefire(name).catch((err) => {
+      console.error(
+        `[daemon] refire read for '${name}' failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    });
+    if (row && !row.suspended) deps.refirer.set(name, Date.parse(row.fireAt));
+
+    // Drain loop: if events landed in the inbox during the run, keep firing
+    // until the inbox is empty (or the next event lands a fresh debounce).
+    if (trigger === "watch") {
+      const stillPending = await inboxHasItems(name).catch(() => false);
+      if (stillPending) void fire(name, "watch");
+    }
+    deps.postRun(name);
+    return "done";
+  };
+  return fire;
 }
 
 /**
@@ -351,26 +355,50 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   // (impossible in practice — triad start is synchronous below) is a no-op.
   // eslint-disable-next-line prefer-const
   let writeStatus: () => void = () => undefined;
+  // `fire` and the kick re-drain late-bind (same pattern as writeStatus):
+  // the triad needs the fire callback, fire's deps need the triad, and the
+  // post-run re-drain needs the kick source built from fire.
+  // eslint-disable-next-line prefer-const
+  let fire!: ReturnType<typeof makeFire>;
+  // eslint-disable-next-line prefer-const
+  let drainKicks: () => void = () => undefined;
   const fireWatch = (name: string): void => {
-    void fireWithSuppress(state, watcher, refirer, detector, name, "watch", writeStatus);
-  };
-  const fireScheduled = (name: string): void => {
-    void fireWithSuppress(state, watcher, refirer, detector, name, "scheduled", writeStatus);
+    void fire(name, "watch");
   };
   watcher = new Watcher(fireWatch);
-  const scheduler = new Scheduler(fireScheduled);
+  const scheduler = new Scheduler((name) => {
+    void fire(name, "scheduled");
+  });
   // Refirer drives plugin-initiated reschedules + post-failure retries. Fires
   // through the same watch-trigger pipeline (drains inbox, runs plugin).
   refirer = new Refirer(fireWatch);
   writeStatus = (): void => {
     void writeStatusSnapshot(state, scheduler, watcher, detector);
   };
+  fire = makeFire(state, {
+    watcher,
+    refirer,
+    detector,
+    notify: () => writeStatus(),
+    postRun: () => drainKicks(),
+  });
   // Kicks: the first fire source migrated onto the durable `Queue`. `start`
   // wires SIGUSR1 → drain; `recover` re-queues an inflight kick left by a
   // crashed daemon then drains everything pending on disk.
   const kicks = kickSource((name, payload) =>
-    fireKick(state, watcher, refirer, detector, name, payload, writeStatus),
+    fire(name, payload.trigger ?? "manual", {
+      runId: payload.runId,
+      ...(payload.overrides ? { overrides: payload.overrides } : {}),
+    }),
   );
+  // Post-run kick re-drain: a kick restored while its plugin lock was held
+  // re-fires as soon as the contending run finishes (cheap readdir; usually
+  // empty). Bounded — a busy fire never runs, so it spawns no post-run.
+  drainKicks = (): void => {
+    void kicks.drain().catch((err) => {
+      console.error(`[daemon] post-run kick drain failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+  };
   // Every fire source, each paired with the `emit` its recover nudges. Boot
   // and SIGHUP both reduce to "recover all of these" (see recoverAll). Kicks
   // and the refirer ignore `emit` — they fire through their own closures — so
@@ -380,7 +408,7 @@ export async function runDaemon(spawn = nodeSpawn): Promise<void> {
   const sources: Array<{ name: string; source: Source; emit: Emit }> = [
     { name: "kick", source: kicks, emit: noop },
     { name: "watch", source: watcher, emit: fireWatch },
-    { name: "schedule", source: scheduler, emit: fireScheduled },
+    { name: "schedule", source: scheduler, emit: (name) => void fire(name, "scheduled") },
     { name: "refire", source: refirer, emit: noop },
   ];
   // reconcile() loads config + grants fresh on every call, so SIGHUP
