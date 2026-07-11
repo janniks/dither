@@ -35,4 +35,4 @@ Lock enumeration moves into locks.ts; daemon.ts deletes its copy.
 |  |  |
 |--|--|
 | 09ad53c | Phase 1: locks.holders(), daemon parser deleted, dead-PID test |
-| (next) | Phase 2: shared parsePidFile in home.ts |
+| 2195c33 | Phase 2: shared parsePidFile in home.ts |
