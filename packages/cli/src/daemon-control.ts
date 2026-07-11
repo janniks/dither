@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { open, readFile, mkdir, unlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
-import { pidFilePath, daemonLogPath, resolveHome } from "./home";
+import { pidFilePath, parsePidFile, daemonLogPath, resolveHome } from "./home";
 import { readStatusSnapshot, type StatusSnapshot } from "./daemon";
 import { acquire, isPidAlive, release } from "./locks";
 
@@ -17,12 +17,6 @@ import { acquire, isPidAlive, release } from "./locks";
  * is idle; staleness does not imply death. `snapshot-mismatch` still signals
  * an on-disk artefact from a prior daemon process.
  */
-
-interface DaemonPidFile {
-  pid: number;
-  token: string;
-  startedAt: string;
-}
 
 /**
  * Why the daemon is considered not-running, or why its snapshot doesn't
@@ -39,21 +33,6 @@ export interface DaemonProbe {
   pid: number | null;
   reason: DaemonProbeReason | null;
   snapshot: StatusSnapshot | null;
-}
-
-function parsePidFile(raw: string): DaemonPidFile | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (!parsed || typeof parsed !== "object") return null;
-  const obj = parsed as Record<string, unknown>;
-  if (typeof obj.pid !== "number" || !Number.isFinite(obj.pid) || obj.pid <= 0) return null;
-  if (typeof obj.token !== "string" || obj.token.length === 0) return null;
-  if (typeof obj.startedAt !== "string" || obj.startedAt.length === 0) return null;
-  return { pid: obj.pid, token: obj.token, startedAt: obj.startedAt };
 }
 
 async function readVerifiedSnapshot(): Promise<StatusSnapshot | null> {

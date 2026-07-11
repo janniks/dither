@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile, readFile, unlink, open } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
-import { pidFilePath, statusSnapshotPath, daemonLogPath, resolveHome } from "./home";
+import { pidFilePath, parsePidFile, statusSnapshotPath, daemonLogPath, resolveHome, type DaemonPidFile } from "./home";
 import { libraryRoot as resolveLibraryRoot } from "./config";
 import { appendGlobal, listRuns, truncateGlobal, type RunSummary } from "./run-log";
 import { listPlugins, type InstalledPluginInfo } from "./plugin-list";
@@ -257,38 +257,29 @@ async function writePidFile(state: DaemonState): Promise<void> {
 }
 
 async function removePidFile(state: DaemonState): Promise<void> {
+  const id = await readPidIdentity();
+  // Only unlink our own file — a respawned daemon's must never be clobbered.
+  if (!id || id.pid !== process.pid || id.token !== state.token) return;
   try {
-    const raw = await readFile(pidFilePath(), "utf-8");
-    const pid = JSON.parse(raw) as { pid?: unknown; token?: unknown };
-    if (pid.pid !== process.pid || pid.token !== state.token) return;
     await unlink(pidFilePath());
   } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code !== "ENOENT" && !(err instanceof SyntaxError)) throw err;
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
   }
 }
 
 /**
- * Read the on-disk PID file's `{pid, token}` (the identity of whoever owns the
- * daemon right now). ENOENT / malformed → null. Used by the hand-off to confirm
- * the successor has taken ownership (a DIFFERENT identity than ours).
+ * Read the on-disk PID file's identity (whoever owns the daemon right now).
+ * ENOENT / malformed → null. Used by the hand-off to confirm the successor
+ * has taken ownership (a DIFFERENT identity than ours) and by the shutdown
+ * self-check.
  */
-async function readPidIdentity(): Promise<{ pid: number; token: string } | null> {
-  let raw: string;
+async function readPidIdentity(): Promise<DaemonPidFile | null> {
   try {
-    raw = await readFile(pidFilePath(), "utf-8");
+    return parsePidFile(await readFile(pidFilePath(), "utf-8"));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw err;
   }
-  let parsed: { pid?: unknown; token?: unknown };
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (typeof parsed.pid !== "number" || typeof parsed.token !== "string") return null;
-  return { pid: parsed.pid, token: parsed.token };
 }
 
 export async function readStatusSnapshot(): Promise<StatusSnapshot | null> {

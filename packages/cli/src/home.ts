@@ -50,6 +50,32 @@ export function pidFilePath(): string {
   return join(resolveHome(), "dither.pid");
 }
 
+export interface DaemonPidFile {
+  pid: number;
+  token: string;
+  startedAt: string;
+}
+
+/**
+ * Strict parse of the PID file body. `null` on any malformed shape —
+ * callers map that to `bad-pidfile` (probe) or "not ours" (shutdown
+ * self-check). The single parser for `dither.pid`.
+ */
+export function parsePidFile(raw: string): DaemonPidFile | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const obj = parsed as Record<string, unknown>;
+  if (typeof obj.pid !== "number" || !Number.isFinite(obj.pid) || obj.pid <= 0) return null;
+  if (typeof obj.token !== "string" || obj.token.length === 0) return null;
+  if (typeof obj.startedAt !== "string" || obj.startedAt.length === 0) return null;
+  return { pid: obj.pid, token: obj.token, startedAt: obj.startedAt };
+}
+
 export function daemonLogPath(): string {
   return join(resolveHome(), "logs", "daemon.log");
 }
