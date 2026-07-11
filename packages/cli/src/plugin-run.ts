@@ -50,14 +50,6 @@ export interface RunResult {
 /** Error code stamped on errors that signal a known, clean failure path. */
 export const PLUGIN_NOT_INSTALLED = "PLUGIN_NOT_INSTALLED";
 
-const DITHER_ENV_VARS = [
-  "DITHER_RUN_DIR",
-  "DITHER_INPUT_FILE",
-  "DITHER_STATE_FILE",
-  "DITHER_TRIGGER",
-  "DITHER_PLUGIN_NAME",
-];
-
 function denoPermissionList(kind: string, entries: string[]): string {
   const entry = entries.find((e) => e.includes(","));
   if (entry) {
@@ -151,6 +143,102 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
   }
 }
 
+export interface PlanArgs {
+  name: string;
+  trigger: string;
+  pluginDir: string;
+  runDir: string;
+  sdkPath: string;
+  importMapPath: string;
+  inputFile: string;
+  stateFile: string;
+  /** Grants+overrides+globals+manifest-defaults, already resolved. */
+  resolvedEnv: Record<string, string>;
+  grantFiles: Record<string, string>;
+  grantNet: string[];
+  /** Watched collection roots (directories). When present they cover every
+   *  target file, so per-target read grants are skipped — a ~130k-file
+   *  backfill would otherwise blow past ARG_MAX in `--allow-read=`. */
+  watchRoots: string[];
+  targets: WatchTarget[];
+}
+
+export interface SpawnPlan {
+  denoArgs: string[];
+  env: NodeJS.ProcessEnv;
+  input: {
+    trigger: string;
+    env: Record<string, string>;
+    files: Record<string, string>;
+    targets: WatchTarget[];
+    net: string[];
+  };
+}
+
+/**
+ * The pure half of a plugin run: everything the Deno child receives —
+ * argv permissions, env, input.json body — computed from already-resolved
+ * data. No I/O; the permission matrix is testable with plain objects.
+ *
+ * The DITHER_* contract lives in ONE record here: `--allow-env` is derived
+ * from its keys, so the allow-list and the values can't diverge (a var
+ * added to one but not the other used to surface as a silent
+ * PermissionDenied inside the child).
+ */
+export function plan(args: PlanArgs): SpawnPlan {
+  const dither = {
+    DITHER_RUN_DIR: args.runDir,
+    DITHER_INPUT_FILE: args.inputFile,
+    DITHER_STATE_FILE: args.stateFile,
+    DITHER_TRIGGER: args.trigger,
+    DITHER_PLUGIN_NAME: args.name,
+  };
+
+  const allowRead = denoPermissionList("read", [
+    args.pluginDir,
+    args.runDir,
+    args.sdkPath,
+    ...Object.values(args.grantFiles),
+    ...args.watchRoots,
+    // Watch roots cover the targets (the normal case for watch fires and
+    // backfill); per-target paths only matter for explicit-target callers
+    // outside the watch pipeline.
+    ...(args.watchRoots.length > 0 ? [] : args.targets.map((t) => t.path)),
+  ]);
+  const denoArgs = [
+    "run",
+    `--import-map=${args.importMapPath}`,
+    `--allow-read=${allowRead}`,
+    // Write grant is runDir only — the plugin writes its state to the
+    // run-local copy (under runDir), never the persistent state/ path.
+    `--allow-write=${denoPermissionList("write", [args.runDir])}`,
+    `--allow-env=${Object.keys(dither).join(",")}`,
+  ];
+  if (args.grantNet.length) {
+    // Sole `"*"` entry → bare --allow-net (any host). Required by plugins
+    // that fetch arbitrary URLs (e.g. URL scrapers); user opts in by
+    // accepting `net: ["*"]` from the manifest at install time.
+    if (args.grantNet.length === 1 && args.grantNet[0] === "*") {
+      denoArgs.push("--allow-net");
+    } else {
+      denoArgs.push(`--allow-net=${denoPermissionList("net", args.grantNet)}`);
+    }
+  }
+  denoArgs.push(join(args.pluginDir, "plugin.ts"));
+
+  return {
+    denoArgs,
+    env: { ...process.env, ...dither },
+    input: {
+      trigger: args.trigger,
+      env: args.resolvedEnv,
+      files: args.grantFiles,
+      targets: args.targets,
+      net: args.grantNet,
+    },
+  };
+}
+
 async function runPluginLocked(
   opts: RunOptions,
   home: string,
@@ -212,24 +300,7 @@ async function runPluginLocked(
     const targets: WatchTarget[] =
       opts.targets ?? (trigger === "watch" ? await claimInbox(opts.name) : []);
 
-    const inputFile = join(runDir, "input.json");
-    await writeFile(
-      inputFile,
-      JSON.stringify(
-        {
-          trigger,
-          env: resolvedEnv,
-          files: grantFiles,
-          targets,
-          net: grantNet,
-        },
-        null,
-        2,
-      ),
-    );
-
     const sdkUrl = import.meta.resolve("@dither/plugin");
-    const sdkPath = fileURLToPath(sdkUrl);
     const importMapPath = join(runDir, "_import-map.json");
     await writeFile(
       importMapPath,
@@ -238,62 +309,28 @@ async function runPluginLocked(
       }),
     );
 
-    // For watch plugins, grant read access to each watched collection root
-    // (a directory) rather than enumerating every target path. With a
-    // backfill spanning ~130k files, per-target paths blow past ARG_MAX
-    // when joined into the `--allow-read=` argv. Directory grants cover
-    // every file under them.
     const watchCollections = parsed.manifest.watch?.collections ?? [];
-    const watchRoots = watchCollections.length > 0
-      ? await Promise.all(
-          watchCollections.map(async (c) => resolveWatchPath(await resolveLibraryRoot(), c)),
-        )
-      : [];
-
-    const allowRead = denoPermissionList("read", [
+    const spawnPlan = plan({
+      name: opts.name,
+      trigger,
       pluginDir,
       runDir,
-      sdkPath,
-      ...Object.values(grantFiles),
-      ...watchRoots,
-      // If watch roots cover the targets (the normal case for watch fires
-      // and backfill), per-target paths are redundant. We still include
-      // them for explicit-target callers (e.g. ad-hoc `runPlugin` use
-      // outside the watch pipeline) but only when no watch roots exist.
-      ...(watchRoots.length > 0 ? [] : targets.map((t) => t.path)),
-    ]);
-    // Write grant is runDir only — the plugin writes its state to the
-    // run-local copy (under runDir), never the persistent state/ path.
-    const allowWrite = denoPermissionList("write", [runDir]);
-    const allowEnv = DITHER_ENV_VARS.join(",");
-
-    const denoArgs = [
-      "run",
-      `--import-map=${importMapPath}`,
-      `--allow-read=${allowRead}`,
-      `--allow-write=${allowWrite}`,
-      `--allow-env=${allowEnv}`,
-    ];
-    if (grantNet.length) {
-      // Sole `"*"` entry → bare --allow-net (any host). Required by plugins
-      // that fetch arbitrary URLs (e.g. URL scrapers); user opts in by
-      // accepting `net: ["*"]` from the manifest at install time.
-      if (grantNet.length === 1 && grantNet[0] === "*") {
-        denoArgs.push("--allow-net");
-      } else {
-        denoArgs.push(`--allow-net=${denoPermissionList("net", grantNet)}`);
-      }
-    }
-    denoArgs.push(join(pluginDir, "plugin.ts"));
-
-    const env: NodeJS.ProcessEnv = {
-      ...process.env,
-      DITHER_RUN_DIR: runDir,
-      DITHER_INPUT_FILE: inputFile,
-      DITHER_STATE_FILE: stateFile,
-      DITHER_TRIGGER: trigger,
-      DITHER_PLUGIN_NAME: opts.name,
-    };
+      sdkPath: fileURLToPath(sdkUrl),
+      importMapPath,
+      inputFile: join(runDir, "input.json"),
+      stateFile,
+      resolvedEnv,
+      grantFiles,
+      grantNet,
+      watchRoots:
+        watchCollections.length > 0
+          ? await Promise.all(
+              watchCollections.map(async (c) => resolveWatchPath(await resolveLibraryRoot(), c)),
+            )
+          : [],
+      targets,
+    });
+    await writeFile(join(runDir, "input.json"), JSON.stringify(spawnPlan.input, null, 2));
 
     // Spawn + stderr handling + control-message parsing live in
     // `supervisor.ts`. The supervisor returns the exit code (no throw);
@@ -304,8 +341,8 @@ async function runPluginLocked(
     const denoPath = opts.spawn ? "deno" : await ensureDeno();
     const sup = await supervise({
       denoPath,
-      denoArgs,
-      env,
+      denoArgs: spawnPlan.denoArgs,
+      env: spawnPlan.env,
       journal,
       ...(opts.spawn ? { spawn: opts.spawn } : {}),
     });

@@ -175,3 +175,65 @@ describe("runPlugin — state is transactional", () => {
     expect(writeArg).not.toContain(join(pluginDir(), "state"));
   });
 });
+
+describe("plan — the pure spawn plan", () => {
+  const base = {
+    name: "p",
+    trigger: "manual",
+    pluginDir: "/plugins/p",
+    runDir: "/runs/r1",
+    sdkPath: "/sdk/index.ts",
+    importMapPath: "/runs/r1/_import-map.json",
+    inputFile: "/runs/r1/input.json",
+    stateFile: "/runs/r1/state.json",
+    resolvedEnv: {},
+    grantFiles: {},
+    grantNet: [],
+    watchRoots: [],
+    targets: [],
+  };
+
+  it("rejects permission entries containing a comma", async () => {
+    const { plan } = await import("./plugin-run");
+    expect(() => plan({ ...base, grantFiles: { bad: "/a,b" } })).toThrow(/comma/);
+    expect(() => plan({ ...base, grantNet: ["a.example.com,b.example.com"] })).toThrow(/comma/);
+  });
+
+  it("watch roots replace per-target read grants (ARG_MAX fallback)", async () => {
+    const { plan } = await import("./plugin-run");
+    const targets = [{ path: "/lib/notes/a.md", mtime: "2026-01-01T00:00:00Z" }];
+    const withRoots = plan({ ...base, watchRoots: ["/lib/notes"], targets });
+    const read = withRoots.denoArgs.find((a) => a.startsWith("--allow-read="))!;
+    expect(read).toContain("/lib/notes");
+    expect(read).not.toContain("/lib/notes/a.md");
+    // No roots → explicit-target callers still get per-target grants.
+    const without = plan({ ...base, targets });
+    expect(without.denoArgs.find((a) => a.startsWith("--allow-read="))).toContain("/lib/notes/a.md");
+  });
+
+  it("net ['*'] becomes bare --allow-net; named hosts stay scoped", async () => {
+    const { plan } = await import("./plugin-run");
+    expect(plan({ ...base, grantNet: ["*"] }).denoArgs).toContain("--allow-net");
+    const scoped = plan({ ...base, grantNet: ["api.example.com"] }).denoArgs;
+    expect(scoped).toContain("--allow-net=api.example.com");
+    expect(scoped).not.toContain("--allow-net");
+  });
+
+  it("--allow-env is derived from the DITHER_* env record — one source", async () => {
+    const { plan } = await import("./plugin-run");
+    const p = plan(base);
+    const allow = p.denoArgs.find((a) => a.startsWith("--allow-env="))!;
+    const names = allow.slice("--allow-env=".length).split(",");
+    // Every allow-listed name is set in the child env (they're the same
+    // record, so they can't diverge). The ambient process.env may carry
+    // other DITHER_ vars (e.g. DITHER_USE_SYSTEM_DENO) — not allow-listed.
+    for (const n of names) expect(p.env[n]).toBeDefined();
+    expect(names.sort()).toEqual([
+      "DITHER_INPUT_FILE",
+      "DITHER_PLUGIN_NAME",
+      "DITHER_RUN_DIR",
+      "DITHER_STATE_FILE",
+      "DITHER_TRIGGER",
+    ]);
+  });
+});
