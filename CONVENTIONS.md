@@ -1,168 +1,114 @@
-# CONVENTIONS
+# Conventions
 
-> Agents: read this in full before implementing any feature. Naming above all.
+> Read in full before implementing. Last full scan: 2026-07-13 @ d6e3f3b.
 
-## Style Guide
+## Naming
 
-### General principles (TypeScript)
+| Kind | Convention | Example |
+|------|-----------|---------|
+| files | kebab-case noun(-noun); test sibling `<file>.test.ts`, same dir | `run-log.ts`, `daemon-control.ts` |
+| command files | `command-<name>.ts`; family shares prefix | `command-plugin-run.ts` |
+| exported functions | verb-first, short camelCase | `claimInbox`, `readGrants`, `promote` |
+| path getters | `<thing>Path()` / `<thing>Dir()`, all in `home.ts` | `pidFilePath`, `grantsDirPath` |
+| command exports | `<name>Command` / `<name>Subcommand` (citty consts) | `pluginCommand`, `runSubcommand` |
+| internals/locals | single word; brevity over disambiguation | `pid`, `cfg`, `raw`, `row`, `child` |
+| types | PascalCase noun; suffixes `Options`, `Result`, `State`, `Stats` — use `Options`, not `Opts` | `RunOptions`, `StartResult` |
+| classes | PascalCase noun, singular, no Manager/Service suffix | `Scheduler`, `Queue` |
+| error classes | `<Reason>Error` extends Error, sets `this.name` | `DaemonDiedError`, `InstallCancelledError` |
+| error tags | exported SCREAMING string const when one code is enough | `PLUGIN_NOT_INSTALLED`, `FDA_REQUIRED` |
+| constants | SCREAMING_SNAKE; time keeps its unit suffix | `SHUTDOWN_GRACE_MS`, `POISON_PILL_THRESHOLD` |
+| time-typed values | keep `Ms`/`Sec`/`At` suffix everywhere | `timeoutMs`, `lastFetchAt` |
+| union `kind` strings | kebab / verb-noun, never camelCase | `"ok-cleared"`, `"reconcile-done"` |
+| test-only escape hatches | `_` prefix | `_resetHomeWarningLatch` |
+| test doubles | `fake<Thing>` / `stub<Thing>` factory returning double + inspection hooks | `fakeSpawn`, `stubTransport` |
+| env vars | `DITHER_<NOUN>`, defined in one record literal | `DITHER_RUN_DIR` |
+| CLI flags | kebab-case, args keys mirror the flag verbatim | `args["dry-run"]`, `args["allow-net"]` |
 
-> THIS RULE IS MANDATORY FOR AGENT WRITTEN CODE.
+## Shape
 
-- Keep things in one function unless composable or reusable
-- Avoid try/catch where possible
-- Avoid using the `any` type
-- Prefer single-word variable names where possible
-- Rely on type inference; avoid explicit type annotations unless necessary for exports or clarity
-- Prefer functional array methods (`flatMap`, `filter`, `map`) over for loops
-- Prefer `const` over `let`. Use ternaries or early returns instead of reassignment
-- Avoid `else` statements. Prefer early returns
-- Avoid unnecessary destructuring. Use dot notation to preserve context
-- Reduce variable count by inlining when a value is only used once
-- Use single word names by default for new locals, params, and helper functions.
-- Multi-word names are allowed only when a single word would be unclear or ambiguous.
-- Do not introduce new camelCase compounds when a short single-word alternative is clear.
-- Before finishing edits, review touched lines and shorten newly introduced identifiers where possible.
-- Good short names to prefer: `pid`, `cfg`, `err`, `opts`, `dir`, `root`, `child`, `state`, `timeout`.
-- Examples to avoid unless truly required: `inputPID`, `existingClient`, `connectTimeout`, `workerPath`.
-- Time-typed names keep their unit suffix: `MIN_DELAY_MS`, `timeoutMs`, `lastFetchAt`.
+| Pattern | Convention | Example |
+|---------|-----------|---------|
+| exports | named only, never default | everywhere |
+| params | one options object for multi-arg exports; access via dot, don't destructure | `runPlugin(opts)` → `opts.name` |
+| types placement | declared directly above the function using them; no central types file | `RunDecision` above `decideRunOutcome` |
+| classes | only when mutable session state is unavoidable; else plain functions | `Watcher` vs `search()` |
+| factories | closure + object literal for stateless modules | `kickSource(fire)`, `daemonClient()` |
+| pure/IO split | pull the pure half out, name it `plan*`/`decide*`/`parse*`, unit-test it | `plan()`, `decideRunOutcome`, `parseDownloadSummary` |
+| testability seams | injectable I/O as an options field defaulting to the real thing — never module mocks | `spawn = nodeSpawn`, `ExchangeOpts.fetch` |
+| outcomes | discriminated unions / typed results over thrown control flow | `Outcome = "done" \| "retry"` |
+| config mutation | pure — return the new object, caller persists | `addExternal(cfg, ...)` |
+| module docs | every file opens with a why-block, often citing a spec/note/sibling | `queue.ts`, `watch-state.ts` |
+| commands | `defineCommand({meta, args, run})`; dispatcher at bottom of file; big families split one file per subcommand + `command-<group>-shared.ts` for cross-imports | `command-plugin.ts` |
+| command guard | `await assertInitialized()` first line of any run touching config/library | `command-search.ts` |
+| heavy deps | dynamic `await import(...)` to defer natives, with a comment | `command-daemon.ts` reconcile |
 
-```ts
-// Good
-const foo = 1;
-function journal(dir: string) {}
+## In code
 
-// Bad
-const fooBar = 1;
-function prepareJournal(dir: string) {}
-```
+- Early returns, no `else`. `const` over `let`; ternaries over reassignment. Render-state `if/else if` chains are the one tolerated exception.
+- Single-word locals; inline values used once (`await readFile(path.join(dir, "journal.json"), "utf-8")` — no `journalPath` variable).
+- Avoid `any`; rely on inference, annotate only exports.
+- Prefer `flatMap`/`filter`/`map` over loops; type guards on filter.
+- Two ENOENT idioms, picked by where the boundary lives — never `.catch(() => null)` on a primary read path:
+  - function IS the I/O boundary → try/catch, return `null`/`[]` on ENOENT, rethrow the rest (`readRefire`)
+  - best-effort side work → `.catch(() => undefined)` (`requestReindex().catch(() => undefined)`)
+- try/finally for guaranteed cleanup (run dirs, locks, scratch dirs) — not try/catch control flow.
+- Atomic state writes: tmp file (pid/random suffix, same dir — same filesystem, EXDEV) + `rename`.
+- Validate everything before touching disk; two-pass plan/act so partial application is impossible (`promotion.ts`, `planInstall`).
+- Bounded retries (small fixed count, comment why) — never unbounded; poll loops use a `Date.now()` deadline, 25–250ms tick.
+- Locks return `null` for "didn't get it" — caller decides the fallback (defer via marker, wait, skip). `isPidAlive` is the only liveness probe.
+- Timers that shouldn't hold the process open get `.unref()`.
+- Set dedup via `Array.from(new Set([...]))` when layering grant/config lists.
+- Comments explain why — invariants, rejected alternatives, upstream citations — never what the next line does.
+- Operational logs: `console.error` prefixed `[daemon]`/module name; never throw across a fire boundary.
+- User-facing success lines: lowercase, terse, no trailing period (`removed x`); end with a `next:`/`hint:` nudge when there's an obvious follow-up. Exit codes: 1 failure, 2 usage/precondition, 130 user cancel.
+- Machine-output commands write all human text to stderr, payload only to stdout; read commands offering both take `--json` and short-circuit before formatting.
 
-Reduce total variable count by inlining when a value is only used once.
+### Tests
 
-```ts
-// Good
-const data = await fs.readFile(path.join(dir, "journal.json"), "utf-8");
+- No mocks. Real temp dirs: `mkdtempSync(join(tmpdir(), "dither-<feature>-test-"))`, `process.env.DITHER_DIR` swapped in `beforeEach`, restored-or-deleted + `rmSync` in `afterEach`.
+- Dynamic `await import(...)` inside tests for modules that resolve env-derived paths; `vi.resetModules()` when module state must reset. Static imports for pure modules.
+- Drive CLI tests through `runCommand(main, {rawArgs})`, not subcommand internals. Capture output by spying both `console.log` and `process.stdout.write` (each test file keeps its own local `captureLogs` — deliberate, don't extract).
+- `it` names are full behavior sentences; `toMatch` regex for human output, exact `toEqual` for structured data. Table-driven cases (`it.each` or a cases array) for pure functions.
+- Stub only true process/network boundaries (transport, spawn, fetch) via the injectable seams above.
 
-// Bad
-const journalPath = path.join(dir, "journal.json");
-const data = await fs.readFile(journalPath, "utf-8");
-```
+## Vocabulary
 
-#### Destructuring
+Terms the code already uses consistently — reuse them, don't invent new ones.
 
-Avoid unnecessary destructuring. Use dot notation to preserve context.
-
-```ts
-// Good
-obj.a;
-obj.b;
-
-// Bad
-const { a, b } = obj;
-```
-
-#### Variables
-
-Always use `const` over `let`/`var`. Use ternaries or early returns instead of reassignment.
-
-```ts
-// Good
-const foo = condition ? 1 : 2;
-
-// Bad
-let foo;
-if (condition) foo = 1;
-else foo = 2;
-```
-
-#### Control Flow
-
-Avoid `else` statements. Prefer early returns.
-
-```ts
-// Good
-function foo() {
-  if (condition) return 1;
-  return 2;
-}
-
-// Bad
-function foo() {
-  if (condition) return 1;
-  else return 2;
-}
-```
-
-#### I/O patterns
-
-Two ENOENT-tolerant idioms coexist. Pick the one matching where the
-boundary lives, not by author taste.
-
-- **`try/catch` when the function IS the I/O boundary** — a reader whose
-  job is to return `null` / `[]` for "file missing":
-
-```ts
-// Good — readRefire is the boundary
-export async function readRefire(plugin: string): Promise<RefireRow | null> {
-  try {
-    const raw = await readFile(refirePath(plugin), "utf-8");
-    return JSON.parse(raw) as RefireRow;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err;
-  }
-}
-```
-
-- **`.catch(() => null)` (or `.catch(() => undefined)`) when the caller is
-  doing best-effort cleanup** — the I/O is a side concern, not the
-  function's purpose:
-
-```ts
-// Good — caller doesn't care if the marker write fails
-await writeFile(needsReindexPath(), "", "utf-8").catch(() => undefined);
-```
-
-Don't use `.catch(() => null)` to silence errors on a primary read path —
-you lose the distinction between "missing file" and "real I/O failure."
-
-### Testing
-
-- Avoid mocks as much as possible
-- Test actual implementation, do not duplicate logic into tests
+| Term | Meaning |
+|------|---------|
+| source | fire producer with the uniform `start/recover/stop/stats` shape |
+| fire | one call through the choke point (`makeFire`); outcome `"done" \| "retry"` |
+| kick | pending manual run trigger file; CLI writes, daemon consumes |
+| claim / ack / restore | at-least-once queue lease lifecycle (inbox, kicks) |
+| marker | single-purpose flag file under `markers/`, consumed atomically |
+| theme | qmd lock category (`download\|index\|embed`) |
+| grants / consent / widen | persisted permissions; consent = user's opt-in vs manifest's ask; widen = exceeding the ask, never silent |
+| plan | the pure precomputation half, separated from the act |
+| promote | copy validated run outputs into the library (two-pass) |
+| journal | append-only per-run event log (`RunHandle`) |
+| sink | pluggable reporting surface (`journalSink`, `stderrSink`) |
+| reconcile | the daemon's index+embed cycle, bookended `reconcile-started`/`-done` |
+| tail | follow a run's live journal to completion |
+| busy | a lock already held; always paired with a deferral marker |
+| detach | return now, daemon keeps going |
+| poison pill / suspended | 3 consecutive failures halt refire until a manual run succeeds |
+| hand-off | daemon self-restart on stale build: quiet → drain → spawn → confirm → exit |
 
 ## CLI / TUI
 
 All interactive output goes through `packages/cli/src/prompt.ts`. Don't pull in
-new prompt or spinner deps — extend that module instead. Existing deps:
-`consola` (prompts), `picocolors` (color), `node:readline` (cursor moves).
+new prompt or spinner deps — extend that module. Existing deps: `consola`
+(prompts), `picocolors` (color), `node:readline` (cursor moves). Colors used:
+`dim`, `green`, `yellow`, `cyan`, `bold` — nothing else.
 
-**Prompts (`promptText`).** One line. Bake any hint into the message in
-parens — e.g. `Where should your library live? (ENTER for ~/.dither/library)`.
-Don't stack a second hint line below; it clutters the rewrite zone.
-
-**Confirmation (`confirm(label, value)`).** Call immediately after the prompt
-resolves. It rewrites consola's echoed prompt line to `✓ Label: value`, so the
-answer reads as "locked in" and the question disappears from scrollback.
-
-**Progress (`stepStart` / `stepDone` / `stepFail`).** Bracket every step that
-can take more than a beat — index walks, network fetches, model downloads.
-Pattern:
-
-```ts
-stepStart("downloading model weights (first run, may take a minute)...");
-const result = await prefetchWeights();
-if (result.ok) stepDone("downloaded model weights");
-else stepFail(`weight prefetch failed: ${result.reason}`);
-```
-
-The user must never wonder whether the CLI is hung. Both `→` and `✓` lines
-stay in scrollback — they're the post-hoc log of what the command did, so
-there's no separate end-of-run summary block. End with one blank line and a
-single `next: <command>` nudge if there's an obvious follow-up.
-
-Tests capturing output: spy both `console.log` and `process.stdout.write`
-(see `init.test.ts` → `captureLogs`). The prompt helpers write directly to
-stdout to keep cursor control intact.
+- **Prompts (`promptText`)** — one line; bake hints into the message in parens.
+- **Confirmation (`confirm(label, value)`)** — immediately after the prompt resolves; rewrites the echoed line to `✓ Label: value`.
+- **Progress (`stepStart`/`stepDone`/`stepFail`)** — bracket every step that can take more than a beat. The user must never wonder whether the CLI is hung. `→`/`✓` lines stay in scrollback as the post-hoc log; no end-of-run summary block. Glyphs are fixed vocabulary: `→` dim in-progress, `✓` green done, `⚠` yellow fail.
+- Instant operations use plain `console.log` — don't bracket them.
+- TTY vs non-TTY is a first-class branch wherever terminal output exists (pipe safety, CI); gate prompts on `stdin.isTTY && stdout.isTTY` with a plain-print fallback.
+- Plugin-supplied text is untrusted: only `pluginText` (via `untrusted-text.ts`) may print it; nothing else in `packages/cli/` reads `manifest.*.description` straight to stdout.
+- `tildePath` is display-only — never persist the abbreviated form.
 
 ## Project Patterns
 
@@ -218,7 +164,7 @@ Fire sources funnel through one choke point:
 ```
 Scheduler (cron)                    ─┐
 Watcher (native watch-tree → inbox) ─┼─→ fire(name, trigger, kick?)
-Refirer (timer-per-row)             ─┘     1. LoopDetector.shouldHalt? retry
+Refirer (timer-per-row)             ─┼     1. LoopDetector.shouldHalt? retry
 Kicks (manual run triggers)         ─┘     2. await runPlugin({name, trigger})
                                            3. watcher.suppressOnce(added paths)
                                            4. pick up any refire row the run wrote
@@ -228,23 +174,25 @@ Kicks (manual run triggers)         ─┘     2. await runPlugin({name, trigger
 `makeFire(state, deps)` builds the choke point (`daemon.ts:makeFire`);
 busy/halted fires return `"retry"` so kicks stay pending instead of being
 dropped. Sources don't import `runPlugin` — the callback is the seam; the
-three `set/stop/stats` shapes are deliberately identical
-(`scheduler.ts:Scheduler`, `watcher.ts:Watcher`, `refirer.ts:Refirer`).
+`set/stop/stats` shapes are deliberately identical (`scheduler.ts:Scheduler`,
+`watcher.ts:Watcher`, `refirer.ts:Refirer`).
 
 Signals: `SIGTERM`/`SIGINT` → graceful shutdown with a 30s child-drain
 window; `SIGHUP` → reload config/grants/refires + qmd reconcile.
 
 **Filesystem channels.** One file per identity, body is JSON (or NDJSON
 when append-heavy). API is uniformly `read/write/clear/list`. Atomic
-`writeFile(tmp) + rename` for tmp+rename where readers race writers
-(`run-log.ts:openRun` — result.json and manifest); plain `writeFile` where
-partial reads are tolerable. Listing is `readdir` with `ENOENT → []`.
-Plugin-name safety asserted at write (`refire.ts:assertSafePluginName`).
+tmp+rename where readers race writers (`run-log.ts:openRun` — result.json
+and manifest); plain `writeFile` where partial reads are tolerable.
+Listing is `readdir` with `ENOENT → []`. Plugin-name safety asserted at
+write (`refire.ts:assertSafePluginName`). Secrets go through
+`writePrivateJson` (0700 dir / 0600 file, `secure-json.ts`).
 
 **Grants.** One `Grants` type + `readGrants`/`writeGrants`/`listGrants`
 (`grants.ts`). `readGrants` returns null on missing file, throws on corrupt
 JSON, normalizes `create`/`edit`/`net` to `[]`, and preserves unknown fields
-across read-modify-write.
+across read-modify-write. The daemon reads top-level `schedule`/`watch`
+(consented), never `manifest.schedule`/`watch` (declared).
 
 **Daemon lifecycle.** `runDaemon()` writes the PID file, truncates the
 global run-log, clears stale `jobs/`, restores orphan `inflight/`, then
@@ -300,13 +248,14 @@ args, env, `input.json` body — from resolved grants
 `runPluginLocked` writes `runs/<runId>/input.json` plus an import map,
 then spawns Deno with `--allow-{read,write,env,net}` from the plan
 (`plugin-run.ts:runPluginLocked`). NDJSON control messages on stderr —
-`_dither: "progress"` / `"reschedule"` parsed by `parseControl`
-(`supervisor.ts:parseControl`); other stderr lines journal as
-`{kind: "stderr"}`. On clean exit, `promote()` validates each
-`runs/<runId>/*.md` (`source === plugin`, `collection ∈ grants`) before
-moving them into the library (`promotion.ts:promote`). `runs/<runId>` is
-always `rm -rf`-ed in `finally` so plaintext secrets in `input.json`
-don't linger (`plugin-run.ts:runPluginLocked`).
+`_dither: "progress"` / `"reschedule"` parsed defensively by
+`parseControl`; last reschedule wins (`supervisor.ts:parseControl`);
+other stderr lines journal as `{kind: "stderr"}`. On clean exit,
+`promote()` validates each `runs/<runId>/*.md` (`source === plugin`,
+`collection ∈ grants`) before moving them into the library
+(`promotion.ts:promote`) — soft conflicts are skipped + journaled, never
+thrown. `runs/<runId>` is always `rm -rf`-ed in `finally` so plaintext
+secrets in `input.json` don't linger (`plugin-run.ts:runPluginLocked`).
 
 **Inbox / inflight — at-least-once.** Watcher appends NDJSON rows into
 `inboxes/<plugin>.ndjson`. Fire start: `claimInbox` atomically
@@ -314,7 +263,9 @@ don't linger (`plugin-run.ts:runPluginLocked`).
 (`inbox.ts:claimInbox`). Clean run → `clearInflight`; any failure path →
 `restoreInflight` appends rows back to inbox (`inbox.ts:clearInflight`,
 `restoreInflight`). Startup `recoverOrphanInflight()` restores files left
-by a crashed prior daemon (`inbox.ts:recoverOrphanInflight`).
+by a crashed prior daemon (`inbox.ts:recoverOrphanInflight`). Both inbox
+and kicks are thin renames over `Queue<T>` (`queue.ts`) — latest-wins vs
+log/dedup are the two canonical storage shapes.
 
 **Refire decision (pure).** `decideRunOutcome({exitCode, rescheduleMs,
 prior})` returns `ok-cleared | ok-rescheduled | failed-retry |
@@ -349,3 +300,30 @@ terminates on `reconcile-done`, throws typed errors for stopped/failed/died
 interface so tests substitute deterministic stubs. Reconcile child failures
 travel the same wire — `{_dither: "job-failed"|"reconcile-failed", error}`
 (`reconcile-sink.ts:stderrSink`, `reconcile-supervisor.ts:reconcileHandler`).
+The child reports intent; the daemon owns the journal.
+
+**SQLite / qmd.** All native-store access goes through `openStore()`
+(`store.ts`) — no module touches `@tobilu/qmd` directly.
+
+## Tidbits
+
+- Anacron-style catch-up: `recover()` re-derives owed work from durable
+  watermarks (`lastRun`, mtime) instead of replaying missed ticks —
+  `scheduler.ts`, `watcher.ts`.
+- Watcher invalidates stale async callbacks with a generation counter
+  bumped on `stop()`/`set()` — check `gen` before acting (`watcher.ts`).
+- Re-entrancy gates are a single boolean set synchronously before any
+  `await` (`state.handingOff`, `daemon.ts`).
+- Monotonic guard before writing watermark state: `if (next <= stored)
+  return` (`watch-state.ts`, `schedule-state.ts` — the two files mirror
+  each other on purpose).
+- Baked build stamp vs disk sidecar (`build-stamp.ts`): computed once in
+  the tsdown hook so they can never disagree; staleness drives daemon
+  hand-off.
+- Small duplications are deliberate (no-DRY stance): per-test-file
+  `captureLogs`, `assertSafePluginName` in both `refire.ts` and
+  `kicks.ts`. Don't extract shared helpers for these.
+- Cancellation from consola is detected by message-matching, not a typed
+  error — known compromise, commented at the sites.
+- `configDir` supersedes `home` in status output; deprecated aliases are
+  kept one release, marked `@deprecated`.

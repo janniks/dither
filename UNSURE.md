@@ -22,3 +22,18 @@
   - alternative: preserve the raw throw
   - why: clean message beats a stack trace; same terminal outcome
   - verdict:
+
+## 2026-07-13 — CONVENTIONS.md (full scan)
+
+- [ ] enshrined `Options` over `Opts` as the type-suffix rule
+  - alternative: let both coexist (pkce.ts, oauth-listen.ts, table.ts use `Opts`/`ColOpt`)
+  - why: `Options` dominates the export surface; one spelling is simpler; existing `Opts` types left as-is until touched
+  - verdict:
+- [ ] enshrined per-test-file `captureLogs` duplication as intentional (don't extract)
+  - alternative: shared test util in test/helpers/
+  - why: matches the repo's no-premature-DRY stance; each copy is ~10 lines
+  - verdict:
+- [ ] documented plugin family's file-per-subcommand vs inline subcommands elsewhere as size-driven, not conflicting
+  - alternative: pick one style and migrate the other
+  - why: splitting only pays past a size threshold; command-plugin.ts documents its own pattern
+  - verdict:
