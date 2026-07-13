@@ -112,6 +112,10 @@ describe("status", () => {
     writeFileSync(join(notes, "a.md"), "---\ntitle: a\n---\n\nhi\n");
     writeFileSync(join(notes, "b.md"), "---\ntitle: b\n---\n\nhi\n");
 
+    // Counts come from the qmd store, not a directory walk — index first.
+    const { updateIndex } = await import("./update-index");
+    await updateIndex();
+
     const { getStatus } = await import("./status");
     const status = await getStatus();
     expect(status.plugins).toBe(1);

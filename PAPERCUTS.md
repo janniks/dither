@@ -7,3 +7,5 @@
   - `lifecycle.test.ts` "getStatus reports counts": collections expected 1 got 0 — fails on a clean tree too
 - 2026-07-10 also pre-existing: `command-collection.test.ts` both "list" tests fail on a clean tree (md-count column landed between name and source; regexes expect them adjacent)
 - 2026-07-10 flaky: daemon.test.ts "rollback: successor never confirms" can catch status.json mid-write (plain writeFile by design; readStatusSnapshot then throws SyntaxError). Rerun before suspecting your diff.
+- 2026-07-13 the pre-existing failures above are fixed — suite is fully green now; a failure IS your diff
+  - stale tests, not code bugs: collection list column order changed on purpose; getStatus counts from the qmd store, so tests must `updateIndex()` before asserting counts

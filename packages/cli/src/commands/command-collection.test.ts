@@ -105,8 +105,8 @@ describe("dither collection", () => {
     const { out } = await captureLogs(async () => {
       await runCommand(main, { rawArgs: ["collection", "list"] });
     });
-    expect(out).toMatch(/notes\s+library/);
-    expect(out).toMatch(/work\s+external/);
+    expect(out).toMatch(/notes\s+0 md\s+library/);
+    expect(out).toMatch(/work\s+0 md\s+external/);
   });
 
   it("list --verbose adds path and md count and flags missing externals", async () => {
@@ -121,7 +121,7 @@ describe("dither collection", () => {
       await runCommand(main, { rawArgs: ["collection", "list", "--verbose"] });
     });
     expect(okRun.out).toContain(ext);
-    expect(okRun.out).toMatch(/work\s+external\s+2\s+md/);
+    expect(okRun.out).toMatch(/work\s+2 md\s+external/);
 
     rmSync(ext, { recursive: true, force: true });
     const missingRun = await captureLogs(async () => {
