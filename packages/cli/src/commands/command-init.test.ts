@@ -342,31 +342,26 @@ describe("dither init (Phase 1)", () => {
   });
 
   describe("defaultLibraryPath", () => {
-    let prevXdg: string | undefined;
-    beforeEach(() => {
-      prevXdg = process.env.XDG_DATA_HOME;
-    });
-    afterEach(() => {
-      if (prevXdg === undefined) delete process.env.XDG_DATA_HOME;
-      else process.env.XDG_DATA_HOME = prevXdg;
+    it("follows an explicit DITHER_DIR", () => {
+      // Outer beforeEach sets DITHER_DIR = home.
+      expect(defaultLibraryPath()).toBe(join(home, "library"));
     });
 
-    it("falls back to ~/.dither/library when XDG_DATA_HOME is unset", () => {
-      delete process.env.XDG_DATA_HOME;
+    it("falls back to ~/.dither/library when DITHER_DIR is unset", () => {
+      delete process.env.DITHER_DIR;
       expect(defaultLibraryPath()).toBe(join(homedir(), ".dither", "library"));
     });
 
-    it("uses $XDG_DATA_HOME/dither when set", () => {
+    it("ignores XDG entirely — the library is content, not config", () => {
+      delete process.env.DITHER_DIR;
       process.env.XDG_DATA_HOME = "/tmp/xdg-data";
-      expect(defaultLibraryPath()).toBe("/tmp/xdg-data/dither");
-    });
-
-    it("ignores DITHER_DIR — library default does not follow the config dir", () => {
-      // Custom config dir is already in scope via the outer beforeEach
-      // (process.env.DITHER_DIR = home). The library default must still
-      // land at the user's home, not inside the config dir.
-      delete process.env.XDG_DATA_HOME;
-      expect(defaultLibraryPath()).toBe(join(homedir(), ".dither", "library"));
+      process.env.XDG_CONFIG_HOME = "/tmp/xdg-config";
+      try {
+        expect(defaultLibraryPath()).toBe(join(homedir(), ".dither", "library"));
+      } finally {
+        delete process.env.XDG_DATA_HOME;
+        delete process.env.XDG_CONFIG_HOME;
+      }
     });
   });
 

@@ -68,14 +68,14 @@ export async function resolveLibraryPath(
 }
 
 /**
- * Default library path at `dither init`. Independent of where the config dir
- * lives — even if config sits at `$XDG_CONFIG_HOME/dither` or a custom
- * `$DITHER_DIR`, the library defaults to `~/.dither/library` unless the user
- * has opted into `$XDG_DATA_HOME`, in which case `$XDG_DATA_HOME/dither`.
- * Only consulted at init; the chosen value is frozen into `config.json`.
+ * Default library path at `dither init`: `$DITHER_DIR/library` when the
+ * config dir is explicit, else `~/.dither/library`. Deliberately ignores
+ * XDG — the library is the user's content, not config (and pinning it to
+ * `$XDG_DATA_HOME` proved more surprising than useful). Only consulted at
+ * init; the chosen value is frozen into `config.json`.
  */
 export function defaultLibraryPath(): string {
-  if (process.env.XDG_DATA_HOME) return join(process.env.XDG_DATA_HOME, "dither");
+  if (process.env.DITHER_DIR) return join(process.env.DITHER_DIR, "library");
   return join(homedir(), ".dither", "library");
 }
 
@@ -229,7 +229,7 @@ export const initCommand = defineCommand({
     library: {
       type: "string",
       description:
-        "Library directory (where your .md entries live). Defaults to ~/.dither/library, or $XDG_DATA_HOME/dither when set. Pass an explicit path to keep your library outside the dither working directory — e.g. --library ~/Documents/dither — so it's visible alongside your other documents and easy to sync/back up independently.",
+        "Library directory (where your .md entries live). Defaults to $DITHER_DIR/library, or ~/.dither/library. Pass an explicit path to keep your library outside the dither working directory — e.g. --library ~/Documents/dither — so it's visible alongside your other documents and easy to sync/back up independently.",
     },
     download: {
       type: "boolean",
