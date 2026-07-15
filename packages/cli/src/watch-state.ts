@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { watchStatePath } from "./home";
+import { watchStatePath } from "./paths";
 
 /**
  * Per-(plugin,collection) mtime watermark — the watcher's durability layer for
@@ -9,7 +9,7 @@ import { watchStatePath } from "./home";
  * boot catch-up enqueue only files changed since the daemon last saw the
  * collection.
  *
- *   <home>/watch-state/<plugin>__<safe-collection>.json = { watermark: "<ISO>" }
+ *   <config>/watch-state/<plugin>__<safe-collection>.json = { watermark: "<ISO>" }
  *
  * `watermark` is the max mtime (ISO-8601) the watcher has emitted for that key.
  * ISO-8601 lexicographic order is correct for absolute UTC timestamps, matching

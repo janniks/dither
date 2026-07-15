@@ -11,7 +11,7 @@ import { assertInitialized, libraryRoot } from "../config";
 import { clearKick, hasKick, signalDaemon, writeKick, type KickOverrides } from "../kicks";
 import { followRun, generateRunId, readRun, type RunResultRecord } from "../run-log";
 import { isLockHeld } from "../locks";
-import { pluginDir as pluginDirOf, runResultPath } from "../home";
+import { pluginDir as pluginDirOf, runResultPath } from "../paths";
 import { readDaemonPid, startDaemon } from "../daemon-control";
 import {
   grantArgs,

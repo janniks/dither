@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { chmod, mkdir, rename, rm, writeFile, mkdtemp, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { binDir } from "./home";
+import { binDir } from "./paths";
 import { acquire, release } from "./locks";
 
 /**

@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 import { createReadStream, watch as fsWatch, existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
-import { daemonLogPath } from "../home";
+import { daemonLogPath } from "../paths";
 import { assertInitialized } from "../config";
 import {
   startDaemon,

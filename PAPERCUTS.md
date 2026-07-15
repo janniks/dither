@@ -9,3 +9,4 @@
 - 2026-07-10 flaky: daemon.test.ts "rollback: successor never confirms" can catch status.json mid-write (plain writeFile by design; readStatusSnapshot then throws SyntaxError). Rerun before suspecting your diff.
 - 2026-07-13 the pre-existing failures above are fixed — suite is fully green now; a failure IS your diff
   - stale tests, not code bugs: collection list column order changed on purpose; getStatus counts from the qmd store, so tests must `updateIndex()` before asserting counts
+- 2026-07-15 dove into the home→configDir rename without grepping the blast radius (~30 files) — spec-first for wide changes, even mechanical renames

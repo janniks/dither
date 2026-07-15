@@ -3,7 +3,7 @@ import { mkdir, open, readFile, readdir, rename, stat, truncate, unlink, writeFi
 import type { FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { resolveHome, runEventsPath, runLogPath } from "./home";
+import { configDir, runEventsPath, runLogPath } from "./paths";
 import { isPidAlive } from "./locks";
 
 /**
@@ -121,7 +121,7 @@ async function appendRun(runId: string, event: RunEventInput): Promise<void> {
 //
 // Module-scoped state — singleton by design. ADR 0001 keeps the Run-log
 // seam as one module; the production model is one daemon per process,
-// matching the `home.ts` pattern. `truncateGlobal()` clears both maps on
+// matching the `paths.ts` pattern. `truncateGlobal()` clears both maps on
 // daemon startup so a fresh in-process daemon (tests, mainly) doesn't
 // inherit stale entries from a previous run.
 const queues = new Map<string, Promise<void>>();
@@ -413,7 +413,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 // -----------------------------------------------------------------------------
 
 function historyDir(): string {
-  return join(resolveHome(), "history");
+  return join(configDir(), "history");
 }
 
 function runDirOf(runId: string): string {

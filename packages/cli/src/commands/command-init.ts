@@ -4,7 +4,7 @@ import { access, lstat, mkdir, realpath } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { resolveHome } from "../home";
+import { configDir } from "../paths";
 import { loadConfig, saveConfig, type DitherConfig } from "../config";
 import { confirm, promptText, stepDone, stepFail, stepStart, tildePath } from "../prompt";
 import { applyQmdImport, discoverQmdCollections } from "../qmd-import";
@@ -250,12 +250,12 @@ export const initCommand = defineCommand({
     },
   },
   async run({ args }) {
-    const home = resolveHome();
-    await mkdir(home, { recursive: true });
+    const dir = configDir();
+    await mkdir(dir, { recursive: true });
 
     const existing = await loadConfig();
     if (existing) {
-      console.log(`dither is already initialized at ${tildePath(home)}`);
+      console.log(`dither is already initialized at ${tildePath(dir)}`);
       console.log(`  library: ${tildePath(existing.library.path)}`);
       if (args.library) {
         console.log("  (--library ignored — re-init isn't supported; remove config.json and re-run if you need to reconfigure)");
@@ -336,7 +336,7 @@ export const initCommand = defineCommand({
     }
 
     await saveConfig(cfg);
-    stepDone(`wrote ${tildePath(join(home, "config.json"))}`);
+    stepDone(`wrote ${tildePath(join(dir, "config.json"))}`);
 
     // Write the welcome doc *before* indexing so it's part of what the
     // index sees on the first pass. The doc demonstrates the

@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { resolveHome } from "../home";
+import { configDir } from "../paths";
 import { findLastRunForPlugin, listRuns } from "../run-log";
 import { formatRelPast } from "../relative-time";
 import { printTable } from "../prompt";
@@ -72,7 +72,7 @@ export const runsSubcommand = defineCommand({
       return;
     }
     if (RUN_ID_PATTERN.test(target)) {
-      if (!existsSync(join(resolveHome(), "history", target))) {
+      if (!existsSync(join(configDir(), "history", target))) {
         process.stderr.write(`no run found with id ${target}\n`);
         process.exit(1);
       }

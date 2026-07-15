@@ -1,13 +1,13 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { scheduleStatePath } from "./home";
+import { scheduleStatePath } from "./paths";
 
 /**
  * Per-plugin `lastRun` — the scheduler's durability layer for the down-window
  * gap. Croner is in-memory, so a tick due while the daemon is down is silently
  * dropped. We persist the last time each schedule actually fired:
  *
- *   <home>/schedule-state/<plugin>.json = { lastRun: "<ISO>" }
+ *   <config>/schedule-state/<plugin>.json = { lastRun: "<ISO>" }
  *
  * Boot `recover` reads it, asks croner whether the pattern would have fired
  * between `lastRun` and now, and (if so) fires once — anacron-style catch-up.

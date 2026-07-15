@@ -9,7 +9,7 @@
 | files | kebab-case noun(-noun); test sibling `<file>.test.ts`, same dir | `run-log.ts`, `daemon-control.ts` |
 | command files | `command-<name>.ts`; family shares prefix | `command-plugin-run.ts` |
 | exported functions | verb-first, short camelCase | `claimInbox`, `readGrants`, `promote` |
-| path getters | `<thing>Path()` / `<thing>Dir()`, all in `home.ts` | `pidFilePath`, `grantsDirPath` |
+| path getters | `<thing>Path()` / `<thing>Dir()`, all in `paths.ts` | `pidFilePath`, `grantsDirPath` |
 | command exports | `<name>Command` / `<name>Subcommand` (citty consts) | `pluginCommand`, `runSubcommand` |
 | internals/locals | single word; brevity over disambiguation | `pid`, `cfg`, `raw`, `row`, `child` |
 | types | PascalCase noun; suffixes `Options`, `Result`, `State`, `Stats` — use `Options`, not `Opts` | `RunOptions`, `StartResult` |
@@ -19,7 +19,7 @@
 | constants | SCREAMING_SNAKE; time keeps its unit suffix | `SHUTDOWN_GRACE_MS`, `POISON_PILL_THRESHOLD` |
 | time-typed values | keep `Ms`/`Sec`/`At` suffix everywhere | `timeoutMs`, `lastFetchAt` |
 | union `kind` strings | kebab / verb-noun, never camelCase | `"ok-cleared"`, `"reconcile-done"` |
-| test-only escape hatches | `_` prefix | `_resetHomeWarningLatch` |
+| test-only escape hatches | `_` prefix | `_resetMarkersMigrationLatch` |
 | test doubles | `fake<Thing>` / `stub<Thing>` factory returning double + inspection hooks | `fakeSpawn`, `stubTransport` |
 | env vars | `DITHER_<NOUN>`, defined in one record literal | `DITHER_RUN_DIR` |
 | CLI flags | kebab-case, args keys mirror the flag verbatim | `args["dry-run"]`, `args["allow-net"]` |
@@ -123,12 +123,12 @@ how the whole system works. The whole system works together as one thing.
 
 ### The shape
 
-Everything lives under `<home>` (defaults to `~/.config/dither`,
-`home.ts`). One layout, one language. New IPC channels become another
+Everything lives under the config dir (`paths.ts:configDir()`;
+`$DITHER_DIR` → `$XDG_CONFIG_HOME/dither` → `~/.dither`). One layout, one language. New IPC channels become another
 directory of the same shape.
 
 ```
-<home>/                       # ~/.config/dither
+<config>/                     # e.g. ~/.dither
 ├── dither.pid                # {pid, token, startedAt}
 ├── status.json               # event-driven snapshot (not periodic)
 ├── run-log.jsonl             # global events; trunc on daemon start
@@ -203,7 +203,7 @@ SIGHUP reload, run start/end, loop-detector halt, shutdown — via a
 callback (`daemon.ts:writeStatusSnapshot`). Shutdown verifies its own
 `{pid, token}` against the PID file before unlinking — a respawned
 daemon's file is never clobbered (`daemon.ts:removePidFile`); PID files
-parse through one strict `parsePidFile` (`home.ts:parsePidFile`). CLI
+parse through one strict `parsePidFile` (`paths.ts:parsePidFile`). CLI
 auto-starts the daemon via `ensureDaemonForPlugin` after install/consent
 re-grant for plugins with `schedule` or `watch`
 (`command-plugin-shared.ts:ensureDaemonForPlugin`); `startDaemon()` is
@@ -281,7 +281,7 @@ threshold`. Halts → bounded ring (cap 16), surfaced via
 `status.recentHalts.slice(0, 5)`. In-memory; resets on daemon restart
 (`loop-detector.ts:shouldHalt`).
 
-**Markers.** Single-purpose flag files at `<home>/markers/<name>`
+**Markers.** Single-purpose flag files at `<config>/markers/<name>`
 (`markers.ts`). `needs-reindex`: any non-daemon writer calls
 `requestReindex()`; daemon coalesces via atomic `rename → .processing →
 unlink` so requests arriving mid-cycle aren't lost
@@ -325,5 +325,5 @@ The child reports intent; the daemon owns the journal.
   `kicks.ts`. Don't extract shared helpers for these.
 - Cancellation from consola is detected by message-matching, not a typed
   error — known compromise, commented at the sites.
-- `configDir` supersedes `home` in status output; deprecated aliases are
-  kept one release, marked `@deprecated`.
+- deprecated aliases are kept one release, marked `@deprecated`, then
+  removed (`home`/`DITHER_HOME` are gone; the concept is `configDir`).

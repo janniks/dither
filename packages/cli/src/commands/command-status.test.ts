@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, chmodSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCommand } from "citty";
-import { _resetHomeWarningLatch } from "../home";
 
 async function captureLogs(fn: () => Promise<void>): Promise<string> {
   const logs: string[] = [];
@@ -22,17 +21,13 @@ describe("dither status (output shape)", () => {
   let home: string;
   let prevDir: string | undefined;
   let prevXdg: string | undefined;
-  let prevHome: string | undefined;
 
   beforeEach(() => {
     prevDir = process.env.DITHER_DIR;
     prevXdg = process.env.XDG_CONFIG_HOME;
-    prevHome = process.env.DITHER_HOME;
     delete process.env.XDG_CONFIG_HOME;
-    delete process.env.DITHER_HOME;
     home = mkdtempSync(join(tmpdir(), "dither-status-cmd-test-"));
     process.env.DITHER_DIR = home;
-    _resetHomeWarningLatch();
   });
 
   afterEach(() => {
@@ -41,8 +36,6 @@ describe("dither status (output shape)", () => {
     else process.env.DITHER_DIR = prevDir;
     if (prevXdg === undefined) delete process.env.XDG_CONFIG_HOME;
     else process.env.XDG_CONFIG_HOME = prevXdg;
-    if (prevHome === undefined) delete process.env.DITHER_HOME;
-    else process.env.DITHER_HOME = prevHome;
   });
 
   it("emits the 'Note: Using ENV DITHER_DIR' header when env is the source", async () => {
@@ -192,7 +185,6 @@ describe("dither status (color)", () => {
     delete process.env.NO_COLOR;
     home = mkdtempSync(join(tmpdir(), "dither-status-color-"));
     process.env.DITHER_DIR = home;
-    _resetHomeWarningLatch();
   });
 
   afterEach(() => {

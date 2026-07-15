@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { open, readdir, readFile, unlink, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { resolveHome } from "./home";
+import { configDir } from "./paths";
 
 /**
  * Lock files at `~/.dither/locks/<name>.lock`. Atomic via O_EXCL; the file
@@ -37,7 +37,7 @@ export interface LockEntry {
 }
 
 function locksDir(): string {
-  return join(resolveHome(), "locks");
+  return join(configDir(), "locks");
 }
 
 function lockPath(name: string): string {

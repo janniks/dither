@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile, readFile, unlink, open } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
-import { pidFilePath, parsePidFile, statusSnapshotPath, daemonLogPath, resolveHome, type DaemonPidFile } from "./home";
+import { pidFilePath, parsePidFile, statusSnapshotPath, daemonLogPath, configDir, type DaemonPidFile } from "./paths";
 import { libraryRoot as resolveLibraryRoot } from "./config";
 import { appendGlobal, listRuns, truncateGlobal, type RunSummary } from "./run-log";
 import { listGrants, type Grants } from "./grants";
@@ -253,7 +253,7 @@ async function recoverAll(
 }
 
 async function writePidFile(state: DaemonState): Promise<void> {
-  await mkdir(resolveHome(), { recursive: true });
+  await mkdir(configDir(), { recursive: true });
   await writeFile(
     pidFilePath(),
     `${JSON.stringify({ pid: process.pid, token: state.token, startedAt: state.startedAt })}\n`,
@@ -320,7 +320,7 @@ async function writeStatusSnapshot(
     scheduleEntries: scheduler.stats().entries.slice(0, 10),
     watchEntries: watcher.stats().entries.slice(0, 10),
   };
-  await mkdir(resolveHome(), { recursive: true });
+  await mkdir(configDir(), { recursive: true });
   await writeFile(statusSnapshotPath(), JSON.stringify(snapshot, null, 2));
 }
 

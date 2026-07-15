@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { basename, dirname, join } from "node:path";
-import { resolveHome } from "./home";
+import { configDir } from "./paths";
 
 const CONFIG_SCHEMA_VERSION = 2;
 
@@ -25,7 +25,7 @@ export class NotInitializedError extends Error {
 }
 
 function configPath(): string {
-  return join(resolveHome(), "config.json");
+  return join(configDir(), "config.json");
 }
 
 /**

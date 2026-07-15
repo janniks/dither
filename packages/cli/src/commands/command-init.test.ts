@@ -324,7 +324,7 @@ describe("dither init (Phase 1)", () => {
       // The index file isn't actually created until the first store.update();
       // what matters is the resolved path. We check that the home-relative
       // path is what the resolver returns.
-      const { indexDbPath } = await import("../home");
+      const { indexDbPath } = await import("../paths");
       expect(indexDbPath()).toBe(join(home, "qmd-index.sqlite"));
     } finally {
       rmSync(externalLib, { recursive: true, force: true });

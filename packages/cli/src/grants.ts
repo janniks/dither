@@ -1,7 +1,7 @@
 import picomatch from "picomatch";
 import { readdir, readFile } from "node:fs/promises";
 import { validateCollectionPathSegment } from "./collection-registry";
-import { grantsDirPath, grantsPath } from "./home";
+import { grantsDirPath, grantsPath } from "./paths";
 import { writePrivateJson } from "./secure-json";
 import type { Manifest } from "./manifest";
 

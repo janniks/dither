@@ -2,7 +2,7 @@ import { mkdirSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createStore, type QMDStore, type Collection } from "@tobilu/qmd";
 import { assertInitialized } from "./config";
-import { indexDbPath } from "./home";
+import { indexDbPath } from "./paths";
 
 /**
  * Open a qmd store over every collection dither knows about — library

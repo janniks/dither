@@ -1,11 +1,11 @@
 import { mkdir, writeFile, unlink } from "node:fs/promises";
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { pidFilePath, resolveHome } from "./home";
+import { pidFilePath, configDir } from "./paths";
 import { Queue, type Outcome, type Source } from "./queue";
 
 /**
- * Per-plugin kick row. Persisted at `<home>/kicks/<plugin>.json` — the
+ * Per-plugin kick row. Persisted at `<config>/kicks/<plugin>.json` — the
  * pending file of the kick `Queue`. Written by the CLI's `plugin run <name>`
  * and consumed by the daemon's kick `Source` (SIGUSR1 → drain at runtime,
  * once at boot). One pending file per plugin; a second kick before the first
@@ -37,14 +37,14 @@ export interface KickOverrides {
 
 /**
  * The kick queue. `latest` shape: at most one pending kick per plugin, a
- * fresh enqueue replaces it. Pending file == `<home>/kicks/<plugin>.json`,
+ * fresh enqueue replaces it. Pending file == `<config>/kicks/<plugin>.json`,
  * the path the CLI's `writeKick` producer writes directly.
  */
 const queue = new Queue<KickPayload>({ dir: "kicks", ext: "json", shape: "latest" });
 
 function kickPath(plugin: string): string {
   assertSafePluginName(plugin);
-  return join(resolveHome(), "kicks", `${plugin}.json`);
+  return join(configDir(), "kicks", `${plugin}.json`);
 }
 
 function assertSafePluginName(plugin: string): void {

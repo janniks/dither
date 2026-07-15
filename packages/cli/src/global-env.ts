@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { globalEnvPath } from "./home";
+import { globalEnvPath } from "./paths";
 import { writePrivateJson } from "./secure-json";
 
 /**

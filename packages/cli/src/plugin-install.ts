@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { pluginDir } from "./home";
+import { pluginDir } from "./paths";
 import { validateGrantPattern, writeGrants, type Grants } from "./grants";
 import { detectProtectedInstall, type ProtectedInstall } from "./tcc-hint";
 import { ensureDeno } from "./deno-bootstrap";

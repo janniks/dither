@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { resolveHome } from "./home";
+import { configDir } from "./paths";
 
 /**
  * Marker — the lazy form of Signal. A zero-byte presence flag at
- * `<home>/markers/<name>` that the daemon checks on its next cycle.
+ * `<config>/markers/<name>` that the daemon checks on its next cycle.
  *
  * Two markers live today:
  *   - `needs-reindex` (request flavour): any non-daemon writer touches this
@@ -25,22 +25,22 @@ const NEEDS_REINDEX = "needs-reindex";
 const EMBED_DISABLED = "embed-disabled";
 
 // Auto-migration from the legacy top-level paths. Runs once per resolved
-// home — tests using a fresh DITHER_DIR get a fresh migration. Sync I/O
+// dir — tests using a fresh DITHER_DIR get a fresh migration. Sync I/O
 // so callers that are themselves sync (claimReindex, disableEmbed) can
 // migrate before their first read/write.
 const migrated = new Set<string>();
 
 function markersDir(): string {
-  return join(resolveHome(), "markers");
+  return join(configDir(), "markers");
 }
 
 function ensureMigrated(): void {
-  const home = resolveHome();
-  if (migrated.has(home)) return;
-  migrated.add(home);
+  const dir = configDir();
+  if (migrated.has(dir)) return;
+  migrated.add(dir);
   mkdirSync(markersDir(), { recursive: true });
   for (const name of [NEEDS_REINDEX, EMBED_DISABLED]) {
-    const oldPath = join(home, name);
+    const oldPath = join(dir, name);
     const newPath = join(markersDir(), name);
     if (!existsSync(oldPath)) continue;
     if (existsSync(newPath)) {

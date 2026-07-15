@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { resolveHome } from "./home";
+import { configDir } from "./paths";
 import { readGlobal, type LogEvent } from "./run-log";
 import { statusAll, type LockTheme } from "./locks";
 import { readMarkerState } from "./markers";
@@ -59,7 +59,7 @@ export interface JobsSnapshot {
 // the bounded log tail so long-running jobs don't disappear from status
 // after their job-started event scrolls off.
 function jobsDir(): string {
-  return join(resolveHome(), "jobs");
+  return join(configDir(), "jobs");
 }
 
 function jobFilePath(jobId: string): string {

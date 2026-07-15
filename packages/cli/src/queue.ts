@@ -1,6 +1,6 @@
 import { appendFile, mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { resolveHome } from "./home";
+import { configDir } from "./paths";
 
 /**
  * Durable, per-identity, at-least-once queue. The deep module behind every
@@ -58,7 +58,7 @@ export class Queue<T> {
   }
 
   private base(): string {
-    return join(resolveHome(), this.cfg.dir);
+    return join(configDir(), this.cfg.dir);
   }
 
   private pending(name: string): string {
@@ -67,7 +67,7 @@ export class Queue<T> {
   }
 
   private inflightBase(): string {
-    if (this.cfg.inflightDir) return join(resolveHome(), this.cfg.inflightDir);
+    if (this.cfg.inflightDir) return join(configDir(), this.cfg.inflightDir);
     return join(this.base(), "inflight");
   }
 

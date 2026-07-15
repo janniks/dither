@@ -1,6 +1,6 @@
 import { access } from "node:fs/promises";
 import { existsSync, constants } from "node:fs";
-import { resolveHome } from "./home";
+import { configDir } from "./paths";
 import { loadConfig } from "./config";
 import { listGrants } from "./grants";
 import { getDaemonStatus, type DaemonStatus } from "./daemon-control";
@@ -20,7 +20,7 @@ import { openStore } from "./store";
  * (humans + agentic consumers) can tell unknowable counts (`null`)
  * apart from genuinely-zero counts.
  *
- * `configDirSource` mirrors home.ts's resolver chain so the human
+ * `configDirSource` mirrors paths.ts's resolver chain so the human
  * printer can decide whether to show a `DITHER_DIR=/path` header.
  *
  */
@@ -45,13 +45,11 @@ export interface DitherStatus {
 }
 
 /**
- * Detect which env (or none) drove resolveHome()'s decision. Mirrors
- * the chain in home.ts. Both `DITHER_DIR` (current) and `DITHER_HOME`
- * (legacy alias) count as `"env"` — the user is being explicit either
- * way.
+ * Detect which env (or none) drove configDir()'s decision. Mirrors
+ * the chain in paths.ts.
  */
 function detectConfigDirSource(): ConfigDirSource {
-  if (process.env.DITHER_DIR || process.env.DITHER_HOME) return "env";
+  if (process.env.DITHER_DIR) return "env";
   if (process.env.XDG_CONFIG_HOME) return "xdg";
   return "fallback";
 }
@@ -72,7 +70,7 @@ async function probeLibraryHealth(libraryPath: string | null): Promise<LibraryHe
 }
 
 export async function getStatus(): Promise<DitherStatus> {
-  const configDir = resolveHome();
+  const dir = configDir();
   const configDirSource = detectConfigDirSource();
   const plugins = (await listGrants()).length;
   const cfg = await loadConfig();
@@ -103,7 +101,7 @@ export async function getStatus(): Promise<DitherStatus> {
   const daemon = await getDaemonStatus();
   const jobs = await readJobsSnapshot();
   return {
-    configDir,
+    configDir: dir,
     configDirSource,
     library,
     libraryHealth,

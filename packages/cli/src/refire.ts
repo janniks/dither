@@ -1,9 +1,9 @@
 import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { resolveHome } from "./home";
+import { configDir } from "./paths";
 
 /**
- * Per-plugin refire row. Persisted at `<home>/refires/<plugin>.json` so the
+ * Per-plugin refire row. Persisted at `<config>/refires/<plugin>.json` so the
  * daemon picks it up across restarts.
  *
  * `fireAt`        — ISO timestamp; daemon's Refirer schedules a setTimeout to
@@ -25,7 +25,7 @@ export interface RefireRow {
 export const POISON_PILL_THRESHOLD = 3;
 
 function refireDir(): string {
-  return join(resolveHome(), "refires");
+  return join(configDir(), "refires");
 }
 
 function refirePath(plugin: string): string {

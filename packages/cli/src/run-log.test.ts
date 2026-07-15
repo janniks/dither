@@ -36,7 +36,7 @@ describe("run-log", () => {
 
     it("truncateGlobal removes both the main file and the .old rotation file", async () => {
       const { appendGlobal, truncateGlobal, readGlobal } = await import("./run-log");
-      const { runLogPath } = await import("./home");
+      const { runLogPath } = await import("./paths");
       await appendGlobal({ kind: "daemon-started" });
       // Plant a stale .old file.
       await mkdir(home, { recursive: true });
@@ -51,7 +51,7 @@ describe("run-log", () => {
     it("truncateGlobal clears the size cache so a follow-up append doesn't spuriously rotate", async () => {
       const { ROTATION_THRESHOLD_BYTES, appendGlobal, truncateGlobal } =
         await import("./run-log");
-      const { runLogPath } = await import("./home");
+      const { runLogPath } = await import("./paths");
       await mkdir(home, { recursive: true });
       // Plant a near-threshold body so the size cache populates with a
       // rotation-near value on the first append.
@@ -69,7 +69,7 @@ describe("run-log", () => {
 
     it("rotates to .old when an append would exceed the 1 MB threshold", async () => {
       const { ROTATION_THRESHOLD_BYTES, appendGlobal } = await import("./run-log");
-      const { runLogPath } = await import("./home");
+      const { runLogPath } = await import("./paths");
       // Plant a near-threshold file directly so we don't burn 1 MB of appends.
       await mkdir(home, { recursive: true });
       // Fill to within 50 bytes of the threshold so the next event push
@@ -85,7 +85,7 @@ describe("run-log", () => {
 
     it("concurrent appends at the rotation threshold all survive", async () => {
       const { ROTATION_THRESHOLD_BYTES, appendGlobal } = await import("./run-log");
-      const { runLogPath } = await import("./home");
+      const { runLogPath } = await import("./paths");
       await mkdir(home, { recursive: true });
       const filler = "x".repeat(ROTATION_THRESHOLD_BYTES - 50);
       writeFileSync(runLogPath(), filler);

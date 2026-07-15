@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { grantsPath, pluginDir } from "./home";
+import { grantsPath, pluginDir } from "./paths";
 
 export interface RemoveOptions {
   name: string;

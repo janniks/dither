@@ -2,7 +2,7 @@ import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
-import { resolveHome } from "./home";
+import { configDir } from "./paths";
 
 /**
  * OS-level persistence: write a launchd plist (macOS) or systemd user unit
@@ -121,7 +121,7 @@ export async function installAutostart(home = homedir()): Promise<AutostartResul
   const entry = process.argv[1];
   if (!entry) throw new Error("Cannot determine CLI entrypoint for autostart unit");
 
-  const ditherHome = resolveHome();
+  const ditherHome = configDir();
   const logPath = join(ditherHome, "logs", "daemon.log");
   const content =
     platform === "darwin"

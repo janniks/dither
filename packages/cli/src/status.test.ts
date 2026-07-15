@@ -2,24 +2,19 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { _resetHomeWarningLatch } from "./home";
 import { getStatus } from "./status";
 
 describe("getStatus — config dir + library split", () => {
   let home: string;
   let prevDir: string | undefined;
   let prevXdg: string | undefined;
-  let prevHome: string | undefined;
 
   beforeEach(() => {
     prevDir = process.env.DITHER_DIR;
     prevXdg = process.env.XDG_CONFIG_HOME;
-    prevHome = process.env.DITHER_HOME;
     delete process.env.XDG_CONFIG_HOME;
-    delete process.env.DITHER_HOME;
     home = mkdtempSync(join(tmpdir(), "dither-status-test-"));
     process.env.DITHER_DIR = home;
-    _resetHomeWarningLatch();
   });
 
   afterEach(() => {
@@ -28,8 +23,6 @@ describe("getStatus — config dir + library split", () => {
     else process.env.DITHER_DIR = prevDir;
     if (prevXdg === undefined) delete process.env.XDG_CONFIG_HOME;
     else process.env.XDG_CONFIG_HOME = prevXdg;
-    if (prevHome === undefined) delete process.env.DITHER_HOME;
-    else process.env.DITHER_HOME = prevHome;
   });
 
   it("returns configDir from the resolver", async () => {
@@ -95,13 +88,6 @@ describe("getStatus — config dir + library split", () => {
 
   describe("configDirSource", () => {
     it("'env' when DITHER_DIR is set", async () => {
-      const s = await getStatus();
-      expect(s.configDirSource).toBe("env");
-    });
-
-    it("'env' for legacy DITHER_HOME alias", async () => {
-      delete process.env.DITHER_DIR;
-      process.env.DITHER_HOME = home;
       const s = await getStatus();
       expect(s.configDirSource).toBe("env");
     });

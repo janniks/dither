@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, copyFile, rename, rm } from "node:fs/promis
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { pluginDir as pluginDirOf, resolveHome } from "./home";
+import { pluginDir as pluginDirOf, configDir } from "./paths";
 import { assertInitialized, libraryRoot as resolveLibraryRoot } from "./config";
 import { parsePackage } from "./manifest";
 import { getGlobalEnv } from "./global-env";
@@ -61,7 +61,7 @@ function denoPermissionList(kind: string, entries: string[]): string {
 }
 
 export async function runPlugin(opts: RunOptions): Promise<RunResult> {
-  const home = resolveHome();
+  const dir = configDir();
   const pluginDir = pluginDirOf(opts.name);
   if (!existsSync(pluginDir)) {
     const err = new Error(`plugin not installed: '${opts.name}'`) as Error & { code: string };
@@ -82,7 +82,7 @@ export async function runPlugin(opts: RunOptions): Promise<RunResult> {
   try {
     const { added, reschedule } = await runPluginLocked(
       opts,
-      home,
+      dir,
       pluginDir,
       journal,
       runId,
@@ -241,7 +241,7 @@ export function plan(args: PlanArgs): SpawnPlan {
 
 async function runPluginLocked(
   opts: RunOptions,
-  home: string,
+  dir: string,
   pluginDir: string,
   journal: RunHandle,
   runId: string,
@@ -277,7 +277,7 @@ async function runPluginLocked(
     if (def.default !== undefined) resolvedEnv[def.name] = def.default;
   }
 
-  const runDir = join(home, "runs", runId);
+  const runDir = join(dir, "runs", runId);
   await mkdir(runDir, { recursive: true });
 
   try {
