@@ -37,11 +37,6 @@ describe("getStatus — config dir + library split", () => {
     expect(s.configDir).toBe(home);
   });
 
-  it("retains `home` as a deprecated alias of configDir", async () => {
-    const s = await getStatus();
-    expect(s.home).toBe(s.configDir);
-  });
-
   describe("libraryHealth", () => {
     it("'unconfigured' when no config file exists", async () => {
       const s = await getStatus();

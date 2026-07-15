@@ -23,8 +23,6 @@ import { openStore } from "./store";
  * `configDirSource` mirrors home.ts's resolver chain so the human
  * printer can decide whether to show a `DITHER_DIR=/path` header.
  *
- * `home` is retained as a deprecated alias of `configDir` for one
- * release.
  */
 export type LibraryHealth = "ok" | "missing" | "unreadable" | "unconfigured";
 export type ConfigDirSource = "env" | "xdg" | "fallback";
@@ -34,8 +32,6 @@ export interface DitherStatus {
   configDirSource: ConfigDirSource;
   library: string | null;
   libraryHealth: LibraryHealth;
-  /** @deprecated Use `configDir`. Retained for one release. */
-  home: string;
   plugins: number;
   collections: number | null;
   entries: number | null;
@@ -111,7 +107,6 @@ export async function getStatus(): Promise<DitherStatus> {
     configDirSource,
     library,
     libraryHealth,
-    home: configDir,
     plugins,
     collections,
     entries,

@@ -97,7 +97,7 @@ describe("status", () => {
   it("getStatus reports zero counts on a fresh home", async () => {
     const { getStatus } = await import("./status");
     const status = await getStatus();
-    expect(status.home).toBe(home);
+    expect(status.configDir).toBe(home);
     expect(status.plugins).toBe(0);
     expect(status.collections).toBe(0);
     expect(status.entries).toBe(0);

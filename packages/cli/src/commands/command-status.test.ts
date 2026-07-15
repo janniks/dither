@@ -167,8 +167,6 @@ describe("dither status (output shape)", () => {
     expect(parsed.configDirSource).toBe("env");
     expect(parsed.configDir).toBe(home);
     expect(parsed.library).toBe(lib);
-    // Deprecated `home` alias retained.
-    expect(parsed.home).toBe(home);
   });
 
   it("--json contains no ANSI escape sequences", async () => {
