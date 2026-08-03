@@ -1,5 +1,5 @@
 "use client";
-import { ArrowUpRight, Plus } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { Dithering } from "@paper-design/shaders-react";
 import { toolIcons } from "./tool-icons";
 
@@ -79,7 +79,10 @@ const REQUEST_PLUGIN_URL = "https://github.com/janniks/dither/discussions/1";
 
 export function WaveRow() {
   return (
-    <section id="plugins" className="flex scroll-mt-24 flex-col gap-10">
+    <section
+      id="plugins"
+      className="bg-fd-muted/30 flex scroll-mt-24 flex-col gap-10 rounded-[24px] border p-6 md:p-8"
+    >
       <div className="grid grid-cols-1 items-center gap-8 md:grid-cols-[1.05fr_1fr] lg:gap-10">
         <div className="bg-black relative overflow-hidden rounded-[24px]">
           <div className="h-[232px] w-full lg:h-[248px]">
@@ -116,14 +119,11 @@ export function WaveRow() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {plugins.map((p) => (
-          <a
+          <div
             key={p.name}
-            href={p.repo}
-            target="_blank"
-            rel="noreferrer"
-            className={`group border bg-fd-card hover:border-fd-primary/40 hover:bg-fd-accent/40 flex flex-col gap-3 rounded-[14px] p-4 no-underline transition-colors ${
+            className={`border bg-fd-card flex flex-col gap-3 rounded-[14px] p-4 ${
               p.status === "planned" ? "opacity-60" : ""
             } ${p.status === "wip" ? "opacity-80" : ""}`}
           >
@@ -152,34 +152,22 @@ export function WaveRow() {
             <p className="text-fd-muted-foreground text-[13px] leading-[20px]">
               {p.description}
             </p>
-            <span className="text-fd-muted-foreground/70 group-hover:text-fd-foreground mt-auto inline-flex items-center gap-1 font-mono text-[11px] transition-colors">
-              {p.repo.replace("https://", "")}
-              <ArrowUpRight size={12} />
-            </span>
-          </a>
+          </div>
         ))}
+      </div>
+
+      <p className="text-fd-muted-foreground -mt-6 text-[13px] leading-[20px]">
+        Missing a source?{" "}
         <a
           href={REQUEST_PLUGIN_URL}
           target="_blank"
           rel="noreferrer"
-          className="border bg-fd-card hover:border-fd-primary/40 hover:bg-fd-accent/40 flex flex-col gap-3 rounded-[14px] p-4 no-underline transition-colors"
+          className="text-fd-foreground inline-flex items-center gap-1 font-medium"
         >
-          <div className="flex items-center gap-3">
-            <span
-              aria-hidden
-              className="bg-fd-muted text-fd-muted-foreground inline-flex h-8 w-8 items-center justify-center rounded-[10px]"
-            >
-              <Plus size={18} strokeWidth={2} />
-            </span>
-            <span className="text-fd-foreground text-[14px] font-semibold">
-              Request a plugin
-            </span>
-          </div>
-          <p className="text-fd-muted-foreground text-[13px] leading-[20px]">
-            Missing a source? Open a discussion and pitch it.
-          </p>
+          Request a plugin
+          <ArrowUpRight size={12} />
         </a>
-      </div>
+      </p>
     </section>
   );
 }
