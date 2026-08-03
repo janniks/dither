@@ -1,4 +1,5 @@
 import { CodeFile } from "@/lib/terminal";
+import { ShowMore } from "./show-more";
 
 // Tiny inline syntax styling — no external highlighter, just a few colored
 // spans for the keywords/strings/comments that carry the most signal.
@@ -31,55 +32,60 @@ export function PluginUsp() {
 
       <div className="mx-auto w-full max-w-[640px]">
         <CodeFile filename="plugins/bookmarks/plugin.ts">
-          <pre className="overflow-auto text-[12px] leading-[20px]">
-            <code>
-              <span className={K}>import</span>
-              {" { readInput, writeEntry } "}
-              <span className={K}>from</span>{" "}
-              <span className={S}>&quot;@dither/plugin&quot;</span>
-              {";\n\n"}
-              <span className={K}>const</span>
-              {" { env } = "}
-              <span className={K}>await</span>{" "}
-              <span className={F}>readInput</span>
-              {"();\n"}
-              <span className={K}>const</span>
-              {" res = "}
-              <span className={K}>await</span>{" "}
-              <span className={F}>fetch</span>
-              {"(\n  "}
-              <span className={S}>
-                &quot;https://api.raindrop.io/rest/v1/raindrops/0&quot;
-              </span>
-              {",\n  { headers: { Authorization: "}
-              <span className={S}>{"`Bearer ${env.RAINDROP_TOKEN}`"}</span>
-              {" } },\n);\n"}
-              <span className={K}>const</span>
-              {" { items } = "}
-              <span className={K}>await</span>
-              {" res."}
-              <span className={F}>json</span>
-              {"();\n\n"}
-              <span className={K}>for</span>
-              {" ("}
-              <span className={K}>const</span>
-              {" b "}
-              <span className={K}>of</span>
-              {" items) {\n  "}
-              <span className={K}>await</span>{" "}
-              <span className={F}>writeEntry</span>
-              {"({\n    collection: "}
-              <span className={S}>&quot;bookmarks&quot;</span>
-              {",\n    body: "}
-              <span className={S}>{"`# ${b.title}\\n\\n${b.excerpt}\\n\\n${b.link}`"}</span>
-              {",\n    frontmatter: {\n      id: "}
-              <span className={F}>String</span>
-              {"(b._id),\n      url: b.link,\n      title: b.title,\n      tags: b.tags,\n    },\n  });\n}\n"}
-            </code>
-          </pre>
+          <ShowMore collapsedHeight={180}>
+            <pre className="overflow-auto text-[12px] leading-[20px]">
+              <code>
+                <span className={K}>import</span>
+                {" { readInput, writeEntry } "}
+                <span className={K}>from</span>{" "}
+                <span className={S}>&quot;@dither/plugin&quot;</span>
+                {";\n\n"}
+                <span className={K}>const</span>
+                {" { env } = "}
+                <span className={K}>await</span>{" "}
+                <span className={F}>readInput</span>
+                {"();\n"}
+                <span className={K}>const</span>
+                {" res = "}
+                <span className={K}>await</span>{" "}
+                <span className={F}>fetch</span>
+                {"(\n  "}
+                <span className={S}>
+                  &quot;https://api.raindrop.io/rest/v1/raindrops/0&quot;
+                </span>
+                {",\n  { headers: { Authorization: "}
+                <span className={S}>{"`Bearer ${env.RAINDROP_TOKEN}`"}</span>
+                {" } },\n);\n"}
+                <span className={K}>const</span>
+                {" { items } = "}
+                <span className={K}>await</span>
+                {" res."}
+                <span className={F}>json</span>
+                {"();\n\n"}
+                <span className={K}>for</span>
+                {" ("}
+                <span className={K}>const</span>
+                {" b "}
+                <span className={K}>of</span>
+                {" items) {\n  "}
+                <span className={K}>await</span>{" "}
+                <span className={F}>writeEntry</span>
+                {"({\n    collection: "}
+                <span className={S}>&quot;bookmarks&quot;</span>
+                {",\n    body: "}
+                <span className={S}>
+                  {"`# ${b.title}\\n\\n${b.excerpt}\\n\\n${b.link}`"}
+                </span>
+                {",\n    frontmatter: {\n      id: "}
+                <span className={F}>String</span>
+                {
+                  "(b._id),\n      url: b.link,\n      title: b.title,\n      tags: b.tags,\n    },\n  });\n}\n"
+                }
+              </code>
+            </pre>
+          </ShowMore>
         </CodeFile>
       </div>
     </section>
   );
 }
-

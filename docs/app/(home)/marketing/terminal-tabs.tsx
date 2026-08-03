@@ -41,21 +41,32 @@ export function TerminalTabs() {
   );
 }
 
+// All transcripts mirror the real CLI output (packages/cli/src): ✓/→/⚠
+// step markers, no invented count/timing lines.
 function InitDemo() {
   return (
     <Terminal className="!max-h-none min-h-[440px]">
       <TypingAnimation>$ dither init</TypingAnimation>
-      <AnimatedSpan className="text-[#99D892]">
-        ✔ wrote ~/.dither/config.json
+      <AnimatedSpan className="text-fd-muted-foreground">
+        ? Where should your library live? (ENTER for ~/.dither/library)
       </AnimatedSpan>
       <AnimatedSpan className="text-[#99D892]">
-        ✔ created library at ~/.dither/library
+        ✓ library: ~/.dither/library (created)
       </AnimatedSpan>
       <AnimatedSpan className="text-[#99D892]">
-        ✔ pre-downloaded model weights
+        ✓ wrote ~/.dither/config.json
+      </AnimatedSpan>
+      <AnimatedSpan className="text-fd-muted-foreground">
+        → starting dither daemon...
       </AnimatedSpan>
       <AnimatedSpan className="text-[#99D892]">
-        ✔ wrote welcome.md — open it to get started
+        ✓ daemon started (pid 4821)
+      </AnimatedSpan>
+      <AnimatedSpan className="text-[#99D892]">
+        ✓ indexed 120 files
+      </AnimatedSpan>
+      <AnimatedSpan className="text-[#99D892]">
+        ✓ embedded 980 chunks in 1m 12s
       </AnimatedSpan>
       <TypingAnimation>
         $ echo &quot;# my first note&quot; &gt; ~/.dither/library/notes/first.md
@@ -70,18 +81,22 @@ function PluginRunDemo() {
       <TypingAnimation>
         $ dither plugin install github:dither-plugins/rss
       </TypingAnimation>
+      <AnimatedSpan>installed rss@0.3.0</AnimatedSpan>
       <AnimatedSpan className="text-fd-muted-foreground">
-        granting: read ~/.dither/library/feeds — net rss.* — 2 collections
+        {"  → ~/.dither/plugins/rss"}
       </AnimatedSpan>
-      <AnimatedSpan className="text-[#99D892]">
-        ✔ installed rss
+      <AnimatedSpan className="text-fd-muted-foreground">
+        next: dither plugin run rss
       </AnimatedSpan>
       <TypingAnimation>$ dither plugin run rss</TypingAnimation>
       <AnimatedSpan className="text-fd-muted-foreground">
-        rss: pulling 4 feeds...
+        {'{"type":"log","msg":"pulling 4 feeds"}'}
       </AnimatedSpan>
-      <AnimatedSpan className="text-[#99D892]">
-        ✔ 12 new entries — feeds/
+      <AnimatedSpan className="text-fd-muted-foreground">
+        {'{"type":"log","msg":"wrote feeds/hn/2026-08-03.md"}'}
+      </AnimatedSpan>
+      <AnimatedSpan className="text-fd-muted-foreground">
+        {'{"type":"_result","runId":"rss-20260803-a1b2c3","status":"ok"}'}
       </AnimatedSpan>
     </Terminal>
   );
@@ -90,41 +105,37 @@ function PluginRunDemo() {
 function SearchDemo() {
   return (
     <Terminal className="!max-h-none min-h-[440px]">
-      <AnimatedSpan className="text-fd-muted-foreground">
-        <span className="text-fd-foreground">5</span> collections —{" "}
-        <span className="text-fd-foreground">131,582</span> entries
-      </AnimatedSpan>
       <TypingAnimation>
-        $ dither search &quot;ranking signals&quot;
+        $ dither search &quot;ranking signals&quot; -C
       </TypingAnimation>
-      <AnimatedSpan className="text-fd-muted-foreground">
-        3 results — 18ms
-      </AnimatedSpan>
       <AnimatedSpan>
-        <span className="text-[#4AB5EC]">notes/idea.md</span>{" "}
-        <span className="text-fd-muted-foreground">— 3 days ago</span>
+        <span className="text-fd-muted-foreground">0.842{"  "}</span>
+        <span className="text-[#4AB5EC]">a1b2c3d4</span>
+        <span className="text-fd-muted-foreground">{"  notes  "}</span>
+        Ranking signals for personal search
       </AnimatedSpan>
-      <AnimatedSpan className="text-fd-muted-foreground pl-4">
+      <AnimatedSpan className="text-fd-muted-foreground pl-[17ch]">
         ...recency should decay by query intent, not the clock...
       </AnimatedSpan>
       <AnimatedSpan>
-        <span className="text-[#4AB5EC]">feeds/hn/2026-04-22.md</span>{" "}
-        <span className="text-fd-muted-foreground">— 3 weeks ago</span>
+        <span className="text-fd-muted-foreground">0.771{"  "}</span>
+        <span className="text-[#4AB5EC]">e5f6a7b8</span>
+        <span className="text-fd-muted-foreground">{"  feeds  "}</span>
+        BM25 vs embeddings, honestly
       </AnimatedSpan>
-      <AnimatedSpan className="text-fd-muted-foreground pl-4">
-        ...BM25 alone misses synonymy; pure embeddings drift on rare terms...
+      <AnimatedSpan className="text-fd-muted-foreground pl-[17ch]">
+        ...BM25 alone misses synonymy; pure embeddings drift...
       </AnimatedSpan>
       <TypingAnimation>
-        $ dither search &quot;deno permission flags&quot; --in pocket
+        $ dither search &quot;deno permission flags&quot; -C
       </TypingAnimation>
-      <AnimatedSpan className="text-fd-muted-foreground">
-        2 results — 9ms
-      </AnimatedSpan>
       <AnimatedSpan>
-        <span className="text-[#4AB5EC]">pocket/deno-runtime-deep-dive.md</span>{" "}
-        <span className="text-fd-muted-foreground">— last month</span>
+        <span className="text-fd-muted-foreground">0.868{"  "}</span>
+        <span className="text-[#4AB5EC]">9c8d7e6f</span>
+        <span className="text-fd-muted-foreground">{"  pocket "}</span>
+        Deno runtime deep dive
       </AnimatedSpan>
-      <AnimatedSpan className="text-fd-muted-foreground pl-4">
+      <AnimatedSpan className="text-fd-muted-foreground pl-[17ch]">
         ...--allow-read accepts directory globs, not just paths...
       </AnimatedSpan>
     </Terminal>

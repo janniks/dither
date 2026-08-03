@@ -1,4 +1,5 @@
 import "@/app/global.css";
+import { Agentation } from "agentation";
 import { RootProvider } from "fumadocs-ui/provider";
 import { DM_Serif_Text, Inter } from "next/font/google";
 
@@ -42,6 +43,7 @@ export default function Layout({ children }: LayoutProps<"/">) {
       <body className="flex flex-col min-h-screen">
         <RootProvider theme={{ defaultTheme: "dark" }}>{children}</RootProvider>
         {process.env.NODE_ENV !== "production" && <BreakpointBadge />}
+        {process.env.NODE_ENV === "development" && <Agentation />}
       </body>
     </html>
   );

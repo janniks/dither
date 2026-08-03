@@ -29,7 +29,7 @@ export function HomeNav() {
         className={`relative mx-auto rounded-[28px] border ${
           scrolled
             ? "border-fd-border bg-fd-background/70 max-w-[880px] shadow-[0_8px_24px_-12px_rgba(0,0,0,0.15),0_1px_1px_rgba(255,255,255,0.08)_inset,0_-1px_1px_rgba(255,255,255,0.08)_inset]"
-            : "border-transparent max-w-[1080px] shadow-none"
+            : "border-fd-border max-w-[1080px] shadow-none"
         }`}
         style={{
           transition:
@@ -45,25 +45,31 @@ export function HomeNav() {
           >
             <span
               ref={logoRef}
-              className={`inline-flex items-center gap-[9px] transition-opacity duration-500 ease-out ${
-                ready ? "opacity-100" : "opacity-0"
-              }`}
+              className="inline-flex items-center gap-[9px]"
             >
-              <DitherCanvasHover
-                key={isDark ? "dark" : "light"}
-                width={29}
-                height={29}
-                scale={1}
-                mode="radial"
-                exitDelay={0.3}
-                settleDuration={1.4}
-                stopAt={2.6}
-                rounded={7}
-                bg={isDark ? [245, 245, 245] : [10, 10, 10]}
-                fg={isDark ? [10, 10, 10] : [255, 255, 255]}
-                triggerRef={logoRef}
-                onReady={() => setReady(true)}
-              />
+              <span
+                // Space reserved while the canvas boots so only it fades in —
+                // the wordmark is visible immediately.
+                className={`inline-flex h-[29px] w-[29px] transition-opacity duration-500 ease-out ${
+                  ready ? "opacity-100" : "opacity-0"
+                }`}
+              >
+                <DitherCanvasHover
+                  key={isDark ? "dark" : "light"}
+                  width={29}
+                  height={29}
+                  scale={1}
+                  mode="radial"
+                  exitDelay={0.3}
+                  settleDuration={1.4}
+                  stopAt={2.6}
+                  rounded={7}
+                  bg={isDark ? [245, 245, 245] : [10, 10, 10]}
+                  fg={isDark ? [10, 10, 10] : [255, 255, 255]}
+                  triggerRef={logoRef}
+                  onReady={() => setReady(true)}
+                />
+              </span>
               <span className="text-[21px] font-[650] leading-none tracking-[-0.04em] will-change-transform">
                 dither
               </span>

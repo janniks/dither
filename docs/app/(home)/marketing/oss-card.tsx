@@ -7,8 +7,7 @@ export function OssCard() {
   return (
     <section className="border bg-fd-card flex flex-wrap items-center justify-between gap-4 rounded-[20px] p-6">
       <p className="text-fd-foreground max-w-[720px] text-[15px] leading-[26px]">
-        Read the source code. Write a plugin in twenty lines. Open
-        issues, ship PRs.
+        Read the source code. Open issues, ship PRs.
       </p>
       <a
         href={REPO_URL}

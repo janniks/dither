@@ -7,7 +7,7 @@ export function RotatingHeadline() {
     <h1
       // Smaller on mobile (default + sm), original clamp on md+ so wide
       // viewports stay identical. Mobile splits the headline onto 3 lines
-      // instead of 2 (Access all your / chip / as markdown).
+      // instead of 2 (Archive all your / chip / as markdown).
       className="text-[clamp(36px,9.5vw,48px)] leading-[1.05] font-[650] tracking-[-0.04em] sm:text-[44px] sm:tracking-[-0.05em] md:leading-none md:text-[clamp(44px,7vw,64px)]"
     >
       <span className="flex flex-wrap items-center">
@@ -21,7 +21,7 @@ export function RotatingHeadline() {
               layout
               transition={{ type: "spring", damping: 30, stiffness: 400 }}
             >
-              Access all{" "}
+              Archive all{" "}
             </motion.span>
             {/* xs-only break — forces "your [chip]" to the next line below "Access all" */}
             <span aria-hidden className="basis-full sm:hidden" />
@@ -48,6 +48,10 @@ export function RotatingHeadline() {
                 flexWrap: "nowrap",
                 whiteSpace: "nowrap",
                 fontFamily: "var(--font-dm-serif), serif",
+                // Safari anti-aliasing mitigations for transform-animated text
+                backfaceVisibility: "hidden",
+                transform: "translateZ(0)",
+                WebkitFontSmoothing: "antialiased",
               }}
               staggerFrom="last"
               initial={{ y: "100%" }}

@@ -19,7 +19,7 @@ export function Manifesto() {
   return (
     <section
       id="manifesto"
-      className="flex scroll-mt-24 flex-col items-center"
+      className="flex scroll-mt-24 flex-col items-center py-6 md:py-10"
     >
       <article
         className="bg-fd-card relative max-w-[720px] overflow-hidden p-6 sm:p-8 md:p-12"

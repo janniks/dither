@@ -15,40 +15,38 @@ export function ScheduleWatchDemo() {
         </p>
         <ul className="text-fd-muted-foreground mt-2 flex flex-col gap-1 text-[13px]">
           <li>
-            <span className="text-fd-foreground font-mono">schedule</span> —
-            cron, every N minutes, or on a wall-clock.
+            <span className="text-fd-foreground font-mono">--every</span> — a
+            cron expression or a plain interval like &quot;every 15min&quot;.
           </li>
           <li>
-            <span className="text-fd-foreground font-mono">watch</span> — fs
-            events, debounced, batched.
+            <span className="text-fd-foreground font-mono">--watch</span> — a
+            collection or directory; fires on filesystem changes.
           </li>
           <li>
-            <span className="text-fd-foreground font-mono">run</span> — manual
-            one-shot for ad-hoc ingests.
+            <span className="text-fd-foreground font-mono">
+              dither plugin run
+            </span>{" "}
+            — manual one-shot for ad-hoc ingests.
           </li>
         </ul>
       </div>
       <div className="flex justify-center md:justify-start">
         <Terminal>
-          <TypingAnimation>$ dither schedule add bookmarks --every 1h</TypingAnimation>
-          <AnimatedSpan className="text-[#99D892]">
-            ✔ Scheduled bookmarks every 1h
-          </AnimatedSpan>
+          <TypingAnimation>
+            $ dither plugin run bookmarks --every &quot;1h&quot;
+          </TypingAnimation>
+          <AnimatedSpan>scheduled bookmarks: every 1h</AnimatedSpan>
+          <AnimatedSpan>&nbsp;</AnimatedSpan>
           <AnimatedSpan className="text-fd-muted-foreground">
-            next run: 14:00 · last: never · job id: sch_a12f
+            next: dither plugin list
           </AnimatedSpan>
-          <TypingAnimation>$ dither watch ~/Inbox --collection notes</TypingAnimation>
-          <AnimatedSpan className="text-[#99D892]">
-            ✔ Watching ~/Inbox → notes
-          </AnimatedSpan>
+          <TypingAnimation>
+            $ dither plugin run notes-inbox --watch notes
+          </TypingAnimation>
+          <AnimatedSpan>watching for notes-inbox: notes</AnimatedSpan>
+          <AnimatedSpan>&nbsp;</AnimatedSpan>
           <AnimatedSpan className="text-fd-muted-foreground">
-            + draft-202605.md · indexed (1.2 KB · 4 chunks)
-          </AnimatedSpan>
-          <AnimatedSpan className="text-fd-muted-foreground">
-            + agentic-ranking.md · indexed (0.8 KB · 2 chunks)
-          </AnimatedSpan>
-          <AnimatedSpan className="text-fd-muted-foreground">
-            idle · debouncing
+            next: dither plugin list
           </AnimatedSpan>
         </Terminal>
       </div>

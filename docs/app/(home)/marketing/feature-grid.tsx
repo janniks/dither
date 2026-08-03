@@ -93,7 +93,7 @@ export function FeatureGrid() {
                   </span>
                 ) : null}
               </h3>
-              <p className="text-fd-muted-foreground mt-2 text-[13px] leading-[20px]">
+              <p className="text-fd-muted-foreground mt-2 text-[13px] leading-[20px] max-sm:line-clamp-2">
                 {f.body}
               </p>
             </div>

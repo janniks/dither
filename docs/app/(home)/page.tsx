@@ -9,6 +9,7 @@ import { PluginUsp } from "./marketing/plugin-usp";
 import { WaveRow } from "./marketing/wave-row";
 import { ScheduleWatchDemo } from "./marketing/schedule-watch-demo";
 import { TerminalTabs } from "./marketing/terminal-tabs";
+import { ToolMarquee } from "./marketing/tool-marquee";
 import { JustMarkdown } from "./marketing/just-markdown";
 import { SphereRow } from "./marketing/sphere-row";
 import { Manifesto } from "./marketing/manifesto";
@@ -83,18 +84,19 @@ export default function HomePage() {
         </section>
         */}
 
+        <ToolMarquee />
         <TerminalTabs />
         <JustMarkdown />
         <FeatureGrid />
         <NoBsStrip />
-        <PluginUsp />
         {/* <AgentMarquee /> */}
         <WaveRow />
-        <ScheduleWatchDemo />
+        <PluginUsp />
         {/* <ArchitectureDiagram /> */}
         {/* <TerminalMcp /> */}
         <hr className="border-fd-border mx-auto w-full max-w-[760px] border-t" />
         <SphereRow />
+        <ScheduleWatchDemo />
         <Manifesto />
         <Faq />
 

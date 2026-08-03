@@ -1,6 +1,7 @@
 "use client";
 import { ArrowUpRight, Plus } from "lucide-react";
 import { Dithering } from "@paper-design/shaders-react";
+import { toolIcons } from "./tool-icons";
 
 type Status = "shipped" | "wip" | "planned";
 
@@ -73,11 +74,6 @@ const plugins: Plugin[] = [
 
 const REQUEST_PLUGIN_URL = "https://github.com/janniks/dither/discussions/1";
 
-const statusStyles: Record<Status, string> = {
-  shipped: "bg-green-500/15 text-green-500 border-green-500/30",
-  wip: "bg-yellow-500/15 text-yellow-500 border-yellow-500/30",
-  planned: "bg-fd-muted text-fd-muted-foreground border-fd-border",
-};
 
 export function WaveRow() {
   return (
@@ -130,21 +126,26 @@ export function WaveRow() {
             } ${p.status === "wip" ? "opacity-80" : ""}`}
           >
             <div className="flex items-center gap-3">
-              <span
-                aria-hidden
-                className="text-[15px] inline-flex h-8 w-8 items-center justify-center rounded-[10px] font-mono font-semibold text-white"
-                style={{ backgroundColor: p.color }}
-              >
-                {p.name[0]}
-              </span>
+              {(() => {
+                const Icon = toolIcons[p.name as keyof typeof toolIcons];
+                return (
+                  <span
+                    aria-hidden
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-[10px] text-white"
+                    style={{ backgroundColor: p.color }}
+                  >
+                    {Icon ? <Icon size={16} /> : p.name[0]}
+                  </span>
+                );
+              })()}
               <span className="text-fd-foreground text-[14px] font-semibold capitalize">
                 {p.name.replaceAll("-", " ")}
               </span>
-              <span
-                className={`ml-auto hidden items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase sm:inline-flex ${statusStyles[p.status]}`}
-              >
-                {p.status === "planned" ? "Coming soon" : p.status}
-              </span>
+              {p.status === "planned" && (
+                <span className="bg-fd-muted text-fd-muted-foreground border-fd-border ml-auto hidden items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase sm:inline-flex">
+                  Coming soon
+                </span>
+              )}
             </div>
             <p className="text-fd-muted-foreground text-[13px] leading-[20px]">
               {p.description}
