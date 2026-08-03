@@ -23,7 +23,7 @@ export function Manifesto() {
     >
       <article
         // `border-2 border-fd-border/60` is an experimental 2px border — remove freely
-        className="bg-fd-card border-2 border-fd-border/60 relative max-w-[720px] overflow-hidden p-6 sm:p-8 md:p-12"
+        className="bg-fd-card border-2 border-fd-border/60 relative max-w-[760px] overflow-hidden p-6 sm:p-8 md:p-12"
         style={{ borderRadius: 0 }}
       >
         <p className="text-fd-muted-foreground relative z-[1] text-[12px] font-semibold tracking-[0.12em] uppercase">

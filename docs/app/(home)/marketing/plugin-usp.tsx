@@ -10,7 +10,7 @@ const F = "text-[#4AB5EC]";
 export function PluginUsp() {
   return (
     <section className="flex flex-col gap-8">
-      <div className="max-w-[640px]">
+      <div className="max-w-[760px]">
         <h2 className="text-3xl font-[650] tracking-[-0.02em]">
           Plugins are simple TypeScript. Sandboxed.
         </h2>
