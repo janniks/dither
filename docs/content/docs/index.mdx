@@ -35,11 +35,11 @@ node packages/cli/dist/cli.mjs --help
 
 dither separates two roots:
 
-- **dither home** — bookkeeping (config, plugins, grants, runs, history, qmd index, daemon state). Default `~/.dither/`. Override with `$DITHER_DIR` (or `$XDG_CONFIG_HOME/dither`; `$DITHER_HOME` is the deprecated alias).
-- **library** — your markdown content. Default `<dither-home>/library/`; configurable via `dither init --library <path>`.
+- **config dir** — bookkeeping (config, plugins, grants, runs, history, qmd index, daemon state). Resolved in order: `$DITHER_DIR`, then `$XDG_CONFIG_HOME/dither`, then `~/.dither/`.
+- **library** — your markdown content. Default `$DITHER_DIR/library/` when `$DITHER_DIR` is set, else `~/.dither/library/` (the library deliberately ignores XDG); configurable via `dither init --library <path>`.
 
 ```
-<dither-home>/
+<config-dir>/
   config.json                 schema + library.path
   plugins/<name>/             installed plugin code + state
   grants/<name>.json          plugin manifest + resolved grants

@@ -7,7 +7,7 @@ description: Re-scan the library and refresh the qmd index.
 dither index update
 ```
 
-Re-scans every collection (every top-level subdirectory of the configured library) and refreshes the qmd search index at `<dither-home>/qmd-index.sqlite`. Run this whenever you've edited markdown by hand, dropped in files from elsewhere, or want to make sure the index is current.
+Re-scans every collection (every top-level subdirectory of the configured library) and refreshes the qmd search index at `<config-dir>/qmd-index.sqlite`. The config dir is `$DITHER_DIR`, else `$XDG_CONFIG_HOME/dither`, else `~/.dither`. Run this whenever you've edited markdown by hand, dropped in files from elsewhere, or want to make sure the index is current.
 
 You don't need to call it after `dither plugin run` — the runner refreshes the index automatically when a plugin promotes new entries (scoped to the touched collections).
 
@@ -29,6 +29,19 @@ index updated: <N> collection(s), <N> indexed, <N> updated
 
 When the library has no subdirectories, the command prints all zeros and exits successfully.
 
+If the daemon is running, it's notified afterwards so an embedding pass follows:
+
+```
+  daemon (pid 4821) notified — embed pass will follow.
+```
+
+If the daemon is already indexing, the command doesn't wait — it queues a catch-up reindex and exits with status 1:
+
+```
+⚠ qmd is busy: indexing (started 12s ago).
+  watch with `dither status`. needs-reindex queued for catch-up.
+```
+
 ## Example
 
 ```bash
@@ -36,4 +49,15 @@ $ dither index update
 index updated: 3 collection(s), 142 indexed, 7 updated
 ```
 
-See also: [CLI overview](/docs/cli), [`dither search`](/docs/cli/search).
+## dither index cancel
+
+The sibling subcommand cancels the running qmd job. Embedding stops at the next iteration boundary; indexing and model downloads can't be interrupted mid-call and run to completion.
+
+```bash
+$ dither index cancel
+✓ cancelled embed
+```
+
+With nothing running it prints `nothing to cancel — no qmd job running.` and exits successfully.
+
+See also: [CLI overview](/docs/cli), [`dither search`](/docs/cli/search), [`dither status`](/docs/cli/status).

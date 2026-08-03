@@ -31,13 +31,15 @@ daemon:      idle (pid 14675)
 
 | Line          | Meaning                                                                                                |
 | ------------- | ------------------------------------------------------------------------------------------------------ |
-| `config dir`  | Resolved dither home (`$DITHER_DIR` → `$XDG_CONFIG_HOME/dither` → `$DITHER_HOME` → `~/.dither`). When `$DITHER_DIR` is set, a `Note: Using ENV DITHER_DIR=…` header is printed above. |
-| `library`     | Configured library path, or `(not configured — run dither init)`. Annotated `⚠ missing` / `⚠ unreadable` if the directory is gone or not readable. |
-| `plugins`     | Number of grants files under `<dither-home>/grants/` (one per installed plugin).                       |
-| `collections` | Number of top-level directories under the configured library. `—` if library is unconfigured / missing / unreadable. |
-| `entries`     | Recursive count of `*.md` files under the configured library. `—` if library is unconfigured / missing / unreadable. |
-| `daemon`      | `idle (pid N)`, `running (pid N, K plugin[s])`, `running (pid N)` if no snapshot, or `not running`.   |
+| `config dir`  | Resolved config dir (`$DITHER_DIR` → `$XDG_CONFIG_HOME/dither` → `~/.dither`). When `$DITHER_DIR` is set, a `Note: Using ENV DITHER_DIR=…` header is printed above. |
+| `library`     | Configured library path (default `$DITHER_DIR/library`), or `(not configured — run dither init)`. Annotated `⚠ missing` / `⚠ unreadable` if the directory is gone or not readable. |
+| `plugins`     | Number of grants files under `<config-dir>/grants/` (one per installed plugin).                       |
+| `collections` | Collections known to the index. `—` if library is unconfigured / missing / unreadable.                |
+| `entries`     | Documents known to the index. `—` if library is unconfigured / missing / unreadable.                  |
+| `daemon`      | `idle (pid N)`, `running (pid N, K plugin[s])`, `running (pid N)` if no snapshot, or `not running` (with the probe reason). A dim `status updated <ago>` line follows when a snapshot exists. |
 
-This is a filesystem walk, not an index lookup, so the counts reflect what's on disk regardless of whether the qmd index is up to date. To make the index match what `status` reports, run [`dither index update`](/docs/cli/index-update).
+When indexing or embedding work is in flight — or recently finished — extra lines follow: `current:` for the running job (with progress and elapsed time), `recent:` for the last few finished jobs (`✓` done, `⚠` failed, `⊘` skipped), plus `needs-reindex pending` and `embed-disabled` markers. The block is omitted entirely when there's nothing to report.
+
+The counts come from the qmd index, not a filesystem walk, so they lag disk until the index catches up. Run [`dither index update`](/docs/cli/index-update) to refresh it.
 
 See also: [CLI overview](/docs/cli).

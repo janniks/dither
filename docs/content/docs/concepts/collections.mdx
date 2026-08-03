@@ -12,7 +12,7 @@ A **collection is a top-level folder** under your configured library — or a pr
   gmail/             ← collection "gmail"
 ```
 
-The library path is recorded in `<dither-home>/config.json` and chosen at `dither init`. By default it's `<dither-home>/library/`; with `dither init --library <path>` it's wherever you point it. See [Storage layout](/docs/concepts/storage) for the dither-home / library split.
+The library path is recorded in `<config-dir>/config.json` and chosen at `dither init`. The config dir resolves as `$DITHER_DIR` → `$XDG_CONFIG_HOME/dither` → `~/.dither`. By default the library is `$DITHER_DIR/library/` (or `~/.dither/library/`); with `dither init --library <path>` it's wherever you point it. See [Storage layout](/docs/concepts/storage) for the config-dir / library split.
 
 To create a new collection, make the directory under the library. To delete one, remove the directory. The next `dither index update` reflects the change. To register an existing folder outside the library (e.g. `~/Documents/work-notes/`), use `dither collection add <path>`; the folder stays where it is, and dither indexes and grants against it under the registered name. See [Adding external collections](#external-collections) below.
 
@@ -60,20 +60,20 @@ A plugin's manifest declares the collections it _wants_ to write to. Entries are
 ```jsonc
 {
   "dither": {
-    "collections": ["notes", "messages/**"],
+    "create": ["notes", "messages/**"],
   },
 }
 ```
 
-That's the install-time **default**. At install you can override or extend it via `--allow-collection`:
+That's the install-time **default**. At install you can override or extend it via `--create` (and `--edit` for overwriting entries other plugins created):
 
 ```bash
-dither plugin install ./my-plugin --allow-collection 'messages/tom/**'
+dither plugin install ./my-plugin --create 'messages/tom/**'
 ```
 
 Glob semantics: `notes` matches only the literal `notes` collection, `messages/*` matches direct children only, `messages/2026-*` is partial-segment match, and `messages/**` matches **both `messages` itself and any descendant** — the runner special-cases the `<X>/**` form to also cover the bare `<X>` parent, since plugin authors granting a subtree almost always want the parent included.
 
-If you pass no flag, the grant defaults to whatever the manifest declared. The manifest is **not** a ceiling — your `--allow-collection` flag is what actually ends up in the grants file, and that's what gates promote. Promote validates each output's `collection:` frontmatter against the grant set; values matching no glob are rejected.
+If you pass no flag, the grant defaults to whatever the manifest declared. The manifest is **not** a ceiling — your `--create` flag is what actually ends up in the grants file, and that's what gates promote. Promote validates each output's `collection:` frontmatter against the grant set; values matching no glob are rejected.
 
 Plugins can write to nested paths: `writeEntry({ collection: "messages/tom" })` lands at `<library>/messages/tom/<id>.md`. Path identifiers must use `[a-zA-Z0-9._-]` per segment, must not start a segment with `.` (no dotfile-style folders like `.git`), joined by `/`, with no `..`, no leading/trailing `/`, no empty segments, and no `.md` suffix on the path itself.
 
@@ -109,7 +109,7 @@ dither collection list                                    # library subdirs + ex
 dither collection remove journal                          # unregister (files untouched)
 ```
 
-A registered external collection behaves identically to a library subdir for search, grants, and plugin writes — `--allow-collection work-notes/**` works the same way regardless of whether `work-notes` is on the library tree or somewhere else. The on-disk path is recorded under `collections.external` in `config.json`. Names are flat (no `/`), case-insensitive against library subdirs and other externals, and the path must not overlap the library or any other registered external. If the external path goes missing at runtime (drive unplugged, folder moved), `dither collection list` flags it and operations against other collections keep working.
+A registered external collection behaves identically to a library subdir for search, grants, and plugin writes — `--create work-notes/**` works the same way regardless of whether `work-notes` is on the library tree or somewhere else. The on-disk path is recorded under `collections.external` in `config.json`. Names are flat (no `/`), case-insensitive against library subdirs and other externals, and the path must not overlap the library or any other registered external. If the external path goes missing at runtime (drive unplugged, folder moved), `dither collection list` flags it and operations against other collections keep working.
 
 Auto-create is library-only: a plugin writing `collection: "brand-new-name"` always creates `<library>/brand-new-name/`. External mounts must be registered explicitly.
 
@@ -117,7 +117,7 @@ Auto-create is library-only: a plugin writing `collection: "brand-new-name"` alw
 
 dither doesn't store entries in a database. Search is provided by [qmd](https://github.com/tobi/qmd), which builds a SQLite index over the directory tree. Every top-level subdirectory of the library AND every registered external collection is registered as a qmd collection on open, and qmd indexes `**/*.md` underneath each.
 
-The index file lives at `<dither-home>/qmd-index.sqlite` — in dither home, not the library. Don't edit it; it's regenerable from your markdown. See [Storage](/docs/concepts/storage).
+The index file lives at `<config-dir>/qmd-index.sqlite` — in the config dir, not the library. Don't edit it; it's regenerable from your markdown. See [Storage](/docs/concepts/storage).
 
 To (re)scan the tree after manual edits or external file moves, run:
 
@@ -131,7 +131,7 @@ Plugin runs trigger this automatically when they promote new entries (scoped to 
 
 dither doesn't fight you. Open any `.md` under your library in your editor, change the body, change the frontmatter, rename the file — it's all fine. The host doesn't lock files and doesn't impose body conventions. After a manual edit, run `dither index update` to refresh the search index.
 
-If you have an installed plugin with a `watch` block that points at the collection you're editing, the daemon will pick up your changes via chokidar and fire that plugin — useful when intentional, surprising when not. Plugins with no `watch` block (the common case for ingest plugins) don't react to hand edits.
+If you have an installed plugin with a `watch` block (from its manifest, or added via `dither plugin run --watch`) that points at the collection you're editing, the daemon will pick up your changes via chokidar and fire that plugin — useful when intentional, surprising when not. Plugins with no `watch` block (the common case for ingest plugins) don't react to hand edits.
 
 If you delete or move a file by hand, run `dither index update` to drop stale entries from the index.
 

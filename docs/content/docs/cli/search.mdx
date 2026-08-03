@@ -7,7 +7,9 @@ description: Search across your entries.
 dither search <query> [flags]
 ```
 
-Searches the qmd index built from your configured library. Prints one tab-separated line per hit: `<displayPath>\t<score>\t<title>`. Refuses with the standard pre-init error until [`dither init`](/docs/cli/init) has run.
+Searches the qmd index built from your configured library. Refuses with the standard pre-init error until [`dither init`](/docs/cli/init) has run.
+
+Output depends on where it lands. On a TTY: an aligned table of `score  docid  collection  title`. Piped: one tab-separated line per hit — `<docid>\t<score>\t<collection>\t<path>\t<title>` (with `--preview`, each snippet line is appended as a sixth column on its own row). The docid is the key [`dither get`](/docs/cli/get) takes.
 
 ## Arguments
 
@@ -23,6 +25,10 @@ Searches the qmd index built from your configured library. Prints one tab-separa
 | `-n, --limit <N>`         | Max results to return. Defaults to qmd's internal default.                                                               |
 | `--rerank`                | Run the LLM reranker over the candidate set. Slower, higher quality. Only meaningful in `hybrid` mode.                   |
 | `--mode <hybrid\|lex>`    | `hybrid` (default) combines BM25 + vector + LLM query expansion. `lex` is pure BM25 — no models, no embeddings, instant. |
+| `-p, --preview`           | Show a snippet of the matched line under each hit.                                                                       |
+| `-A, --after <N>`         | Preview N lines after the match (grep `-A`). Implies `--preview`.                                                        |
+| `-B, --before <N>`        | Preview N lines before the match (grep `-B`). Implies `--preview`.                                                       |
+| `-C, --context <N>`       | Preview N lines around the match (grep `-C`). Implies `--preview`; `-A`/`-B` override their side.                        |
 
 `--mode` only accepts the literal strings `hybrid` and `lex`; anything else is ignored and the default is used.
 
@@ -32,8 +38,8 @@ Search everything:
 
 ```bash
 dither search "auth flow"
-# notes/auth.md         0.842  Auth flow notes
-# meetings/2025-q3.md   0.611  Q3 planning
+# 0.842  a1b2c3d4  notes     Auth flow notes
+# 0.611  e5f6a7b8  meetings  Q3 planning
 ```
 
 Restrict to one collection, top 5:
@@ -54,10 +60,17 @@ With reranking:
 dither search "what did I write about auth" --rerank
 ```
 
+With two lines of context around each match:
+
+```bash
+dither search "auth flow" -C 2
+```
+
 ## Notes
 
 - Hybrid mode requires qmd's models. By default, `dither init` pre-downloads them so the first query is fast; pass `--no-download` at init to skip and let them lazy-load instead.
 - If the library is empty, `search` returns no results silently.
+- While an embedding pass is still running, search prints a note that some results may be missing — re-run once it finishes.
 - Make sure the index is current — run [`dither index update`](/docs/cli/index-update) after editing files outside the plugin runner.
 
 See also: [CLI overview](/docs/cli).

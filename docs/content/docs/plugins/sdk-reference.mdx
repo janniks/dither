@@ -5,48 +5,63 @@ description: Every export from @dither/plugin with signatures, behavior, and exa
 
 `@dither/plugin` is the author SDK for dither plugins. It is a tiny module with no transitive runtime deps, designed to be imported under Deno via the import map the host injects.
 
-Every function must be called from inside a plugin run — the host sets up the surrounding environment, and the SDK will throw if invoked outside of it.
+Every function must be called from inside a plugin run — the host sets up the surrounding environment, and the SDK will throw if invoked outside of it. Runs are supervised by the dither daemon: it writes the run's `input.json`, spawns the plugin with a scratch run dir, and promotes the `*.md` files the plugin leaves behind.
 
 ## `interface PluginInput`
 
 ```ts
+interface WatchTarget {
+  path: string;
+  mtime: string;
+}
+
 interface PluginInput {
   trigger: "scheduled" | "watch" | "manual";
   env: Record<string, string>;
   files: Record<string, string>;
-  targets: string[];
+  targets: WatchTarget[];
+  net: string[];
 }
 ```
 
-The shape returned by `readInput()`.
+The shape returned by `readInput()` — i.e. the contents of the run's `input.json`.
 
 Fields:
 
 - `trigger` — what fired the run. Plugins that behave differently on scheduled vs. manual runs can branch on this.
 - `env` — resolved env values keyed by the manifest's declared `name`. **All values are strings.** Plugins coerce in code (`Number(input.env.MAX_RUNS)`, `input.env.DEBUG === "true"`). Optional values that the user did not supply and that have no `default` will simply be missing keys.
 - `files` — absolute paths to the user's file/folder inputs, keyed by `id`. Each path is on Deno's `--allow-read` allowlist. Optional file inputs that the user did not supply will simply be missing keys.
-- `targets` — populated for watch-triggered runs with the paths that changed. Empty for manual and scheduled runs.
+- `targets` — for watch-triggered runs, the entries queued for this fire: `{ path, mtime }` where `path` is absolute and `mtime` is ISO-8601 UTC (usable as a resume cursor). Empty on manual and scheduled runs unless the caller supplied explicit targets.
+- `net` — the hosts this run may reach, mirroring the `--allow-net=` the host spawned it with. Empty means no network; a single `"*"` means any host. Lets a plugin read its own network grant instead of hardcoding the same host in both code and manifest.
 
 ## `interface EntryOptions`
 
 ```ts
+type FrontmatterValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly FrontmatterValue[]
+  | { readonly [key: string]: FrontmatterValue | undefined };
+
 interface EntryOptions {
   collection: string;
   body: string;
-  frontmatter?: Record<string, unknown>;
+  frontmatter?: Record<string, FrontmatterValue | undefined>;
   filename?: string;
 }
 ```
 
 The argument to `writeEntry()`.
 
-- `collection` — target collection. May be a nested path (e.g. `"messages/tom"`). Promotion matches it against the plugin's `dither.collections` grants (each is a glob pattern); if no grant glob matches, the file is rejected. Path rules: per-segment `[a-zA-Z0-9._-]`, no `..`, no leading/trailing `/`, no `.md` suffix.
+- `collection` — target collection. May be a nested path (e.g. `"messages/tom"`). Promotion matches it against the plugin's `create` grants (each is a glob pattern, set at install via `--create`); if no grant glob matches, the output is skipped. Path rules: per-segment `[a-zA-Z0-9._-]`, no `..`, no leading/trailing `/`, no `.md` suffix.
 - `body` — markdown body. Do **not** include your own frontmatter fence; the SDK emits one for you.
-- `frontmatter` — optional fields. **Three keys are reserved: `id`, `source`, `collection`.** Any value you put under those keys is overwritten by the SDK before writing:
+- `frontmatter` — optional fields. Values must be JSON-ish (`FrontmatterValue`); keys whose value is `undefined` are dropped, and a `bigint`, function, or symbol throws. **Three keys are reserved: `id`, `source`, `collection`.** Any value you put under those keys is overwritten by the SDK before writing:
   - `id` — if you set `frontmatter.id` to a string, it is used as the entry id (and as the default filename). The id must be a flat name — no `/` or `\\`, and not `.` or `..` — or `writeEntry` throws. Otherwise a UUID is generated.
   - `source` — always overwritten with the plugin's name.
   - `collection` — always overwritten with `opts.collection`.
-- `filename` — optional output filename inside the run dir. Defaults to `<id>.md`. Must be a flat name (same rules as `id`). Two outputs with the same filename in the same run overwrite each other; at promote, a clash with an existing entry written by a *different* plugin is rejected (a clash with this plugin's own previous output is allowed and overwrites).
+- `filename` — optional output filename inside the run dir. Defaults to `<id>.md`. Must be a flat name (same rules as `id`). Two outputs with the same filename in the same run overwrite each other; at promote, a clash with an existing entry written by a *different* plugin is skipped unless an `edit` grant (`--edit`) covers that collection (a clash with this plugin's own previous output is always allowed and overwrites).
 
 ## `readInput()`
 
@@ -193,7 +208,7 @@ await writeState(state);
 function writeState<T>(state: T): Promise<void>;
 ```
 
-JSON-stringifies `state` (pretty-printed, 2-space indent) and writes it to `DITHER_STATE_FILE`, creating the parent directory if necessary.
+JSON-stringifies `state` (pretty-printed, 2-space indent) and writes it to `DITHER_STATE_FILE`, creating the parent directory if necessary. The write goes to a temp file in the same directory and is `rename`d into place, so a crash mid-write can't leave a truncated state file.
 
 **Behavior:**
 
@@ -235,8 +250,8 @@ Emit a status update to the host. Synchronous: writes one NDJSON line to stderr 
 
 **Display:**
 
-- `dither plugin run <name>` (blocking) overwrites a single status line on a TTY. On a non-TTY it appends each message on its own line.
-- `dither plugin run <name> --detach` writes every message into the log file at `<dither-home>/logs/<plugin>-<ms>.log` (where `<ms>` is the spawn epoch in milliseconds).
+- `dither plugin run <name>` kicks the daemon and tails the run's journal, overwriting a single status line on a TTY. On a non-TTY it appends each message on its own line.
+- `dither plugin run <name> --detach` returns immediately; every message still lands in the run's journal under `<config-dir>/history/<run-id>/`. Tail it later with `dither plugin runs <name>`.
 
 **Example:**
 
@@ -253,9 +268,47 @@ for (const id of ids) {
 progress({ message: `done — ${ids.length} items`, done: ids.length, total: ids.length });
 ```
 
+## `reschedule(opts)`
+
+```ts
+interface RescheduleOptions {
+  afterMs: number; // required, positive; host clamps to >= 1000
+  reason?: string;
+}
+function reschedule(opts: RescheduleOptions): void;
+```
+
+Ask the host to fire this plugin again later — a rate-limit cooldown, a transient network failure, or self-imposed pacing. Synchronous: writes one NDJSON line to stderr with a `_dither: "reschedule"` sentinel, same control channel as `progress`.
+
+**Behavior:**
+
+- Throws synchronously if `afterMs` is missing, non-finite, or not positive.
+- The host preserves inflight rows (they carry into the refire), schedules the refire at now + `afterMs`, and does **not** increment the consecutive-failure counter — a cooperative pause is not a crash.
+- Multiple calls in one run are allowed; the last `afterMs` wins.
+- Call it and then `return` (or `Deno.exit(0)`) — the plugin should exit cleanly rather than keep processing targets.
+
+**Example:**
+
+```ts
+import { reschedule } from "@dither/plugin";
+
+if (res.status === 429) {
+  reschedule({ afterMs: 60_000, reason: "rate limited" });
+  Deno.exit(0);
+}
+```
+
+## `VERSION`
+
+```ts
+const VERSION: string;
+```
+
+The SDK's own version string. Informational only — nothing in the host reads it.
+
 ## Putting it together
 
-A complete plugin that uses every export:
+A complete plugin using the common exports:
 
 ```ts
 import { readInput, readState, writeEntry, writeState } from "@dither/plugin";

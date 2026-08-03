@@ -1,37 +1,49 @@
 ---
 title: dither init
-description: Initialize dither home, write config, and choose where the markdown library lives.
+description: Initialize the dither config dir, write config, and choose where the markdown library lives.
 ---
 
-`dither init` is the **required first step** before any library-needing command will run. It writes `<dither-home>/config.json`, creates the library directory, and pre-downloads qmd's model weights so the first `dither search` doesn't hang.
+`dither init` is the **required first step** before any library-needing command will run. It writes `<config-dir>/config.json`, creates the library directory, starts the daemon, and lets it index + embed your library so the first `dither search` doesn't hang.
 
 ```bash
 dither init
 dither init --library ~/Documents/dither
 dither init --no-download
+dither init --library ~/Documents/dither --no-wait
 ```
+
+## Config dir
+
+Resolved once, first match wins:
+
+1. `$DITHER_DIR`
+2. `$XDG_CONFIG_HOME/dither`
+3. `~/.dither`
 
 ## Arguments
 
-| Flag             | Default                       | Effect                                                                                                  |
-| ---------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `--library <p>`  | prompt on TTY, else error     | Library directory. Created if missing. Canonicalised via `realpath`. Must be a writable directory.      |
-| `--no-download`  | off                           | Skip qmd model weight prefetch (offline / CI). Search will fall back to lex-only until weights land.    |
+| Flag            | Default                   | Effect                                                                                                    |
+| --------------- | ------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `--library <p>` | prompt on TTY, else error | Library directory. Created if missing. Canonicalised via `realpath`. Must be a writable directory.        |
+| `--no-download` | download on               | Skip qmd model weight prefetch (offline / CI) by disabling embedding for this init. `dither index update` clears it. |
+| `--no-welcome`  | welcome on                | Skip writing `<library>/welcome/welcome.md`.                                                              |
+| `--no-wait`     | wait on                   | Dispatch the daemon work and return immediately; check progress with `dither status`.                     |
 
-If you don't pass `--library` on a TTY, init drops into an interactive prompt for the path (default: `<dither-home>/library`). Without a TTY, `--library` is required and init exits with code 2 if it's missing.
+If you don't pass `--library` on a TTY, init drops into an interactive prompt for the path (default: `$DITHER_DIR/library`, else `~/.dither/library` — the library default deliberately ignores XDG). Without a TTY, `--library` is required and init exits with code 2 if it's missing. Cancelling the prompt exits 130 with no partial state.
 
 ## What it does
 
-1. Ensure `<dither-home>/` exists.
+1. Ensure the config dir exists.
 2. If `config.json` already exists: print the current paths and exit 0. `--library` on a re-run is ignored with a note that re-init isn't supported.
 3. Resolve the library path (flag or interactive prompt):
-   - If the path doesn't exist, create it (with parents) and report `created` in the summary.
-   - If the path exists and is a regular file, error out.
+   - If the path doesn't exist, create it (with parents) and report `(created)`. Errors if the parent doesn't exist or isn't writable.
+   - If the path exists and isn't a directory, error out.
    - If the path exists and isn't writable, error out.
    - Resolve symlinks via `realpath` and store the canonical target in config.
-4. Write `<dither-home>/config.json` (`schema.version: 2`, `library.path`, empty `collections.external`).
-5. Run `store.update()` once over the library so the qmd SQLite exists with schema applied. Empty libraries skip this — the SQLite is created lazily on first plugin promote.
-6. Unless `--no-download`, attempt to pre-download embedding/rerank model weights. Failure is non-fatal — the summary flags it and search degrades to lex-only until weights land.
+4. If a qmd config is found, adopt its collections into `collections.external` (silent no-op otherwise). Collections inside the library are skipped.
+5. Write `<config-dir>/config.json` (`schema.version: 2`, `library.path`, `collections.external`).
+6. Unless `--no-welcome`, write `<library>/welcome/welcome.md` (never clobbers an existing file).
+7. Start the daemon (or reuse a running one) and — unless `--no-wait` — follow its reconcile: model download, indexing, embedding. Ctrl-C detaches; the daemon keeps going.
 
 ## Pre-init guardrail
 
@@ -41,23 +53,24 @@ Until init has run, every library-needing command refuses with:
 error: dither is not initialized. Run `dither init` to set up your library.
 ```
 
-Library-needing commands include `search`, `get`, `index update`, `plugin install`, `plugin run`, `daemon start`. Commands that don't touch the library (`--help`, `--version`, `env`, `plugin list`, `plugin remove`, `runs`, `daemon status/stop/reload`, `status`, `init` itself) keep working.
+Library-needing commands: `search`, `get`, `index update`, `index cancel`, `collection`, `plugin install`, `plugin run`, `daemon start`. Commands that don't touch the library (`--help`, `--version`, `env`, `plugin list`, `plugin remove`, `plugin runs`, `plugin oauth`, `daemon status/stop/reload/logs`, `status`, `init` itself) keep working.
 
 ## Where things land
 
 After a successful init:
 
 ```
-<dither-home>/config.json            ← schema + library.path
-<dither-home>/qmd-index.sqlite       ← always in dither home, regardless of library
-<library>/                           ← markdown lives here; collections are top-level subdirs
+<config-dir>/config.json            ← schema + library.path + external collections
+<config-dir>/qmd-index.sqlite       ← always in the config dir, regardless of library
+<library>/welcome/welcome.md        ← starter doc (skip with --no-welcome)
+<library>/                          ← markdown lives here; collections are top-level subdirs
 ```
 
-The qmd index always lives in dither home. If you point dither at a folder also indexed by qmd-CLI elsewhere, the two indices are independent.
+The qmd index always lives in the config dir. If you point dither at a folder also indexed by qmd-CLI elsewhere, the two indices are independent.
 
 ## Reconfiguring later
 
-`dither init` is one-shot — re-running it on an already-initialised home is a read-only no-op. There is no `--force`. To change the library path, remove `<dither-home>/config.json` and run `dither init` again:
+`dither init` is one-shot — re-running it on an already-initialised config dir is a read-only no-op. There is no `--force`. To change the library path, remove `<config-dir>/config.json` and run `dither init` again:
 
 ```bash
 rm ~/.dither/config.json
@@ -83,35 +96,42 @@ $ dither init
 
 Welcome to dither.
 
-? Where should your library live? › ~/.dither/library
+? Where should your library live? (ENTER for ~/.dither/library)
 
+✓ library: ~/.dither/library (created)
 ✓ wrote ~/.dither/config.json
-✓ created library at ~/.dither/library
-✓ pre-downloaded model weights
+✓ wrote welcome doc to ~/.dither/library/welcome/welcome.md
+→ starting dither daemon...
+✓ daemon started (pid 41233)
+✓ indexing library — indexed 1 file
+✓ embedding library — embedded 4 chunks in 2.1s
 
-next: dither plugin install <path>
+next:
+  dither search 'welcome to dither'
+  dither get <id from above>
 ```
 
 Adopt an existing folder as the library:
 
 ```bash
 $ dither init --library ~/Documents/dither
+✓ library: ~/Documents/dither
+✓ found qmd config at ~/.config/qmd/config.toml
+  adopted 2 collections: notes, papers
 ✓ wrote ~/.dither/config.json
-✓ using library at ~/Documents/dither
-✓ pre-downloaded model weights
-
-next: dither plugin install <path>
+...
 ```
 
 CI / offline:
 
 ```bash
-$ dither init --library ~/.dither/library --no-download
+$ dither init --library ~/.dither/library --no-download --no-wait
+✓ library: ~/.dither/library (created)
 ✓ wrote ~/.dither/config.json
-✓ created library at ~/.dither/library
-• weights skipped (--no-download)
-
-next: dither plugin install <path>
+✓ weights skipped (--no-download)
+✓ daemon started (pid 41240)
+✓ dispatched — daemon will finish in background
+  dither status         # check progress
 ```
 
 Re-run is a no-op:

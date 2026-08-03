@@ -5,40 +5,41 @@ description: Where dither's bookkeeping and your markdown library live, and what
 
 dither separates two roots on disk:
 
-- **dither home** — dither's own bookkeeping (config, plugins, grants, runs, history, locks, logs, daemon state, qmd index). By default `~/.dither/`.
-- **library** — the markdown content dither indexes and writes into. Configurable per-install. Defaults to `<dither-home>/library/` for fresh users; `dither init --library <path>` points it anywhere you like.
+- **config dir** — dither's own bookkeeping (config, plugins, grants, runs, history, locks, logs, daemon state, qmd index). By default `~/.dither/`.
+- **library** — the markdown content dither indexes and writes into. Configurable per-install. Defaults to `$DITHER_DIR/library/` (or `~/.dither/library/`) for fresh users; `dither init --library <path>` points it anywhere you like.
 
-The dither home location is resolved in this order (first match wins):
+The config dir location is resolved in this order (first match wins):
 
 1. `$DITHER_DIR` — explicit override.
 2. `$XDG_CONFIG_HOME/dither` — Linux convention.
-3. `$DITHER_HOME` — deprecated alias, prints a one-time warning. Will be removed.
-4. `~/.dither` — fallback.
+3. `~/.dither` — fallback.
 
 ```bash
-export DITHER_DIR=/path/to/dither-home   # optional, rarely needed
+export DITHER_DIR=/path/to/dither-config   # optional, rarely needed
 ```
+
+The library deliberately ignores `$XDG_CONFIG_HOME` — it's your content, not config, so its default follows `$DITHER_DIR` (else `~/.dither`) only.
 
 The split keeps "your stuff" (markdown) cleanly separated from "dither's bookkeeping" (everything else). You can back up the library independently, hand its path to an agent without exposing dither's internals, or point it at a folder you already curate.
 
-## dither home
+## The config dir
 
 | Path                                            | Purpose                                                                                | Written by                                       |
 | ----------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `<dither-home>/config.json`                     | Library path, schema version, and the external-collection registry (`collections.external`). Hand-editable; supports `//` and `/* */` comments. | `dither init`, `dither collection add/remove`    |
-| `<dither-home>/qmd-index.sqlite`                | The qmd search index over the library.                                                 | `dither index update`, plugin runs               |
-| `<dither-home>/env.json`                        | The dither-managed global env store. Plain JSON, names → values.                       | `dither env set/unset`                           |
-| `<dither-home>/plugins/<name>/`                 | Installed plugin source — copied verbatim from the install path.                       | `dither plugin install`                          |
-| `<dither-home>/plugins/<name>/state/state.json` | Plugin's persistent state (e.g. last-synced cursor).                                   | The plugin itself, at run time                   |
-| `<dither-home>/grants/<name>.json`              | dither-owned record of the plugin's manifest snapshot and resolved grants.             | `dither plugin install`                          |
-| `<dither-home>/runs/<run-id>/`                  | Per-run scratch dir (input.json, import map, `*.md` output). Always cleaned up.        | `dither plugin run` (always removed in `finally`) |
-| `<dither-home>/history/<run-id>/`               | Persistent run journal: `manifest.json`, `events.ndjson`, `result.json`.               | `dither plugin run`                              |
-| `<dither-home>/logs/daemon.log`                 | Daemon stdout/stderr (appended across restarts).                                       | `dither daemon start`                            |
-| `<dither-home>/logs/<name>-<ms>.log`            | Captured stdout/stderr of `dither plugin run --detach`. `<ms>` is the spawn epoch ms.  | `dither plugin run --detach`                     |
-| `<dither-home>/locks/`                          | Per-plugin lock files used to serialise concurrent runs.                               | `dither plugin run`, daemon                      |
-| `<dither-home>/dither.pid`                      | PID of the currently running daemon (if any).                                          | `dither daemon start`                            |
-| `<dither-home>/status.json`                     | Status snapshot consumed by `dither status`.                                           | daemon, on state change                          |
-| `<dither-home>/bin/deno-<version>`              | dither-managed Deno binary used to spawn plugins. SHA-verified at install.             | `dither plugin install` / `run` (lazy bootstrap) |
+| `<config-dir>/config.json`                     | Library path, schema version, and the external-collection registry (`collections.external`). Hand-editable; supports `//` and `/* */` comments. | `dither init`, `dither collection add/remove`    |
+| `<config-dir>/qmd-index.sqlite`                | The qmd search index over the library.                                                 | `dither index update`, plugin runs               |
+| `<config-dir>/env.json`                        | The dither-managed global env store. Plain JSON, names → values.                       | `dither env set/unset`                           |
+| `<config-dir>/plugins/<name>/`                 | Installed plugin source — copied verbatim from the install path.                       | `dither plugin install`                          |
+| `<config-dir>/plugins/<name>/state/state.json` | Plugin's persistent state (e.g. last-synced cursor).                                   | The plugin itself, at run time                   |
+| `<config-dir>/grants/<name>.json`              | dither-owned record of the plugin's manifest snapshot and resolved grants.             | `dither plugin install`                          |
+| `<config-dir>/runs/<run-id>/`                  | Per-run scratch dir (input.json, import map, `*.md` output). Always cleaned up.        | `dither plugin run` (always removed in `finally`) |
+| `<config-dir>/history/<run-id>/`               | Persistent run journal: `manifest.json`, `events.jsonl`, `result.json`.                | `dither plugin run`                              |
+| `<config-dir>/logs/daemon.log`                 | Daemon stdout/stderr (appended across restarts).                                       | `dither daemon start`                            |
+| `<config-dir>/run-log.jsonl`                   | Global run log — daemon lifecycle, job progress, reconciler ticks. Rotated at 1 MB.    | daemon, `dither plugin run`                      |
+| `<config-dir>/locks/`                          | Per-plugin lock files used to serialise concurrent runs.                               | `dither plugin run`, daemon                      |
+| `<config-dir>/dither.pid`                      | PID of the currently running daemon (if any).                                          | `dither daemon start`                            |
+| `<config-dir>/status.json`                     | Status snapshot consumed by `dither status`.                                           | daemon, on state change                          |
+| `<config-dir>/bin/deno-<version>`              | dither-managed Deno binary used to spawn plugins. SHA-verified at install.             | `dither plugin install` / `run` (lazy bootstrap) |
 
 `runs/<run-id>/` is ephemeral — the host removes it in a `finally` block, so it's gone whether the run succeeded or failed (failed runs would otherwise leave `input.json` with plaintext env values on disk). The durable record of the run lives in `history/<run-id>/`. Don't put anything you care about in `runs/`.
 
@@ -59,7 +60,7 @@ The library is one directory containing your markdown. Each top-level subdirecto
 
 Where the library lives is your choice at `dither init`:
 
-- **No flag** → `<dither-home>/library/`. Self-contained, easy default.
+- **No flag** → `$DITHER_DIR/library/`, else `~/.dither/library/`. Self-contained, easy default.
 - **`--library <path>`** → adopt or create at that path. Recommended for users who want their markdown in a familiar location, e.g. `~/Documents/dither/`.
 
 The path is canonicalised (via `realpath`) at init time, so symlinks don't silently widen the configured scope later.
@@ -72,11 +73,11 @@ The path is canonicalised (via `realpath`) at init time, so symlinks don't silen
 error: dither is not initialized. Run `dither init` to set up your library.
 ```
 
-`dither init` is one-shot: re-running it on an already-initialised home prints the current paths and exits without changing anything (a `--library` flag is ignored on re-run). To reconfigure, remove `config.json` and run init again. See [`dither init`](/docs/cli/init).
+`dither init` is one-shot: re-running it on an already-initialised config dir prints the current paths and exits without changing anything (a `--library` flag is ignored on re-run). To reconfigure, remove `config.json` and run init again. See [`dither init`](/docs/cli/init).
 
 ## The grants file
 
-`<dither-home>/grants/<name>.json` is dither's record of what a specific plugin is allowed to do:
+`<config-dir>/grants/<name>.json` is dither's record of what a specific plugin is allowed to do:
 
 ```json
 {
@@ -98,7 +99,7 @@ The five grant fields (`env`, `envRefs`, `files`, `net`, `collections`) are desc
 
 ## The global env store
 
-`<dither-home>/env.json` is the dither-managed env namespace. It has nothing to do with shell env vars — dither owns its own. Plugins granted `--allow-env KEY` read these values (looked up by name at every run). See [`dither env`](/docs/cli/env).
+`<config-dir>/env.json` is the dither-managed env namespace. It has nothing to do with shell env vars — dither owns its own. Plugins granted `--allow-env KEY` read these values (looked up by name at every run). See [`dither env`](/docs/cli/env).
 
 ```json
 { "OPENAI_API_KEY": "sk-...", "ANTHROPIC_API_KEY": "..." }
@@ -106,9 +107,9 @@ The five grant fields (`env`, `envRefs`, `files`, `net`, `collections`) are desc
 
 ## The qmd index
 
-`<dither-home>/qmd-index.sqlite` is the local SQLite database qmd writes when you run `dither index update` or after a plugin promote. It's a derived artifact: drop it, run `dither index update`, and it rebuilds from the library.
+`<config-dir>/qmd-index.sqlite` is the local SQLite database qmd writes when you run `dither index update` or after a plugin promote. It's a derived artifact: drop it, run `dither index update`, and it rebuilds from the library.
 
-The index always lives in dither home, regardless of where the library is. If you point dither at a folder that's also indexed by qmd-CLI elsewhere, the two indices are independent — they don't share state. (See `notes/qmd-index-reuse.md` in the repo for the design parked for later.)
+The index always lives in the config dir, regardless of where the library is. If you point dither at a folder that's also indexed by qmd-CLI elsewhere, the two indices are independent — they don't share state. (See `notes/qmd-index-reuse.md` in the repo for the design parked for later.)
 
 You should not edit this file by hand. Treat it the way you'd treat a build cache.
 
@@ -125,7 +126,7 @@ Everything else is regenerable:
 - `plugins/<name>/state/` — plugin will resync from scratch (this can mean re-fetching from APIs; not always cheap, but never lossy for _your_ data).
 - `grants/<name>.json` — recreated by reinstalling the plugin and re-supplying grant flags.
 - `config.json` — recreated by `dither init` (you'll need to re-pass `--library <path>` if you used a non-default location).
-- `history/`, `logs/`, `dither.pid`, `status.json` — run records and daemon state. Not lossy for your corpus; only matters if you want to keep past-run logs.
+- `history/`, `logs/`, `run-log.jsonl`, `dither.pid`, `status.json` — run records and daemon state. Not lossy for your corpus; only matters if you want to keep past-run logs.
 - `runs/<run-id>/`, `bin/deno-<version>` — ephemeral / re-downloaded on demand.
 
-A `tar` of the library directory plus a copy of `<dither-home>/env.json` is a complete backup of your dither user data. Pair it with the plugin source (or your install commands) and you can rebuild the rest in minutes.
+A `tar` of the library directory plus a copy of `<config-dir>/env.json` is a complete backup of your dither user data. Pair it with the plugin source (or your install commands) and you can rebuild the rest in minutes.

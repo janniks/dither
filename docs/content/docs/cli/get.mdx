@@ -7,13 +7,13 @@ description: Read an entry by path or docid.
 dither get <ref> [--lines start:end]
 ```
 
-Prints the body of a single entry to stdout. Resolves either a display path (the path under the configured library, e.g. `notes/auth.md`) or a qmd docid (e.g. `#abc123`). Refuses with the standard pre-init error until [`dither init`](/docs/cli/init) has run.
+Prints the body of a single indexed entry to stdout. Resolves either a display path (collection-relative, e.g. `notes/auth.md`) or a qmd docid (e.g. `abc123`). Refuses with the standard pre-init error until [`dither init`](/docs/cli/init) has run.
 
 ## Arguments
 
 | Name  | Description                                                                      |
 | ----- | -------------------------------------------------------------------------------- |
-| `ref` | Positional. Display path like `notes/auth.md` or docid like `#abc123`. Required. |
+| `ref` | Positional. Display path like `notes/auth.md` or docid like `abc123`. Required. |
 
 ## Flags
 
@@ -32,7 +32,7 @@ dither get notes/auth.md
 By docid (taken from a `dither search` hit):
 
 ```bash
-dither get '#abc123'
+dither get abc123
 ```
 
 Lines 10 through 30:
@@ -49,7 +49,8 @@ dither get notes/auth.md --lines :20
 
 ## Notes
 
-- If the ref doesn't resolve, the command prints nothing and exits successfully. There is no "not found" error.
-- Output is the raw markdown body, including frontmatter.
+- Reads through the index, not the filesystem — an entry only resolves once [`dither index update`](/docs/cli/index-update) (or the daemon) has picked it up.
+- If the ref doesn't resolve — or no collections exist yet — the command prints nothing and exits successfully. There is no "not found" error.
+- Output is the stored markdown body of the document.
 
 See also: [CLI overview](/docs/cli), [`dither search`](/docs/cli/search).

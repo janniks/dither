@@ -3,7 +3,7 @@ title: Concepts
 description: How dither thinks about your data, your disk, and your plugins.
 ---
 
-dither is local-first. Your data is plain markdown in a directory you choose (the **library**), organised into folders called collections. dither's own bookkeeping lives separately under **dither home** (`~/.dither/` by default). Plugins are Deno scripts that run in a sandbox, write markdown into a scratch dir, and have their output validated before it's promoted into your library. Everything important is a file you can read and edit by hand.
+dither is local-first. Your data is plain markdown in a directory you choose (the **library**), organised into folders called collections. dither's own bookkeeping lives separately under the **config dir** (`~/.dither/` by default). Plugins are Deno scripts that run in a sandbox, write markdown into a scratch dir, and have their output validated before it's promoted into your library. Everything important is a file you can read and edit by hand.
 
 Three pages cover the model in depth:
 
@@ -12,7 +12,7 @@ Three pages cover the model in depth:
     Folders under the library, the frontmatter contract, and how the index sees them.
   </Card>
   <Card title="Storage layout" href="/docs/concepts/storage">
-    The dither-home / library split, what lives where, and what's safe to back up.
+    The config-dir / library split, what lives where, and what's safe to back up.
   </Card>
   <Card title="Security model" href="/docs/concepts/security">
     The Deno sandbox, what plugins can and can't do, and the honest caveats.

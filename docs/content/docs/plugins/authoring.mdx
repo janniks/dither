@@ -34,7 +34,7 @@ That's it. No `node_modules`, no build step. Deno resolves `@dither/plugin` via 
   "dither": {
     "display_name": "Hello World",
     "tagline": "Writes one entry and exits.",
-    "collections": ["notes"]
+    "create": ["notes"]
   }
 }
 ```
@@ -62,9 +62,13 @@ You'll see something like:
 ```text
 installed hello-world@0.0.1
   → /Users/you/.dither/plugins/hello-world
-run 5f1a…  promoted 1 entries:
-  /Users/you/Documents/dither/notes/9c2b….md
+
+next: dither plugin run hello-world
 ```
+
+`run` hands the fire to the daemon and tails that run's journal — one NDJSON
+event per line, ending with a terminal `_result` line naming the promoted
+entries under your library.
 
 ## 3. The `dither` block — every field
 
@@ -82,8 +86,14 @@ Every field below is optional unless noted. The full schema lives in `packages/c
 
 | Field      | Type                                       | Notes                                                                                                                          |
 | ---------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| `schedule` | `string` (cron expression or `daily`/`hourly`) | Fired by the dither daemon. Installing a plugin with `schedule` lazily starts the daemon. Manual `dither plugin run` still works. |
+| `schedule` | `string` (cron expression or `every 15min`) | Fired by the dither daemon. Installing a plugin with `schedule` lazily starts the daemon. Manual `dither plugin run` still works. |
 | `watch`    | `{ collections: string[]; glob?: string }` | Fired by the daemon via chokidar when a matching file changes in any of the declared collections. Triggering paths land in `input.targets`. |
+
+Both are declarations; the consented values land at the top level of the
+grants file. `dither plugin run <name> --every "<schedule>"` and
+`--watch <collection-or-dir>` edit them after the fact (they configure and
+reload the daemon instead of firing a run). There are no `dither schedule` /
+`dither watch` commands.
 
 ### `env[]`
 
@@ -100,9 +110,12 @@ User-supplied env values. All values are plain strings; if your plugin needs a n
 A value is resolved in this order at install time:
 
 1. A literal passed via `--env "NAME=VALUE,..."`.
-2. A grant to read from the global `dither env` store, passed via `--allow-env "NAME,..."`. The literal value is **not** copied into the grants file; it's looked up at run time from `<dither-home>/env.json`.
+2. A grant to read from the global `dither env` store, passed via `--allow-env "NAME,..."`. The literal value is **not** copied into the grants file; it's looked up at run time from `<config-dir>/env.json`.
 3. The manifest `default`.
 4. Otherwise install fails: `Required env '<name>' was not provided …`.
+
+`<config-dir>` is dither's own state directory, resolved first-match-wins:
+`$DITHER_DIR` → `$XDG_CONFIG_HOME/dither` → `~/.dither`.
 
 Example, lifted from the `echo-config` fixture:
 
@@ -122,9 +135,11 @@ User-supplied filesystem paths. Each entry:
 {
   id: string;
   name?: string;
+  description?: string;    // human-readable help, shown when prompting
   kind: "file" | "folder";
   extensions?: string[];   // schema-only today; not validated
   required?: boolean;
+  default?: string;        // canonical location; `~` expands to $HOME
 }
 ```
 
@@ -136,15 +151,18 @@ At install time the path is resolved to absolute, checked to exist, and asserted
 net?: string[];
 ```
 
-Top-level list of hosts the plugin may reach (e.g. `["api.example.com", "files.example.com:443"]`). Becomes `--allow-net=<csv>` on the Deno spawn. Empty / absent → no network. The `permissions` block from earlier drafts is **gone**; `net` lives at the top level of the `dither` block.
+Top-level list of hosts the plugin may reach (e.g. `["api.example.com", "files.example.com:443"]`). Becomes `--allow-net=<csv>` on the Deno spawn. A sole `["*"]` entry means "any host" and becomes a bare `--allow-net` — opt-in at install time, for plugins that fetch arbitrary URLs. Empty / absent → no network. The `permissions` block from earlier drafts is **gone**; `net` lives at the top level of the `dither` block. The resolved list is mirrored back to the plugin as `input.net`, so you don't have to hardcode the same host in code *and* manifest.
 
-### `collections`
+### `create` and `edit`
 
 ```ts
-collections?: string[];
+create?: string[];
+edit?: string[];
 ```
 
-Glob patterns naming the collections this plugin may emit into. The manifest list seeds the install grant when the user doesn't pass `--allow-collection`. Output whose frontmatter `collection` value isn't matched by any glob in the resolved grant set is rejected at promote.
+Glob patterns naming the collections this plugin may write into. `create` covers entries this plugin makes; `edit` covers whole-entry overwrites of entries **another** plugin created (and does not imply `create`). The manifest lists seed the install grants when the user doesn't pass `--create` / `--edit`. Output whose frontmatter `collection` value isn't matched by any glob in the resolved `create` set is rejected at promote; an output landing on another plugin's entry without an `edit` grant is skipped (journaled, never an error).
+
+The old `collections` field is **gone** — a manifest still using it fails to parse with `manifest 'collections' was renamed: use 'create' (and optionally 'edit') instead`.
 
 Collection paths are nestable. Each entry is a glob over a path identifier:
 
@@ -155,7 +173,7 @@ Collection paths are nestable. Each entry is a glob over a path identifier:
 
 Path identifiers in `writeEntry({ collection })` and in entry frontmatter must use `[a-zA-Z0-9._-]` per segment, with no leading-dot segments. Joined by `/`, no `..`, no leading/trailing `/`, no empty segments, no `.md` suffix.
 
-There is no separate `reads` / `writes` split today. Collections are created on demand at promote time.
+Collections are created on demand at promote time.
 
 ## 4. Writing the plugin
 
@@ -234,7 +252,7 @@ const buf = await fsReadFile(input.files.SOURCE!); // Buffer, not string
 
 ### 4d. State between runs
 
-`readState(initial)` takes the value the plugin should see on its first run and returns it when no state has been written yet — no `null` branch to handle. `writeState()` persists JSON to `<dither-home>/plugins/<name>/state/state.json`:
+`readState(initial)` takes the value the plugin should see on its first run and returns it when no state has been written yet — no `null` branch to handle. `writeState()` persists JSON to a run-local copy, which the host commits to `<config-dir>/plugins/<name>/state/state.json` only after the plugin exits cleanly — a failed run leaves the previous state untouched:
 
 ```ts
 import { readState, writeState, writeEntry } from "@dither/plugin";
@@ -262,29 +280,34 @@ dither plugin install ./path/to/plugin \
   --allow-env "API_TOKEN" \
   --file "SOURCE=/abs/path/to/notes.md" \
   --allow-net "api.example.com" \
-  --allow-collection "echoed"
+  --create "echoed"
 ```
 
 The flag set:
 
-| Flag                 | Shape            | Effect                                                                                                                                                                       |
-| -------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--env`              | `NAME=VALUE,...` | Literal env values; written into the grants file.                                                                                                                            |
-| `--allow-env`        | `NAME,NAME,...`  | Names this plugin may read from the global `dither env` store at run time.                                                                                                   |
-| `--file`             | `ID=PATH,...`    | Paths for declared `files[]`. Resolved to absolute, checked to exist, kind-asserted.                                                                                         |
-| `--allow-net`        | `host,host,...`  | Network hosts. Manifest `net` is the install-time _default_ (used when this flag is omitted); when supplied, the flag wins.                                                  |
-| `--allow-collection` | `coll,coll,...`  | Collections the plugin may write to. Glob patterns supported (`messages/**`, `notes/*`). Manifest `collections` is the install-time _default_; when supplied, the flag wins. |
+| Flag          | Shape            | Effect                                                                                                                                                              |
+| ------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--env`       | `NAME=VALUE,...` | Literal env values; written into the grants file.                                                                                                                   |
+| `--allow-env` | `NAME,NAME,...`  | Names this plugin may read from the global `dither env` store at run time.                                                                                          |
+| `--file`      | `ID=PATH,...`    | Paths for declared `files[]`. Resolved to absolute, checked to exist, kind-asserted.                                                                                |
+| `--allow-net` | `host,host,...`  | Network hosts. Manifest `net` is the install-time _default_ (used when this flag is omitted); when supplied, the flag wins.                                         |
+| `--create`    | `coll,coll,...`  | Collections the plugin may create entries in. Glob patterns supported (`messages/**`, `notes/*`). Manifest `create` is the install-time _default_; the flag wins.   |
+| `--edit`      | `coll,coll,...`  | Collections where the plugin may overwrite another plugin's entries. Flags-only beyond the manifest — the interactive prompt never offers a widen here.             |
 
-All five flags are accepted on **both** `dither plugin install` and `dither plugin run`. The split is the same comma-separated `KEY=VALUE` parser used in v0; values may contain `=` but not `,`, and there is no escape syntax.
+All six flags are accepted on **both** `dither plugin install` and `dither plugin run`. The split is the same comma-separated `KEY=VALUE` parser used in v0; values may contain `=` but not `,`, and there is no escape syntax.
+
+Two more flags on `install` itself: `--dry-run` prints the fields and grants the install would ask for and exits, and `--symlink` points the install destination at your source directory instead of copying it — the dev loop, since edits then take effect without a reinstall.
 
 What install does:
 
 - Parses `package.json` and validates the `dither` block.
 - Resolves env: literal → `--allow-env` ref → manifest `default`. Missing required → fails.
 - Resolves files: each path must exist and match its declared `kind`.
-- Resolves `net` and `collections` grants: if you supplied a flag, that's the grant; otherwise the manifest declaration is the default. The manifest is _not_ a ceiling — install grants can widen past or differ from the manifest. The grants file is the source of truth at promote time.
-- Copies the plugin source to `<dither-home>/plugins/<name>/`.
-- Writes `<dither-home>/grants/<name>.json` with the manifest, env literals, env refs, file paths, net hosts, and collections.
+- Resolves `net`, `create` and `edit` grants: if you supplied a flag, that's the grant; otherwise the manifest declaration is the default. The manifest is _not_ a ceiling — install grants can widen past or differ from the manifest. The grants file is the source of truth at promote time.
+- Copies the plugin source to `<config-dir>/plugins/<name>/` (or symlinks it, with `--symlink`).
+- Writes `<config-dir>/grants/<name>.json` with the manifest, env literals, env refs, file paths, net hosts, the consented `schedule` / `watch`, and the create/edit grants.
+
+On a TTY, anything still missing (required env, required files) is prompted for interactively rather than failing; on a pipe or in CI the whole missing set is reported in one error and the install exits 1.
 
 Reinstalling overwrites the previous install and grants file.
 
@@ -298,15 +321,18 @@ dither env list
 dither env unset API_TOKEN
 ```
 
-These live in `<dither-home>/env.json`. A plugin only sees a name if you grant it via `--allow-env`. The literal value is **not** copied into the grants file; it's read from the global store at run time, so updating it once via `dither env set` is enough for every plugin that has the grant.
+These live in `<config-dir>/env.json`. A plugin only sees a name if you grant it via `--allow-env`. The literal value is **not** copied into the grants file; it's read from the global store at run time, so updating it once via `dither env set` is enough for every plugin that has the grant.
 
 ## 6. Running
 
 ```bash
-dither plugin run hello-world             # blocks; shows live status
-dither plugin run hello-world --detach    # forks into the background
-dither plugin run ./path/to/plugin        # auto-installs from path, then runs
+dither plugin run hello-world              # blocks; tails the run journal
+dither plugin run hello-world --detach     # kicks the daemon and returns
+dither plugin run ./path/to/plugin         # auto-installs from path, then runs
+dither plugin run ./path/to/plugin --symlink   # dev loop: symlink-install, then run
 ```
+
+Every run is supervised by the dither daemon; the CLI is a thin client that writes a kick, makes sure the daemon is up, and tails. The daemon is started lazily if it isn't already running.
 
 The positional accepts an installed plugin name **or** a path to a plugin directory. If it's a path (a directory containing `package.json`), the CLI installs it first using the same grant flags as the persisted grants, then runs it.
 
@@ -314,35 +340,38 @@ If it's a name, any grant flags you pass are **per-run overrides**: layered on t
 
 ```bash
 dither plugin run hello-world --env "GREETING=ahoy"
-dither plugin run hello-world --allow-collection "experiments"
+dither plugin run hello-world --create "experiments"
 ```
 
-`run` blocks by default. While the plugin executes, the host overwrites a single status line with the latest `progress()` message (see §6a). When the plugin exits, the status line is cleared and added documents are printed.
+Two flags don't fire a run at all — they persist a trigger into the grants file and reload the daemon: `--every "<cron or 'every 15min'>"` sets the schedule, and `--watch <collection-or-dir>` adds a watch target (a `/abs` or `./rel` path is watched literally; a bare name is a library collection). `--backfill` fires a watch plugin once with every existing entry under its watched collections as targets.
 
-`--detach` forks the run into the background and returns immediately. Stdout and stderr are captured to `<dither-home>/logs/<plugin>-<ms>.log` (where `<ms>` is the spawn epoch in milliseconds). The plugin keeps running after your shell exits; tail the log to watch progress, or use `dither plugin runs <runId>` once the runner has emitted a journal entry.
+`run` blocks by default, streaming the run's journal events (including your `progress()` messages, see §6a) until the run terminates. Ctrl-C clears the kick this command wrote.
+
+`--detach` skips the tail and returns as soon as the daemon has been kicked, printing the run id. The daemon keeps supervising the run after your shell exits; pick it back up with `dither plugin runs <runId>`.
 
 The host:
 
 1. Loads the grants file.
-2. Layers any per-run overrides on top.
+2. Unions any per-run overrides on top.
 3. Resolves env values: literals → global `dither env` for granted refs → manifest defaults.
-4. Creates `<dither-home>/runs/<runId>/` and writes `input.json`:
+4. Creates `<config-dir>/runs/<runId>/`, seeds a run-local `state.json` from the committed one, and writes `input.json`:
    ```json
    {
      "trigger": "manual",
      "env": { "GREETING": "hi", "MAX_RUNS": "5", "API_TOKEN": "sk-…" },
      "files": { "SOURCE": "/abs/path/to/notes.md" },
-     "targets": []
+     "targets": [],
+     "net": ["api.example.com"]
    }
    ```
 5. Spawns `deno run` with permissions derived from the grant.
-6. After the plugin exits, scans the run dir for `*.md`, validates frontmatter, promotes valid entries to `<library>/<collection>/`, refreshes the index for the touched collections, and deletes the run dir.
+6. After the plugin exits cleanly, scans the run dir for `*.md`, validates frontmatter against the `create` / `edit` grants, promotes valid entries to `<library>/<collection>/`, refreshes the index for the touched collections, commits the run-local state, and deletes the run dir.
 
 A plugin process that exits non-zero aborts the run; nothing is promoted.
 
 ### 6a. Reporting progress
 
-Long-running plugins (DB syncs, API backfills) should call `progress()` so the host can show the user what's happening. Each call emits one NDJSON line on stderr; the host parses it out of the stream and overwrites a single status line in blocking mode (or appends a line in non-TTY contexts and detached log files).
+Long-running plugins (DB syncs, API backfills) should call `progress()` so the host can show the user what's happening. Each call emits one NDJSON line on stderr; the daemon's supervisor parses it out of the stream and records it in the run journal, which is what a blocking `dither plugin run` (or a later `dither plugin runs <runId>`) tails.
 
 ```ts
 import { progress, writeEntry } from "@dither/plugin";
@@ -361,7 +390,7 @@ progress({ message: "done", done: total, total });
 
 Promoted entries live at `<library>/<collection>/<id>.md`.
 
-The host always overwrites three frontmatter keys, regardless of what your plugin sets:
+The SDK always overwrites three frontmatter keys, regardless of what your plugin sets:
 
 - `id` — UUID generated by the SDK (or a string `id` you supplied in `frontmatter`).
 - `source` — the plugin's `name` (from `package.json`).
@@ -399,18 +428,19 @@ The SDK uses a tiny YAML emitter that JSON-encodes every value (so strings get q
 
 The Deno spawn is built like this (from `packages/cli/src/plugin-run.ts`):
 
-- `--allow-read=<pluginDir>,<runDir>,<sdkPath>,<…each granted file path>`
-- `--allow-write=<stateDir>,<runDir>`
+- `--allow-read=<pluginDir>,<runDir>,<sdkPath>,<…each granted file path>,<…each watched root>`
+- `--allow-write=<runDir>` — the run dir only; state is written to the run-local copy, never straight to the persistent path
 - `--allow-env=DITHER_RUN_DIR,DITHER_INPUT_FILE,DITHER_STATE_FILE,DITHER_TRIGGER,DITHER_PLUGIN_NAME`
-- `--allow-net=<csv of granted net hosts>` (only added if the list is non-empty)
+- `--allow-net=<csv of granted net hosts>` (only added if the list is non-empty; a sole `*` becomes a bare `--allow-net`)
 
 A plugin cannot read or write outside those paths, cannot reach hosts off the `net` grant, and cannot read process env vars beyond the `DITHER_*` set. User-supplied env values reach the plugin through `input.env` (which it reads from `DITHER_INPUT_FILE`), not through the OS environment.
 
 ## 9. Sharp edges
 
-- **Env values are stored plaintext.** `<dither-home>/grants/<name>.json` and `<dither-home>/env.json` are JSON files. Don't store credentials you wouldn't put there. Keychain integration is a later phase.
+- **Env values are stored plaintext.** `<config-dir>/grants/<name>.json` and `<config-dir>/env.json` are JSON files. Don't store credentials you wouldn't put there. Keychain integration is a later phase.
 - **No git/registry installs.** Only local paths. Cloning your plugin yourself first is the workaround.
-- **The daemon must be running for `schedule` and `watch` to fire.** Installing a plugin with either declaration lazily starts the daemon; if you kill it, the triggers stop. Manual `dither plugin run` always works regardless.
+- **The daemon runs everything.** Installing a plugin with a `schedule` or `watch` grant lazily starts the daemon, and `dither plugin run` starts it too if it isn't up. Kill the daemon and both the triggers and manual runs stop until it comes back.
 - **CLI flag parsing has no escape syntax.** A comma in a value will be treated as a pair separator. If you need a comma in a value, install programmatically via the `installPlugin()` API instead.
 - **Output filename collisions overwrite.** If two `writeEntry()` calls in one run produce the same `<id>.md` (e.g. you supplied the same `frontmatter.id`), the second overwrites the first inside the run dir, and only one is promoted.
-- **Detached runs aren't supervised after the fork.** `--detach` writes a log file and `unref()`s the child, so there's no `dither plugin stop`. The run is still recorded in `<dither-home>/history/<runId>/` — use `dither plugin runs` (no arg lists; pass a runId or plugin name to inspect a specific run) or tail the printed log path; kill via `kill <pid>` if needed.
+- **There's no `dither plugin stop`.** Detaching only ends the tail — the daemon keeps supervising. Runs are recorded in `<config-dir>/history/<runId>/`; use `dither plugin runs` (no arg lists; pass a runId or plugin name to inspect a specific run) to catch up.
+- **One run per plugin at a time.** A pending kick or a held lock makes `dither plugin run` refuse rather than queue a second fire; tail the in-flight one instead.
