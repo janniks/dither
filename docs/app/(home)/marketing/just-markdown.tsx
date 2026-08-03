@@ -8,7 +8,7 @@ import { Terminal, TypingAnimation, AnimatedSpan } from "@/lib/terminal";
 
 export function JustMarkdown() {
   return (
-    <section className="flex flex-col gap-6">
+    <section className="mx-auto flex w-full max-w-[880px] flex-col gap-6">
       <div className="max-w-[760px]">
         <h2 className="text-3xl font-[650] tracking-[-0.02em]">
           Sandboxed plugins write markdown.
@@ -22,7 +22,7 @@ export function JustMarkdown() {
         </p>
       </div>
 
-      <Terminal className="max-w-none font-mono text-[12.5px] leading-[20px]">
+      <Terminal className="mx-auto w-full max-w-xl font-mono text-[12.5px] leading-[20px]">
         <TypingAnimation className="text-[12.5px]">
           $ dither plugin run raindrop
         </TypingAnimation>

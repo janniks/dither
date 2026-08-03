@@ -25,10 +25,7 @@ const FADE_MASK =
 
 export function ToolMarquee({ durationSeconds = 30 }: { durationSeconds?: number }) {
   return (
-    <section className="flex w-full flex-col items-start gap-4">
-      <p className="text-fd-muted-foreground text-[13px] font-medium tracking-wide">
-        Connect the tools you already use
-      </p>
+    <section className="flex w-full flex-col items-start">
       <style>{`
         @keyframes tool-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
         .tool-marquee-track {

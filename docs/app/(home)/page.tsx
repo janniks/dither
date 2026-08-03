@@ -22,7 +22,7 @@ export default function HomePage() {
     <>
       <div className="flex w-full justify-center px-[20px] pt-22 pb-18 sm:px-8 md:px-12 lg:px-16">
         <div className="flex w-full max-w-[1080px] flex-col gap-14">
-        <section className="flex max-w-[760px] flex-col items-start">
+        <section className="mx-auto flex w-full max-w-[760px] flex-col items-start">
           <a
             href="#manifesto"
             className="border bg-fd-card text-fd-muted-foreground hover:text-fd-foreground hover:border-fd-primary/40 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm leading-5 no-underline transition-colors"
@@ -34,9 +34,8 @@ export default function HomePage() {
             <RotatingHeadline />
           </div>
           <p className="text-fd-muted-foreground mt-6 max-w-[660px] text-lg leading-[30px]">
-            Open source, local-first, and sandboxed. Drop markdown into
-            collections, run plugins to pull data in, and search across
-            everything from one CLI.
+            Open source, local-first, and sandboxed. Run plugins to index your
+            data, then search across everything from one CLI.
           </p>
           <div className="mt-8 w-full">
             <ToolMarquee />
