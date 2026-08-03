@@ -1,8 +1,15 @@
 "use client";
 import { LayoutGroup, motion } from "motion/react";
+import { useCallback, useRef } from "react";
 import TextRotate from "@/lib/text-rotate";
+import { ChipDither, type ChipDitherRef } from "./rotating-headline-dither";
 
 export function RotatingHeadline() {
+  const ditherRef = useRef<ChipDitherRef>(null);
+  // Imperative on purpose — re-rendering this component mid-rotation would
+  // disturb motion's layout animations.
+  const pulse = useCallback(() => ditherRef.current?.pulse(), []);
+
   return (
     <h1
       // Smaller on mobile (default + sm), original clamp on md+ so wide
@@ -32,38 +39,44 @@ export function RotatingHeadline() {
             >
               your{" "}
             </motion.span>
-            <TextRotate
-              texts={[
-                "memories",
-                "things ✦",
-                "bookmarks",
-                "✽ ideas",
-                "notes",
-                "thoughts",
-                "answers",
-              ]}
-              mainClassName="font-[var(--font-dm-serif)] text-fd-background bg-fd-foreground px-3 sm:px-4 md:px-5 py-0.5 sm:py-1 md:py-2 justify-center rounded-xl overflow-hidden"
-              // override TextRotate's internal flex-wrap + whitespace-pre-wrap
-              style={{
-                flexWrap: "nowrap",
-                whiteSpace: "nowrap",
-                fontFamily: "var(--font-dm-serif), serif",
-                // Safari anti-aliasing mitigations for transform-animated text
-                // (no translateZ — a static transform here conflicts with motion's
-                // layout animations and makes sibling letters jiggle)
-                backfaceVisibility: "hidden",
-                WebkitFontSmoothing: "antialiased",
-              }}
-              staggerFrom="last"
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "-120%" }}
-              staggerDuration={0.025}
-              splitLevelClassName="overflow-hidden pb-0.5 sm:pb-1 md:pb-1"
-              transition={{ type: "spring", damping: 30, stiffness: 400 }}
-              rotationInterval={2200}
-              as="span"
-            />
+            {/* relative wrapper: hosts the dither overlay as a sibling of the
+                chip, without touching the chip's own (layout-animated) styles */}
+            <span className="relative inline-flex">
+              <TextRotate
+                texts={[
+                  "memories",
+                  "things ✦",
+                  "bookmarks",
+                  "✽ ideas",
+                  "notes",
+                  "thoughts",
+                  "answers",
+                ]}
+                mainClassName="font-[var(--font-dm-serif)] text-fd-background bg-fd-foreground px-3 sm:px-4 md:px-5 py-0.5 sm:py-1 md:py-2 justify-center rounded-xl overflow-hidden"
+                // override TextRotate's internal flex-wrap + whitespace-pre-wrap
+                style={{
+                  flexWrap: "nowrap",
+                  whiteSpace: "nowrap",
+                  fontFamily: "var(--font-dm-serif), serif",
+                  // Safari anti-aliasing mitigations for transform-animated text
+                  // (no translateZ — a static transform here conflicts with motion's
+                  // layout animations and makes sibling letters jiggle)
+                  backfaceVisibility: "hidden",
+                  WebkitFontSmoothing: "antialiased",
+                }}
+                staggerFrom="last"
+                initial={{ y: "100%" }}
+                animate={{ y: 0 }}
+                exit={{ y: "-120%" }}
+                staggerDuration={0.025}
+                splitLevelClassName="overflow-hidden pb-0.5 sm:pb-1 md:pb-1"
+                transition={{ type: "spring", damping: 30, stiffness: 400 }}
+                rotationInterval={2200}
+                onNext={pulse}
+                as="span"
+              />
+              <ChipDither ref={ditherRef} />
+            </span>
           </motion.span>
         </LayoutGroup>
       </span>

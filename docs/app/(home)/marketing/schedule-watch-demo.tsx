@@ -37,18 +37,18 @@ export function ScheduleWatchDemo() {
             $ dither plugin run bookmarks --every &quot;1h&quot;
           </TypingAnimation>
           <AnimatedSpan>scheduled bookmarks: every 1h</AnimatedSpan>
-          <AnimatedSpan>&nbsp;</AnimatedSpan>
           <AnimatedSpan className="text-fd-muted-foreground">
             next: dither plugin list
           </AnimatedSpan>
+          <AnimatedSpan>&nbsp;</AnimatedSpan>
           <TypingAnimation>
             $ dither plugin run notes-inbox --watch notes
           </TypingAnimation>
           <AnimatedSpan>watching for notes-inbox: notes</AnimatedSpan>
-          <AnimatedSpan>&nbsp;</AnimatedSpan>
           <AnimatedSpan className="text-fd-muted-foreground">
             next: dither plugin list
           </AnimatedSpan>
+          <AnimatedSpan>&nbsp;</AnimatedSpan>
         </Terminal>
       </div>
     </section>

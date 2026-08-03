@@ -22,7 +22,8 @@ export function Manifesto() {
       className="flex scroll-mt-24 flex-col items-center py-6 md:py-10"
     >
       <article
-        className="bg-fd-card relative max-w-[720px] overflow-hidden p-6 sm:p-8 md:p-12"
+        // `border-2 border-fd-border/60` is an experimental 2px border — remove freely
+        className="bg-fd-card border-2 border-fd-border/60 relative max-w-[720px] overflow-hidden p-6 sm:p-8 md:p-12"
         style={{ borderRadius: 0 }}
       >
         <p className="text-fd-muted-foreground relative z-[1] text-[12px] font-semibold tracking-[0.12em] uppercase">

@@ -14,7 +14,10 @@ export function ShowMore({
 }) {
   const [open, setOpen] = useState(false);
 
-  // Expanded: pull the wrapper's 20px bottom padding back to ~10px.
+  // Expanded: pull CodeFile's 20px bottom padding back to ~10px. The negative
+  // margin has to sit on the root (the element inside that padded wrapper) and
+  // the button's own top gap has to shrink with it, otherwise the pull is
+  // cancelled out and nothing looks different.
   return (
     <div className={open ? "relative -mb-2.5" : "relative"}>
       <motion.div
@@ -31,7 +34,9 @@ export function ShowMore({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-fd-muted-foreground hover:text-fd-foreground mt-2 w-full text-center font-mono text-[12px]"
+        className={`text-fd-muted-foreground hover:text-fd-foreground w-full text-center font-mono text-[12px] leading-none ${
+          open ? "mt-1" : "mt-2"
+        }`}
       >
         {open ? "Show less" : "Show more"}
       </button>

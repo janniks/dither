@@ -8,17 +8,37 @@ import { Terminal, TypingAnimation, AnimatedSpan } from "@/lib/terminal";
 
 export function JustMarkdown() {
   return (
-    <section className="mx-auto flex w-full max-w-[880px] flex-col gap-6">
+    <section className="flex flex-col gap-6">
       <div className="max-w-[760px]">
         <h2 className="text-3xl font-[650] tracking-[-0.02em]">
           Sandboxed plugins write markdown.
         </h2>
+        {/* TEMPORARY: five intro variants stacked for visual pick-one. Delete
+            the four you don't keep (and the numeric markers). */}
         <p className="text-fd-muted-foreground mt-3 text-[15px] leading-[24px]">
-          Archive your digital interactions as markdown, then search and sort
-          them. There&apos;s no database, no second copy, no proprietary
-          format — your data is plain files you can edit, grep, or move
-          without dither. Point a collection at your existing Obsidian vault
-          and it shows up alongside plugin-written entries, indexed in place.
+          <span className="opacity-40">1 · </span>
+          Plugins write plain markdown straight into your library. No database,
+          no proprietary format — just files you can edit, grep, or move.
+        </p>
+        <p className="text-fd-muted-foreground mt-3 text-[15px] leading-[24px]">
+          <span className="opacity-40">2 · </span>
+          Your archive stays yours: plain markdown on disk, no database, no
+          lock-in. Delete dither tomorrow and everything still reads fine.
+        </p>
+        <p className="text-fd-muted-foreground mt-3 text-[15px] leading-[24px]">
+          <span className="opacity-40">3 · </span>
+          Plugins write markdown into your library and dither indexes it in
+          place — search and sort everything without a second copy.
+        </p>
+        <p className="text-fd-muted-foreground mt-3 text-[15px] leading-[24px]">
+          <span className="opacity-40">4 · </span>
+          Point it at your Obsidian vault and it&apos;s indexed in place,
+          searchable alongside plugin-written markdown. No database, no copies.
+        </p>
+        <p className="text-fd-muted-foreground mt-3 text-[15px] leading-[24px]">
+          <span className="opacity-40">5 · </span>
+          Markdown in, markdown out — plugin entries and your Obsidian vault,
+          indexed in place. No database, no proprietary format.
         </p>
       </div>
 

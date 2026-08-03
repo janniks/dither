@@ -45,7 +45,7 @@ export function TerminalTabs() {
 // step markers, no invented count/timing lines.
 function InitDemo() {
   return (
-    <Terminal className="!max-h-none min-h-[440px]">
+    <Terminal className="!max-h-none min-h-[360px]">
       <TypingAnimation>$ dither init</TypingAnimation>
       <AnimatedSpan className="text-fd-muted-foreground">
         ? Where should your library live? (ENTER for ~/.dither/library)
@@ -77,7 +77,7 @@ function InitDemo() {
 
 function PluginRunDemo() {
   return (
-    <Terminal className="!max-h-none min-h-[440px]">
+    <Terminal className="!max-h-none min-h-[360px]">
       <TypingAnimation>
         $ dither plugin install github:dither-plugins/rss
       </TypingAnimation>
@@ -104,7 +104,7 @@ function PluginRunDemo() {
 
 function SearchDemo() {
   return (
-    <Terminal className="!max-h-none min-h-[440px]">
+    <Terminal className="!max-h-none min-h-[360px]">
       <TypingAnimation>
         $ dither search &quot;ranking signals&quot; -C
       </TypingAnimation>
@@ -125,18 +125,6 @@ function SearchDemo() {
       </AnimatedSpan>
       <AnimatedSpan className="text-fd-muted-foreground pl-[17ch]">
         ...BM25 alone misses synonymy; pure embeddings drift...
-      </AnimatedSpan>
-      <TypingAnimation>
-        $ dither search &quot;deno permission flags&quot; -C
-      </TypingAnimation>
-      <AnimatedSpan>
-        <span className="text-fd-muted-foreground">0.868{"  "}</span>
-        <span className="text-[#4AB5EC]">9c8d7e6f</span>
-        <span className="text-fd-muted-foreground">{"  pocket "}</span>
-        Deno runtime deep dive
-      </AnimatedSpan>
-      <AnimatedSpan className="text-fd-muted-foreground pl-[17ch]">
-        ...--allow-read accepts directory globs, not just paths...
       </AnimatedSpan>
     </Terminal>
   );
