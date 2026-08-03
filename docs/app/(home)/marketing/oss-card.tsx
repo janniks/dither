@@ -5,7 +5,7 @@ const REPO_URL = "https://github.com/janniks/dither";
 
 export function OssCard() {
   return (
-    <section className="border bg-fd-card flex flex-wrap items-center justify-between gap-4 rounded-[20px] p-6">
+    <section className="mx-auto w-full max-w-[880px] border bg-fd-card flex flex-wrap items-center justify-between gap-4 rounded-[20px] p-6">
       <p className="text-fd-foreground max-w-[720px] text-[15px] leading-[26px]">
         Read the source code. Open issues, ship PRs.
       </p>

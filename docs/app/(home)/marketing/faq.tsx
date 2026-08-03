@@ -68,7 +68,7 @@ export function Faq() {
     <section id="faq" className="flex scroll-mt-24 flex-col gap-6">
       <div className="max-w-[720px]">
         <h2 className="text-3xl font-[650] tracking-[-0.02em]">
-          FAQs
+          Frequently asked questions
         </h2>
       </div>
       <div className="border bg-fd-card divide-y divide-fd-border rounded-[16px]">

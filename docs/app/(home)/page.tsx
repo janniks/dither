@@ -38,6 +38,9 @@ export default function HomePage() {
             collections, run plugins to pull data in, and search across
             everything from one CLI.
           </p>
+          <div className="mt-8 w-full">
+            <ToolMarquee />
+          </div>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
               href="/docs"
@@ -84,7 +87,6 @@ export default function HomePage() {
         </section>
         */}
 
-        <ToolMarquee />
         <TerminalTabs />
         <JustMarkdown />
         <FeatureGrid />

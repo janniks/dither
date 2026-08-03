@@ -15,18 +15,18 @@ export function ScheduleWatchDemo() {
         </p>
         <ul className="text-fd-muted-foreground mt-2 flex flex-col gap-1 text-[13px]">
           <li>
+            <span className="text-fd-foreground font-mono">
+              dither plugin run
+            </span>{" "}
+            — manual one-shot for ad-hoc ingests.
+          </li>
+          <li>
             <span className="text-fd-foreground font-mono">--every</span> — a
             cron expression or a plain interval like &quot;every 15min&quot;.
           </li>
           <li>
             <span className="text-fd-foreground font-mono">--watch</span> — a
             collection or directory; fires on filesystem changes.
-          </li>
-          <li>
-            <span className="text-fd-foreground font-mono">
-              dither plugin run
-            </span>{" "}
-            — manual one-shot for ad-hoc ingests.
           </li>
         </ul>
       </div>

@@ -14,8 +14,9 @@ export function ShowMore({
 }) {
   const [open, setOpen] = useState(false);
 
+  // Expanded: pull the wrapper's 20px bottom padding back to ~10px.
   return (
-    <div className="relative">
+    <div className={open ? "relative -mb-2.5" : "relative"}>
       <motion.div
         initial={false}
         animate={{ height: open ? "auto" : collapsedHeight }}

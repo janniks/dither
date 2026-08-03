@@ -53,3 +53,11 @@
   - choice: simple-icons has no raindrop slug (trademark removals); used Droplet stand-in in tool-icons.tsx
   - alternative: user provides official SVG to drop into tool-icons.tsx
   - verdict:
+
+## 2026-08-03 — homepage feedback round 3
+
+- [ ] items 5/6 "border card / parent less max width" mapped to OssCard only
+  - choice: constrained OssCard to max-w-[880px] mx-auto; did not narrow any parent container
+  - alternative: could have meant the FAQ card + its section, or the whole 1080px page column
+  - why: OssCard is the only bordered direct child of the column; parent selector was ambiguous
+  - verdict:

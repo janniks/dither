@@ -49,8 +49,9 @@ export function RotatingHeadline() {
                 whiteSpace: "nowrap",
                 fontFamily: "var(--font-dm-serif), serif",
                 // Safari anti-aliasing mitigations for transform-animated text
+                // (no translateZ — a static transform here conflicts with motion's
+                // layout animations and makes sibling letters jiggle)
                 backfaceVisibility: "hidden",
-                transform: "translateZ(0)",
                 WebkitFontSmoothing: "antialiased",
               }}
               staggerFrom="last"
