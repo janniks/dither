@@ -7,6 +7,7 @@ type Status = "shipped" | "wip" | "planned";
 
 type Plugin = {
   name: string;
+  label?: string;
   description: string;
   status: Status;
   color: string;
@@ -16,6 +17,7 @@ type Plugin = {
 const plugins: Plugin[] = [
   {
     name: "twitter",
+    label: "X",
     description: "Import Twitter exports & individual tweets.",
     status: "shipped",
     color: "#1DA1F2",
@@ -104,7 +106,7 @@ export function WaveRow() {
 
         <div className="flex flex-col gap-4">
           <h2 className="text-3xl font-[650] tracking-[-0.02em]">
-            Secure the data that belongs to you.
+            Index your data.
           </h2>
           <p className="text-fd-muted-foreground text-[15px] leading-[24px]">
             Plugins pull from feeds, folders, and APIs into your collections —
@@ -139,7 +141,7 @@ export function WaveRow() {
                 );
               })()}
               <span className="text-fd-foreground text-[14px] font-semibold capitalize">
-                {p.name.replaceAll("-", " ")}
+                {p.label ?? p.name.replaceAll("-", " ")}
               </span>
               {p.status === "planned" && (
                 <span className="bg-fd-muted text-fd-muted-foreground border-fd-border ml-auto hidden items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase sm:inline-flex">

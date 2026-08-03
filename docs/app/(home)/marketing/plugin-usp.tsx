@@ -9,7 +9,7 @@ const F = "text-[#4AB5EC]";
 
 export function PluginUsp() {
   return (
-    <section className="flex flex-col gap-6">
+    <section className="flex flex-col gap-8">
       <div className="max-w-[720px]">
         <h2 className="text-3xl font-[650] tracking-[-0.02em]">
           Plugins are simple TypeScript. Sandboxed.
@@ -32,7 +32,7 @@ export function PluginUsp() {
 
       <div className="mx-auto w-full max-w-[640px]">
         <CodeFile filename="plugins/bookmarks/plugin.ts">
-          <ShowMore collapsedHeight={180}>
+          <ShowMore collapsedHeight={160}>
             <pre className="overflow-auto text-[12px] leading-[20px]">
               <code>
                 <span className={K}>import</span>
