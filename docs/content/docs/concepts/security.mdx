@@ -3,51 +3,26 @@ title: Security model
 description: The grants model, the Deno sandbox, and the honest v0 caveats.
 ---
 
-dither plugins are not trusted code running with your full user privileges. Each plugin runs as a `deno` subprocess with permission flags derived from a per-plugin **grants** record — and only what you explicitly granted gets through.
+dither plugins are not trusted code running with your full user privileges. Each plugin runs as a `deno` subprocess with permission flags derived from a per-plugin **grants** record — only what you explicitly granted gets through.
 
 ## Three layers
 
-The model has three distinct layers. Keeping them straight is the easiest way to reason about what a plugin can and can't do.
-
-1. **Manifest** — declared by the plugin author in `package.json` under the `dither` block. It describes what the plugin would like and seeds the install-time defaults. It is **not** an enforcement boundary; it's a description.
-2. **Grants** — written by dither at install time to `<config-dir>/grants/<name>.json`. This is the **actual** allowance for this plugin on this machine, and the only thing that gates promote at run time. When you pass a grant flag at install, that's the grant; when you don't, the manifest's declaration is used as the default. The user is the source of truth — the manifest cannot constrain a grant the user explicitly authorized.
-3. **Globals** — managed env values shared across plugins, stored in `<config-dir>/env.json`. A plugin granted `--allow-env OPENAI_API_KEY` reads the current global value at every run. Rotate the global once; every plugin sees the new value next run. See [`dither env`](/docs/cli/env).
-
-The config dir is resolved once, first match wins: `$DITHER_DIR`, then `$XDG_CONFIG_HOME/dither`, then `~/.dither`.
-
-The user is the only one who can move a value from the manifest into a grant. Plugins request; you authorize.
+1. **Manifest** — declared by the plugin author in `package.json` under the `dither` block. Seeds install-time defaults; not an enforcement boundary, just a description.
+2. **Grants** — written by dither at install time to `<config-dir>/grants/<name>.json`. The actual allowance for this plugin on this machine, and the only thing that gates promote at run time. A grant flag at install becomes the grant; omitting it falls back to the manifest's declaration. Only the user can move a value from manifest into grant.
+3. **Globals** — managed env values shared across plugins, stored in `<config-dir>/env.json`. A plugin granted `--allow-env OPENAI_API_KEY` reads the current global value each run; rotate once and every plugin sees it next run. See [`dither env`](/docs/cli/env).
 
 ## The grant kinds
 
 Each grant in `<config-dir>/grants/<name>.json` is one of these:
 
-### `env` — literal env values
-
-A plain `Record<string, string>` of values you supplied via `--env "KEY=VALUE,..."`. These are written into the run's `input.json` so the plugin reads them through `input.env.KEY`. They're **not** exposed to the plugin as actual process env vars.
-
-### `envRefs` — references to globals
-
-A list of names in `<config-dir>/env.json` the plugin is allowed to read. Granted via `--allow-env KEY,KEY2`. At every run, dither resolves each name to its current global value and adds it to `input.env`. If the global isn't set, the plugin sees nothing for that key.
-
-### `files` — granted file/folder paths
-
-A `Record<string, string>` of `id → absolute path` pairs supplied via `--file "ID=PATH,..."`. Each path is added to Deno's `--allow-read` list, _and_ written into `input.files` so the plugin can resolve it. Granting a file is the same act as authorizing read access.
-
-### `net` — host allowlist
-
-A list of hostnames supplied via `--allow-net HOST,HOST2`. Becomes Deno's `--allow-net=...`. If empty, no `--allow-net` flag is passed at all and the plugin has zero network access.
-
-### `create` — promote allowlist
-
-A list of collection globs supplied via `--create NAME,NAME2`. Enforced **at promote time, not at write time**: a plugin can write any `*.md` it likes to its run dir; dither inspects each file's `collection:` frontmatter after the run and rejects the whole batch if any file targets a collection no pattern covers. Patterns are globs over the collection-path namespace (`notes`, `feeds/*`, `messages/**`); a `<X>/**` pattern also covers the bare `<X>`.
-
-### `edit` — overwrite allowlist
-
-A list of collection globs supplied via `--edit NAME,NAME2`. A `create` grant only lets a plugin write entries it owns. Overwriting an existing entry whose `source:` is a **different** plugin additionally requires an `edit` grant covering that collection; without one, dither skips that output rather than clobbering it. Grants beyond the manifest are flags-only — the interactive install flow never offers them.
+- **`env`** — literal values: a plain `Record<string, string>` via `--env "KEY=VALUE,..."`, written into `input.json` and read as `input.env.KEY`. Not exposed as process env vars.
+- **`envRefs`** — references to globals: names in `<config-dir>/env.json` the plugin may read, granted via `--allow-env KEY,KEY2`. Each run, dither resolves each name to its current global value into `input.env`; an unset global means the plugin sees nothing.
+- **`files`** — granted paths: `Record<string, string>` of `id → absolute path` via `--file "ID=PATH,..."`. Each path is added to Deno's `--allow-read` and written into `input.files`. Granting a file is authorizing read access.
+- **`net`** — host allowlist: hostnames via `--allow-net HOST,HOST2`, becoming Deno's `--allow-net=...`. Empty means no flag at all — zero network access.
+- **`create`** — promote allowlist: collection globs via `--create NAME,NAME2`. Enforced at promote time, not write time — a plugin can write any `*.md` to its run dir, but dither inspects each file's `collection:` frontmatter afterward and rejects the whole batch if any file targets an uncovered collection. Patterns are globs over the collection-path namespace (`notes`, `feeds/*`, `messages/**`); `<X>/**` also covers the bare `<X>`.
+- **`edit`** — overwrite allowlist: collection globs via `--edit NAME,NAME2`. A `create` grant only lets a plugin write entries it owns; overwriting an entry owned by a different `source:` additionally needs an `edit` grant covering that collection, otherwise dither skips it. Grants beyond the manifest are flags-only — the interactive install flow never offers them.
 
 ## What the Deno sandbox actually gets
-
-When dither runs a plugin, it spawns Deno roughly like this:
 
 ```
 deno run \
@@ -59,54 +34,41 @@ deno run \
   <plugin-dir>/plugin.ts
 ```
 
-A plugin can:
+**Can:** read its source dir, run scratch dir, `grants.files` paths, and watch roots; write only to its run scratch dir (state is promoted back after the run); read the always-granted `DITHER_*` env vars; reach hosts in `grants.net`.
 
-- Read its own installed source dir, its run scratch dir, any path in `grants.files`, and its watch roots.
-- Write to its run scratch dir — and nowhere else. Its persistent state is written to a run-local copy there; dither promotes it back after the run.
-- Read the always-granted `DITHER_*` env vars (only — see below).
-- Reach the network only on hosts in `grants.net`.
-
-A plugin **cannot**:
-
-- Read or write anywhere else under the config dir or the library — including other collections, `grants/`, `env.json`, other plugins, or the qmd index.
-- Read arbitrary user files. File access only extends to paths you explicitly granted.
-- Reach a host that isn't in `grants.net`.
-- Read process environment variables. The `--allow-env` flag is restricted to the `DITHER_*` set used by the SDK to find its run dir. **Granted env values flow through `input.env`, not through `Deno.env`.**
-- Spawn subprocesses or load FFI. `--allow-run` and `--allow-ffi` are never passed.
+**Cannot:** touch anything else under the config dir or library (other collections, `grants/`, `env.json`, other plugins, the qmd index); read arbitrary files beyond granted paths; reach an ungranted host; read process env vars (`--allow-env` covers only the `DITHER_*` SDK set — granted values flow through `input.env`, never `Deno.env`); spawn subprocesses or load FFI (`--allow-run`/`--allow-ffi` never passed).
 
 ## Default-grant from manifest
 
-If you `install` (or `run <path>`) without passing a grant flag, dither defaults the corresponding grant to **everything the manifest declared** for that field. Pass `--allow-net api.openai.com` for a manifest declaring two hosts and that's the grant — only one. Pass nothing and you get both.
+Installing (or `run <path>`) without a grant flag defaults that grant to everything the manifest declared for that field — pass `--allow-net api.openai.com` for a manifest declaring two hosts and you get only one; pass nothing and you get both.
 
-When you do pass a flag, that's what the plugin gets — the manifest is **not** a ceiling. If you want to grant a collection or net host the manifest didn't declare (e.g. you trust this plugin further than the author's defaults), the flag is the way. The grants file is always the source of truth at promote.
+Passing a flag overrides the manifest entirely — it's not a ceiling, so you can grant a host or collection the manifest never declared if you trust the plugin further than its author's defaults.
 
-Grants only change through an install. A plugin whose manifest asks for more than last time has to be reinstalled, and the interactive review shows each newly-requested entry as `(new)` and unchecked — you re-approve it explicitly or it isn't granted.
+Grants only change through an install. A plugin whose manifest asks for more than last time must be reinstalled; the interactive review marks each newly-requested entry `(new)` and unchecked, requiring explicit re-approval.
 
 ## Promote-time validation
 
 After the plugin exits, dither walks every `*.md` file in the run dir and checks:
 
 1. The file has a YAML frontmatter block.
-2. `source:` matches the plugin's package name. Plugins cannot impersonate other plugins.
-3. `collection:` is set, passes path validation (no `..`, no leading/trailing `/`, allowed charset, no `.md` suffix), and matches at least one glob pattern in `grants.create`.
-4. If the destination file already exists and was written by a **different** `source:`, at least one pattern in `grants.edit` covers the collection.
+2. `source:` matches the plugin's package name — plugins cannot impersonate other plugins.
+3. `collection:` is set, passes path validation (no `..`, no leading/trailing `/`, allowed charset, no `.md` suffix), and matches a pattern in `grants.create`.
+4. If the destination file already exists and was written by a different `source:`, a pattern in `grants.edit` must cover the collection.
 
-Failures on 1–3 throw and stop the promote. A failure on 4 skips that one output (journaled as a skip) and leaves the existing entry untouched. The run dir is removed regardless.
+Failures on 1–3 throw and stop the promote. A failure on 4 skips that one output (journaled as a skip), leaving the existing entry untouched. The run dir is removed regardless.
 
 ## Run vs install grants
 
-`dither plugin install` writes grants persistently. `dither plugin run <name>` with grant flags layers them on top **for that run only** — they don't mutate `grants/<name>.json`. `dither plugin run <path>` re-installs (the path-form is "install + run") and **does** persist the supplied flags as the new grants.
+`dither plugin install` writes grants persistently. `dither plugin run <name>` with grant flags layers them on top for that run only, without mutating `grants/<name>.json`. `dither plugin run <path>` re-installs (it's "install + run") and does persist the supplied flags as the new grants.
 
 ## Honest caveats (real today, not future polish)
 
-- **Env values and globals are stored plaintext.** Both `<config-dir>/grants/<name>.json` and `<config-dir>/env.json` are plain JSON on local disk, scoped by Unix permissions. The architecture commits to OS keychain integration (macOS Keychain, libsecret on Linux); none today. Anything that can read your home dir can read your secrets.
-- **Plugin output filenames are not validated for path traversal.** A malicious plugin can emit a file with a `filename` like `"../foo.md"` and the SDK's `join(runDir, name)` will write outside the run dir. Don't run plugins you don't trust.
-- **Promote does a blind copy.** If a plugin emits `notes.md` for collection `notes` and you already have a hand-authored `<library>/notes/notes.md`, the plugin's file overwrites yours with no warning. Back up the library before installing a plugin that writes into a collection you also author into by hand.
-- **CLI flag values are comma-separated and not escaped.** A grant value containing `,` or `=` cannot be expressed through `--env`/`--file` etc. and needs the programmatic API. The schema doesn't reject pathological values.
-- **`grants.net = ["*"]` grants any host.** The runner detects the sole `*` entry and passes a bare `--allow-net` flag to Deno, which is unrestricted. Audit a manifest's declared `net` before granting; if you want to narrow it, pass an explicit `--allow-net host1,host2` instead of relying on the manifest default.
+- **Plaintext storage.** `<config-dir>/grants/<name>.json` and `env.json` are plain JSON scoped by Unix permissions — no OS keychain integration yet. Anything that can read your home dir can read your secrets.
+- **No path-traversal check on output filenames.** A malicious plugin's `filename: "../foo.md"` will write outside the run dir via `join(runDir, name)`.
+- **Promote does a blind copy.** A plugin emitting `notes.md` into collection `notes` silently overwrites a hand-authored `<library>/notes/notes.md` with no warning — back up before installing a plugin that writes into a collection you also author by hand.
+- **No comma/equals escaping in CLI flags.** A grant value containing `,` or `=` can't be expressed via `--env`/`--file`; the schema doesn't reject pathological values, so use the programmatic API instead.
+- **`grants.net = ["*"]` is unrestricted.** The runner passes a bare `--allow-net` to Deno for a sole `*` entry. Audit a manifest's declared `net` before granting, or pass an explicit `--allow-net host1,host2` to narrow it.
 
 ## Threat model
 
-dither assumes you trust plugin code at install time. The sandbox limits how much damage a misbehaving plugin can do — it cannot read your SSH keys, browse your Downloads folder, or talk to a host you didn't grant. But the v0 sandbox is **not airtight**: the caveats above are real escape hatches, not theoretical ones.
-
-Treat plugin installation the way you'd treat installing an npm package or a VS Code extension. Read the source, or only install from authors you trust. Don't paste random `dither plugin install …` commands from the internet.
+dither assumes you trust plugin code at install time. The sandbox limits the damage a misbehaving plugin can do — it can't read your SSH keys, browse Downloads, or talk to an ungranted host — but the v0 sandbox is not airtight; the caveats above are real escape hatches. Treat plugin installation like installing an npm package or VS Code extension: read the source, install only from authors you trust, and don't paste random `dither plugin install …` commands from the internet.

@@ -3,24 +3,7 @@ title: Storage layout
 description: Where dither's bookkeeping and your markdown library live, and what's safe to back up.
 ---
 
-dither separates two roots on disk:
-
-- **config dir** — dither's own bookkeeping (config, plugins, grants, runs, history, locks, logs, daemon state, qmd index). By default `~/.dither/`.
-- **library** — the markdown content dither indexes and writes into. Configurable per-install. Defaults to `$DITHER_DIR/library/` (or `~/.dither/library/`) for fresh users; `dither init --library <path>` points it anywhere you like.
-
-The config dir location is resolved in this order (first match wins):
-
-1. `$DITHER_DIR` — explicit override.
-2. `$XDG_CONFIG_HOME/dither` — Linux convention.
-3. `~/.dither` — fallback.
-
-```bash
-export DITHER_DIR=/path/to/dither-config   # optional, rarely needed
-```
-
-The library deliberately ignores `$XDG_CONFIG_HOME` — it's your content, not config, so its default follows `$DITHER_DIR` (else `~/.dither`) only.
-
-The split keeps "your stuff" (markdown) cleanly separated from "dither's bookkeeping" (everything else). You can back up the library independently, hand its path to an agent without exposing dither's internals, or point it at a folder you already curate.
+The two roots and how the config dir is resolved are covered in [Where dither stores things](/docs#where-dither-stores-things). Below is the full path-by-path picture and everything specific to each root.
 
 ## The config dir
 
@@ -57,11 +40,6 @@ The library is one directory containing your markdown. Each top-level subdirecto
   imported/
     fixture-1.md
 ```
-
-Where the library lives is your choice at `dither init`:
-
-- **No flag** → `$DITHER_DIR/library/`, else `~/.dither/library/`. Self-contained, easy default.
-- **`--library <path>`** → adopt or create at that path. Recommended for users who want their markdown in a familiar location, e.g. `~/Documents/dither/`.
 
 The path is canonicalised (via `realpath`) at init time, so symlinks don't silently widen the configured scope later.
 

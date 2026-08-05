@@ -131,7 +131,7 @@ Plugin runs trigger this automatically when they promote new entries (scoped to 
 
 dither doesn't fight you. Open any `.md` under your library in your editor, change the body, change the frontmatter, rename the file — it's all fine. The host doesn't lock files and doesn't impose body conventions. After a manual edit, run `dither index update` to refresh the search index.
 
-If you have an installed plugin with a `watch` block (from its manifest, or added via `dither plugin run --watch`) that points at the collection you're editing, the daemon will pick up your changes via chokidar and fire that plugin — useful when intentional, surprising when not. Plugins with no `watch` block (the common case for ingest plugins) don't react to hand edits.
+If you have an installed plugin with a `watch` block (from its manifest, or added via `dither plugin run --watch`) that points at the collection you're editing, the daemon will pick up your changes via its file watcher and fire that plugin — useful when intentional, surprising when not. Plugins with no `watch` block (the common case for ingest plugins) don't react to hand edits.
 
 If you delete or move a file by hand, run `dither index update` to drop stale entries from the index.
 
