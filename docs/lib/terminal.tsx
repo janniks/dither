@@ -101,6 +101,10 @@ export const AnimatedSpan = ({
       onAnimationComplete={() => {
         if (!sequence) return;
         if (itemIndex === null) return;
+        // The "stay hidden" animate() (pre-sequence-start) also completes —
+        // without this guard it advances the chain invisibly, so terminals
+        // that mount below the fold are already "finished" when scrolled in.
+        if (!hasStarted) return;
         sequence.completeItem(itemIndex);
       }}
       {...props}
@@ -225,6 +229,9 @@ interface TerminalProps {
   className?: string;
   sequence?: boolean;
   startOnView?: boolean;
+  /** rendered directly below the chrome (traffic-light) bar — e.g. a
+      progress strip. Most terminals don't use this. */
+  chromeExtra?: React.ReactNode;
 }
 
 export const Terminal = ({
@@ -232,12 +239,29 @@ export const Terminal = ({
   className,
   sequence = true,
   startOnView = true,
+  chromeExtra,
 }: TerminalProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const isInView = useInView(containerRef as React.RefObject<Element>, {
-    amount: 0.3,
-    once: true,
-  });
+  // Native IntersectionObserver instead of motion's useInView: the latter
+  // silently never fired for terminals that scroll into view after load
+  // (verified in-browser — a native IO on the same element reports ratio 1
+  // while useInView stays false), leaving whole transcripts at opacity 0.
+  const [isInView, setIsInView] = useState(false);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsInView(true);
+          io.disconnect();
+        }
+      },
+      { threshold: 0.3 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   const [activeIndex, setActiveIndex] = useState(0);
   const sequenceHasStarted = sequence ? !startOnView || isInView : false;
@@ -281,6 +305,7 @@ export const Terminal = ({
         <span className="h-2 w-2 rounded-full bg-[#E2C04C]"></span>
         <span className="h-2 w-2 rounded-full bg-[#5DCE78]"></span>
       </div>
+      {chromeExtra}
       <pre className="p-4">
         <code className="grid gap-y-1 overflow-auto">{wrappedChildren}</code>
       </pre>

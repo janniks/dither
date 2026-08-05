@@ -14,10 +14,10 @@ type Feature = {
 const features: Feature[] = [
   {
     icon: Boxes,
-    title: "qmd-powered",
+    title: "Search by qmd",
     body: (
       <>
-        A CLI wrapper around{" "}
+        Hybrid lexical + semantic search in one index, one file, built on{" "}
         <a
           href={QMD_URL}
           target="_blank"
@@ -35,13 +35,13 @@ const features: Feature[] = [
         >
           Tobi Lütke
         </a>
-        . Hybrid lexical + semantic in one index, one file.
+        .
       </>
     ),
   },
   {
     icon: ShieldCheck,
-    title: "Deno-sandboxed plugins",
+    title: "Sandboxed with Deno",
     body: (
       <>
         Permissions are explicit and transparent. Third-party plugin code
@@ -61,19 +61,18 @@ const features: Feature[] = [
   {
     icon: Clock,
     title: "Scheduled & watched",
-    body: "Cron schedules, folder watchers, activity triggers. Your index keeps itself current.",
+    body: "Optional crons, folder watchers, and activity triggers keep your index current on its own.",
   },
   {
     icon: Network,
-    title: "MCP-ready",
-    body: "Expose the index to any agent. Same tools as your CLI.",
-    tag: "coming soon",
+    title: "Agent ready",
+    body: "Expose your index to any agent — a SKILL.md and clean CLI output are all they need.",
   },
 ];
 
 export function FeatureGrid() {
   return (
-    <section className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+    <section className="mt-10 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
       {features.map((f) => {
         const Icon = f.icon;
         return (

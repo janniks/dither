@@ -1,7 +1,6 @@
-import Link from "next/link";
-import { ArrowRight, Quote } from "lucide-react";
-import { GitHubLogoIcon } from "@radix-ui/react-icons";
+import { HeroCtas, ManifestoLink } from "./hero-ctas";
 import { RotatingHeadline } from "./rotating-headline";
+import { HandSearch } from "./hand-search";
 import { FooterSection } from "./footer-section";
 import { FeatureGrid } from "./marketing/feature-grid";
 import { NoBsStrip } from "./marketing/no-bs-strip";
@@ -22,45 +21,34 @@ export default function HomePage() {
     <>
       <div className="flex w-full justify-center px-[20px] pt-22 pb-18 sm:px-8 md:px-12 lg:px-16">
         <div className="flex w-full max-w-[1080px] flex-col gap-14">
-        <section className="mx-auto flex w-full max-w-[760px] flex-col items-start">
-          <a
-            href="#manifesto"
-            className="border bg-fd-card text-fd-muted-foreground hover:text-fd-foreground hover:border-fd-primary/40 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm leading-5 no-underline transition-colors"
-          >
-            <Quote size={14} className="text-[#99D892]" />
-            Read Manifesto
-          </a>
-          <div className="mt-6 max-w-[820px]">
-            <RotatingHeadline />
-          </div>
-          <p className="text-fd-muted-foreground mt-6 max-w-[660px] text-lg leading-[30px]">
-            Open source, local-first, and sandboxed. Run plugins to index your
-            data, then search across everything from one CLI.
-          </p>
-          <div className="mt-8 w-full">
-            <ToolMarquee />
-          </div>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              href="/docs"
-              className="bg-fd-primary text-fd-primary-foreground inline-flex items-center justify-center gap-2 rounded-[10px] px-4 py-3 text-sm font-semibold"
+          <section className="mx-auto flex w-full max-w-[760px] flex-col items-start">
+            <ManifestoLink />
+            {/* translateZ(0): headline letters jiggle during the chip's layout
+              animation unless the whole headline subtree sits on its own GPU
+              layer. The layer must be forced from OUTSIDE the h1 — a transform
+              inside it (on TextRotate or its siblings) conflicts with motion's
+              layout springs and makes it worse. When the ToolMarquee still
+              lived in the hero its animation forced this compositing for free;
+              moving it out brought the jiggle back. */}
+            <div
+              className="relative mt-6 max-w-[820px]"
+              style={{ transform: "translateZ(0)" }}
             >
-              Get started
-              <ArrowRight size={16} />
-            </Link>
-            <a
-              href="https://github.com/janniks/dither"
-              target="_blank"
-              rel="noreferrer"
-              className="border bg-fd-card hover:bg-fd-accent inline-flex items-center justify-center gap-2 rounded-[10px] px-4 py-3 text-sm font-semibold no-underline transition-colors"
-            >
-              <GitHubLogoIcon className="size-4" />
-              GitHub
-            </a>
-          </div>
-        </section>
+              {/* Hand-drawn annotation — deliberately OUTSIDE the h1: anything
+                rendered inside the headline's subtree (even inert absolute
+                overlays) disturbs its motion layout springs → letter jiggle. */}
+              <HandSearch className="pointer-events-none absolute -top-9 left-[7.5ch] hidden md:block" />
+              <RotatingHeadline />
+            </div>
+            <p className="text-fd-muted-foreground mt-6 max-w-[660px] text-lg leading-[30px]">
+              Open source, local-first, and sandboxed. Run plugins to index your
+              data, then search across everything from one CLI.
+            </p>
+            {/* TEMPORARY: CTA row is variant-driven while we pick a direction. */}
+            <HeroCtas />
+          </section>
 
-        {/* Hidden for now — kept for reference / future re-enable.
+          {/* Hidden for now — kept for reference / future re-enable.
         <section className="flex flex-wrap gap-4">
           {links.map((item) => {
             const Icon = item.icon;
@@ -86,26 +74,30 @@ export default function HomePage() {
         </section>
         */}
 
-        <TerminalTabs />
-        <JustMarkdown />
-        <FeatureGrid />
-        <NoBsStrip />
-        {/* <AgentMarquee /> */}
-        <WaveRow />
-        <PluginUsp />
-        {/* <ArchitectureDiagram /> */}
-        {/* <TerminalMcp /> */}
-        <hr className="border-fd-border mx-auto w-full max-w-[760px] border-t" />
-        <SphereRow />
-        <ScheduleWatchDemo />
-        <Manifesto />
-        <Faq />
+          <div className="mx-auto -mt-6 w-full max-w-[880px]">
+            <ToolMarquee />
+          </div>
+          <TerminalTabs />
+          <FeatureGrid />
+          <JustMarkdown />
+          <NoBsStrip />
+          {/* <AgentMarquee /> */}
+          <WaveRow />
+          <SphereRow />
+          <hr className="border-fd-border mx-auto w-full max-w-[760px] border-t" />
+          <PluginUsp />
+          {/* <ArchitectureDiagram /> */}
+          {/* <TerminalMcp /> */}
+          <hr className="border-fd-border mx-auto w-full max-w-[760px] border-t" />
+          <ScheduleWatchDemo />
+          <Manifesto />
+          <Faq />
 
-        <section className="flex justify-center py-2">
-          <DitheredCta href="/docs">Try it out now</DitheredCta>
-        </section>
+          <section className="flex justify-center py-2">
+            <DitheredCta href="/docs">Try it out now</DitheredCta>
+          </section>
 
-        <OssCard />
+          <OssCard />
         </div>
       </div>
       <FooterSection />

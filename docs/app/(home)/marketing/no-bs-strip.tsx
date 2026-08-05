@@ -5,7 +5,7 @@ export function NoBsStrip() {
         <p className="text-fd-foreground text-balance text-[20px] leading-[30px] font-medium tracking-[-0.01em]">
           <span className="text-fd-foreground/60 font-normal">Open source.</span>{" "}
           <span className="text-fd-foreground/60 font-normal">Sandboxed.</span>{" "}
-          Your files stay markdown. Nobody can rugpull your data.
+          Your files stay markdown, on your disk. Nothing to lose access to.
         </p>
       </div>
     </section>

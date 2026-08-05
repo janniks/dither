@@ -9,28 +9,8 @@ const F = "text-[#4AB5EC]";
 
 export function PluginUsp() {
   return (
-    <section className="flex flex-col gap-8">
-      <div className="max-w-[760px]">
-        <h2 className="text-3xl font-[650] tracking-[-0.02em]">
-          Plugins are simple TypeScript. Sandboxed.
-        </h2>
-        <p className="text-fd-muted-foreground mt-3 text-[15px] leading-[24px]">
-          The runtime denies anything not granted —{" "}
-          <a
-            href="https://docs.deno.com/runtime/fundamentals/security/"
-            target="_blank"
-            rel="noreferrer"
-            className="text-fd-foreground underline decoration-fd-muted-foreground/40 underline-offset-2 hover:decoration-fd-foreground"
-          >
-            Deno sandboxes
-          </a>{" "}
-          each plugin process. Each plugin declares the URL access list, env,
-          and file system scopes it needs; you approve once and the daemon
-          enforces it on every run.
-        </p>
-      </div>
-
-      <div className="mx-auto w-full max-w-[560px]">
+    <section className="grid grid-cols-1 items-center gap-8 md:grid-cols-[1.05fr_1fr] lg:gap-10">
+      <div className="order-2 w-full md:order-1">
         <CodeFile filename="plugins/bookmarks/plugin.ts">
           <ShowMore collapsedHeight={160}>
             <pre className="overflow-auto text-[12px] leading-[20px]">
@@ -85,6 +65,26 @@ export function PluginUsp() {
             </pre>
           </ShowMore>
         </CodeFile>
+      </div>
+
+      <div className="order-1 md:order-2">
+        <h2 className="text-3xl font-[650] tracking-[-0.02em]">
+          Plugins are simple TypeScript. Sandboxed.
+        </h2>
+        <p className="text-fd-muted-foreground mt-3 text-[15px] leading-[24px]">
+          The runtime denies anything not granted —{" "}
+          <a
+            href="https://docs.deno.com/runtime/fundamentals/security/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-fd-foreground underline decoration-fd-muted-foreground/40 underline-offset-2 hover:decoration-fd-foreground"
+          >
+            Deno sandboxes
+          </a>{" "}
+          each plugin process. Each plugin declares the URL access list, env,
+          and file system scopes it needs; you approve once and the daemon
+          enforces it on every run.
+        </p>
       </div>
     </section>
   );

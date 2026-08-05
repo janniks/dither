@@ -61,7 +61,7 @@ export function FooterSection() {
             Plugins
           </Link>
           <Link
-            href="/docs/concepts"
+            href="/docs/concepts/collections"
             className="text-fd-muted-foreground hover:text-fd-foreground text-[13px] font-medium no-underline"
           >
             Concepts

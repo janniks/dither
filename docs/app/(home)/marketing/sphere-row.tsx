@@ -1,5 +1,14 @@
 "use client";
 import { Dithering } from "@paper-design/shaders-react";
+import { HardDrive, Scale, Terminal } from "lucide-react";
+
+const badges = [
+  { label: "MIT licensed", Icon: Scale },
+  { label: "Local-first", Icon: HardDrive },
+  { label: "CLI", Icon: Terminal },
+  { label: "TypeScript", Icon: null },
+  { label: "npm", Icon: null },
+];
 
 export function SphereRow() {
   return (
@@ -17,6 +26,17 @@ export function SphereRow() {
           local index, designed to outlive any service or app you&apos;ve
           used.
         </p>
+        <ul className="flex flex-wrap gap-2">
+          {badges.map(({ label, Icon }) => (
+            <li
+              key={label}
+              className="bg-fd-card text-fd-muted-foreground flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium"
+            >
+              {Icon ? <Icon className="size-3" aria-hidden /> : null}
+              {label}
+            </li>
+          ))}
+        </ul>
       </div>
       <div className="bg-black size-32 shrink-0 overflow-hidden rounded-full sm:size-40 md:size-[200px]">
         <Dithering

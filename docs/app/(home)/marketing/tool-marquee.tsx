@@ -21,8 +21,10 @@ const TOOLS: ToolItem[] = [
 ];
 
 // Dithered edge fade. Instead of a smooth alpha ramp, the chips dissolve into
-// the background through discrete bands of ordered-dither (8x8 Bayer) density —
-// same pixel-dissolve language as the DiagonalEdgeStrips in the manifesto.
+// the background through a noisy dither: per-2px-cell threshold test against a
+// continuous coverage ramp, so density rises smoothly with no band seams. The
+// threshold mixes ordered Bayer with a seeded PRNG so it reads as noise rather
+// than a grid — same pixel-dissolve language as the manifesto's edge strips.
 const BAYER_8 = [
   [0, 32, 8, 40, 2, 34, 10, 42],
   [48, 16, 56, 24, 50, 18, 58, 26],
@@ -34,34 +36,71 @@ const BAYER_8 = [
   [63, 31, 55, 23, 61, 29, 53, 21],
 ];
 
-/** Coverage per band, outermost first. Discrete steps, not a ramp. */
-const BANDS = [0.12, 0.38, 0.66, 0.88];
-const BAND_PX = 16;
-const FADE_PX = BANDS.length * BAND_PX; // 64
+/** Size of one dither block, in CSS px. Threshold is sampled per block. */
+const PIXEL = 2;
+/** Total width of the edge fade. One coverage level per block column. */
+const FADE_PX = 52;
+const BLOCKS = FADE_PX / PIXEL; // 26 distinct density levels
+/** Rows per animation frame; the noise repeats vertically at this period. */
+const ROWS = 8;
+const FRAME_PX = ROWS * PIXEL; // 16
+/** Noise frames stacked vertically in one tile; stepped through for shimmer. */
+const FRAMES = 4;
+const TILE_PX = FRAME_PX * FRAMES; // 64
+const FRAME_MS = 220;
+
+/** Deterministic PRNG — SSR/client must generate byte-identical masks. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 /**
- * One tile of the dithered fade: FADE_PX wide, 8px tall, repeated vertically.
+ * Smoothstep coverage: 0 at the outer edge, 1 where the opaque core starts.
+ * Quantized to BLOCKS levels so each block column sits on its own density
+ * step — one dither pixel per transparency level across the fade.
+ */
+function coverage(bx: number): number {
+  const t = (bx + 0.5) / BLOCKS;
+  const s = t * t * (3 - 2 * t);
+  return Math.round(s * BLOCKS) / BLOCKS;
+}
+
+/**
+ * One tile of the dithered fade: FADE_PX wide, TILE_PX tall (FRAMES stacked
+ * noise frames), repeated vertically. Each dither block is PIXEL×PIXEL.
  * `flip` mirrors it for the right edge so both sides are symmetric.
  */
 function ditherMaskUrl(flip: boolean): string {
+  const rand = mulberry32(0x51ed_7e5);
+  // Pre-roll so the same cell gets the same jitter on both edges.
+  const jitter: number[] = [];
+  for (let i = 0; i < BLOCKS * ROWS * FRAMES; i++) jitter.push(rand());
+
   let d = "";
-  for (let y = 0; y < 8; y++) {
+  for (let row = 0; row < ROWS * FRAMES; row++) {
     let runStart = -1;
-    for (let x = 0; x <= FADE_PX; x++) {
-      const sx = flip ? FADE_PX - 1 - x : x;
-      const on =
-        x < FADE_PX &&
-        BANDS[Math.floor(sx / BAND_PX)] > (BAYER_8[y][sx & 7] + 0.5) / 64;
-      if (on && runStart < 0) runStart = x;
+    for (let bx = 0; bx <= BLOCKS; bx++) {
+      const sbx = flip ? BLOCKS - 1 - bx : bx;
+      const ordered = (BAYER_8[row & 7][sbx & 7] + 0.5) / 64;
+      const noise = jitter[row * BLOCKS + sbx];
+      const threshold = 0.55 * ordered + 0.45 * noise;
+      const on = bx < BLOCKS && coverage(sbx) > threshold;
+      if (on && runStart < 0) runStart = bx;
       if (!on && runStart >= 0) {
-        const w = x - runStart;
-        d += `M${runStart} ${y}h${w}v1h-${w}z`;
+        const w = (bx - runStart) * PIXEL;
+        d += `M${runStart * PIXEL} ${row * PIXEL}h${w}v${PIXEL}h-${w}z`;
         runStart = -1;
       }
     }
   }
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${FADE_PX}" height="8" ` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${FADE_PX}" height="${TILE_PX}" ` +
     `shape-rendering="crispEdges"><path d="${d}"/></svg>`;
   return `url('data:image/svg+xml,${encodeURIComponent(svg)}')`;
 }
@@ -77,27 +116,40 @@ const FADE_MASK = {
   WebkitMaskImage: `${DITHER_LEFT}, ${DITHER_RIGHT}, ${CORE}`,
   maskRepeat: "repeat-y, repeat-y, no-repeat",
   WebkitMaskRepeat: "repeat-y, repeat-y, no-repeat",
-  maskPosition: "left top, right top, center",
-  WebkitMaskPosition: "left top, right top, center",
-  maskSize: `${FADE_PX}px 8px, ${FADE_PX}px 8px, 100% 100%`,
-  WebkitMaskSize: `${FADE_PX}px 8px, ${FADE_PX}px 8px, 100% 100%`,
+  maskSize: `${FADE_PX}px ${TILE_PX}px, ${FADE_PX}px ${TILE_PX}px, 100% 100%`,
+  WebkitMaskSize: `${FADE_PX}px ${TILE_PX}px, ${FADE_PX}px ${TILE_PX}px, 100% 100%`,
 } as const;
 
 export function ToolMarquee({ durationSeconds = 30 }: { durationSeconds?: number }) {
   return (
-    <section className="flex w-full flex-col items-start">
+    <section className="flex w-full items-center gap-3">
       <style>{`
         @keyframes tool-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
         .tool-marquee-track {
           animation: tool-marquee ${durationSeconds}s linear infinite;
           will-change: transform;
         }
+        @keyframes tool-marquee-dither {
+          from {
+            -webkit-mask-position: left top, right top, center;
+            mask-position: left top, right top, center;
+          }
+          to {
+            -webkit-mask-position: left -${TILE_PX}px, right -${TILE_PX}px, center;
+            mask-position: left -${TILE_PX}px, right -${TILE_PX}px, center;
+          }
+        }
+        .tool-marquee-mask {
+          -webkit-mask-position: left top, right top, center;
+          mask-position: left top, right top, center;
+          animation: tool-marquee-dither ${FRAME_MS * FRAMES}ms steps(${FRAMES}) infinite;
+        }
         @media (prefers-reduced-motion: reduce) {
-          .tool-marquee-track { animation: none; }
+          .tool-marquee-track, .tool-marquee-mask { animation: none; }
         }
       `}</style>
       <div
-        className="w-full overflow-hidden"
+        className="tool-marquee-mask min-w-0 flex-1 overflow-hidden"
         style={FADE_MASK}
       >
         <div className="tool-marquee-track flex w-max gap-3">

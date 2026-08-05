@@ -28,6 +28,10 @@ export type DitherStripOpts = {
   densityScale: number;
   /** override the dither pixel colour (defaults to `--color-fd-background`). */
   fillColor?: string;
+  /** re-randomize the jitter every N ms — live dither shimmer. Off when unset
+      or when the user prefers reduced motion. Cells within `jitter` of the
+      Bayer threshold flicker, so raise `jitter` for a more visible effect. */
+  animateMs?: number;
 };
 
 export type DitherStripEdge = "top" | "bottom" | "left" | "right";
@@ -50,6 +54,7 @@ export function EdgeStrip({
     const ctx = c.getContext("2d");
     if (!ctx) return;
 
+    let frame = 0;
     const render = () => {
       const rect = parent.getBoundingClientRect();
       const isHorizontal = edge === "top" || edge === "bottom";
@@ -105,7 +110,9 @@ export function EdgeStrip({
           const coverage = alongFactor * acrossFactor * opts.densityScale;
           const t =
             (bayer[cy & 7][cx & 7] + 0.5) / 64 +
-            opts.jitter * jitterFor(edge + origin, cx, cy);
+            // frame offset shifts the hash lattice → cells near the threshold
+            // flicker each frame when animateMs is set
+            opts.jitter * jitterFor(edge + origin, cx + frame * 7919, cy);
           if (coverage > t) ctx.fillRect(cx, cy, 1, 1);
         }
       }
@@ -114,7 +121,20 @@ export function EdgeStrip({
     render();
     const obs = new ResizeObserver(render);
     obs.observe(parent);
-    return () => obs.disconnect();
+    let interval: number | undefined;
+    if (
+      opts.animateMs &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      interval = window.setInterval(() => {
+        frame++;
+        render();
+      }, opts.animateMs);
+    }
+    return () => {
+      obs.disconnect();
+      if (interval !== undefined) window.clearInterval(interval);
+    };
   }, [edge, origin, opts]);
 
   const positionStyle: CSSProperties = (() => {

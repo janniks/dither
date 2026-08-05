@@ -1,9 +1,9 @@
 "use client";
-import { AnimatedSpan, Terminal, TypingAnimation } from "@/lib/terminal";
+import { AnimatedSpan, Terminal } from "@/lib/terminal";
 
 export function ScheduleWatchDemo() {
   return (
-    <section className="grid grid-cols-1 items-center gap-8 md:grid-cols-2">
+    <section className="grid grid-cols-1 items-start gap-8 md:grid-cols-2">
       <div className="flex flex-col gap-4">
         <h2 className="text-3xl font-[650] tracking-[-0.02em]">
           Hands-off ingest.
@@ -31,24 +31,37 @@ export function ScheduleWatchDemo() {
           </li>
         </ul>
       </div>
-      <div className="flex justify-center md:justify-start">
-        <Terminal>
-          <TypingAnimation>
-            $ dither plugin run bookmarks --every &quot;1h&quot;
-          </TypingAnimation>
-          <AnimatedSpan>scheduled bookmarks: every 1h</AnimatedSpan>
+      <div className="flex items-start justify-center md:justify-start">
+        <Terminal className="!h-auto !max-h-none self-start">
+          {/* Command lines use AnimatedSpan (not TypingAnimation) because
+              TypingAnimation only accepts a plain string — colored flags and
+              values need real child spans, same pattern as terminal-tabs. */}
+          <AnimatedSpan>
+            <span>
+              $ dither plugin run bookmarks{" "}
+              <span className="text-[#4AB5EC]">--every</span>{" "}
+              <span className="text-[#99D892]">&quot;1h&quot;</span>
+            </span>
+          </AnimatedSpan>
+          <AnimatedSpan>✓ scheduled bookmarks: every 1h</AnimatedSpan>
+          <AnimatedSpan className="text-fd-muted-foreground">
+            {"  → next run: 15:00"}
+          </AnimatedSpan>
+          <AnimatedSpan>&nbsp;</AnimatedSpan>
+          <AnimatedSpan>
+            <span>
+              $ dither plugin run notes-inbox{" "}
+              <span className="text-[#4AB5EC]">--watch</span>{" "}
+              <span className="text-[#99D892]">notes</span>
+            </span>
+          </AnimatedSpan>
+          <AnimatedSpan>✓ watching notes-inbox: notes</AnimatedSpan>
+          <AnimatedSpan className="text-fd-muted-foreground">
+            {"  → changed: notes/meeting-notes.md"}
+          </AnimatedSpan>
           <AnimatedSpan className="text-fd-muted-foreground">
             next: dither plugin list
           </AnimatedSpan>
-          <AnimatedSpan>&nbsp;</AnimatedSpan>
-          <TypingAnimation>
-            $ dither plugin run notes-inbox --watch notes
-          </TypingAnimation>
-          <AnimatedSpan>watching for notes-inbox: notes</AnimatedSpan>
-          <AnimatedSpan className="text-fd-muted-foreground">
-            next: dither plugin list
-          </AnimatedSpan>
-          <AnimatedSpan>&nbsp;</AnimatedSpan>
         </Terminal>
       </div>
     </section>

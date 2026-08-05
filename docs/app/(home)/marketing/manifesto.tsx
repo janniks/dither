@@ -15,17 +15,61 @@ const MANIFESTO_OPTS: DitherStripOpts = {
   densityScale: 1.25,
 };
 
+// Pixelated page fold, top-right corner. FOLD px cut in STEP px stairs:
+// the clip-path removes the corner (border included) and PixelFold draws the
+// stepped flap in the border color along the cut edge.
+const FOLD = 36;
+const STEP = 3; // matches the dither cellPx and the 3px border
+
+const FOLD_CLIP = `polygon(${[
+  "0 0",
+  `calc(100% - ${FOLD}px) 0`,
+  ...Array.from({ length: FOLD / STEP }, (_, k) => [
+    `calc(100% - ${FOLD - k * STEP}px) ${(k + 1) * STEP}px`,
+    `calc(100% - ${FOLD - (k + 1) * STEP}px) ${(k + 1) * STEP}px`,
+  ]).flat(),
+  "100% 100%",
+  "0 100%",
+].join(", ")})`;
+
+function PixelFold() {
+  return (
+    <svg
+      aria-hidden
+      className="absolute -top-[3px] -right-[3px]"
+      width={FOLD}
+      height={FOLD}
+      viewBox={`0 0 ${FOLD} ${FOLD}`}
+      shapeRendering="crispEdges"
+    >
+      {Array.from({ length: FOLD / STEP - 1 }, (_, k) => (
+        <rect
+          key={k}
+          x={0}
+          y={(k + 1) * STEP}
+          width={(k + 1) * STEP}
+          height={STEP}
+          fill="var(--color-fd-border)"
+          // bottom row darker — reads as the flap's underside shadow
+          opacity={k === FOLD / STEP - 2 ? 0.95 : 0.6}
+        />
+      ))}
+    </svg>
+  );
+}
+
 export function Manifesto() {
   return (
     <section
       id="manifesto"
-      className="flex scroll-mt-24 flex-col items-center py-6 md:py-10"
+      className="flex scroll-mt-24 flex-col items-center py-14 md:py-20"
     >
       <article
-        // `border-2 border-fd-border/60` is an experimental 2px border — remove freely
-        className="bg-fd-card border-2 border-fd-border/60 relative max-w-[760px] overflow-hidden p-6 sm:p-8 md:p-12"
-        style={{ borderRadius: 0 }}
+        // `border-[3px] border-fd-border/60` is an experimental 3px border — remove freely
+        className="bg-fd-card border-[3px] border-fd-border/60 relative max-w-[760px] overflow-hidden p-6 sm:p-8 md:p-12"
+        style={{ borderRadius: 0, clipPath: FOLD_CLIP }}
       >
+        <PixelFold />
         <p className="text-fd-muted-foreground relative z-[1] text-[12px] font-semibold tracking-[0.12em] uppercase">
           Manifesto
         </p>

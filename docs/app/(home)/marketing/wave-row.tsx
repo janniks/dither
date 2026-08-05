@@ -1,7 +1,7 @@
 "use client";
 import { ArrowUpRight } from "lucide-react";
 import { Dithering } from "@paper-design/shaders-react";
-import { toolIcons } from "./tool-icons";
+import { DiscordIcon, GithubIcon, toolIcons } from "./tool-icons";
 
 type Status = "shipped" | "wip" | "planned";
 
@@ -17,10 +17,10 @@ type Plugin = {
 const plugins: Plugin[] = [
   {
     name: "twitter",
-    label: "X",
+    label: "Twitter / X",
     description: "Import Twitter exports & individual tweets.",
     status: "shipped",
-    color: "#1DA1F2",
+    color: "#000000",
     repo: "https://github.com/dither-plugins/twitter",
   },
   {
@@ -39,6 +39,7 @@ const plugins: Plugin[] = [
   },
   {
     name: "url-scraper",
+    label: "URL Scraper",
     description: "Scrape any URL into a markdown entry.",
     status: "wip",
     color: "#9CA3AF",
@@ -46,6 +47,7 @@ const plugins: Plugin[] = [
   },
   {
     name: "imessage",
+    label: "iMessage",
     description: "Index local iMessage threads.",
     status: "wip",
     color: "#34C759",
@@ -67,6 +69,7 @@ const plugins: Plugin[] = [
   },
   {
     name: "rss",
+    label: "RSS",
     description: "Pull any RSS / Atom feed.",
     status: "planned",
     color: "#F26522",
@@ -75,13 +78,16 @@ const plugins: Plugin[] = [
 ];
 
 const REQUEST_PLUGIN_URL = "https://github.com/janniks/dither/discussions/1";
+const PLUGINS_GITHUB_URL = "https://github.com/dither-plugins";
+// placeholder invite until the real Discord exists
+const DISCORD_URL = "https://discord.gg/dither";
 
 
 export function WaveRow() {
   return (
     <section
       id="plugins"
-      className="bg-fd-muted/30 flex scroll-mt-24 flex-col gap-10 rounded-[24px] border p-6 md:p-8"
+      className="bg-fd-muted/10 mt-10 flex scroll-mt-24 flex-col gap-10 rounded-[36px] border p-6 md:rounded-[40px] md:p-8"
     >
       <div className="grid grid-cols-1 items-center gap-8 md:grid-cols-[1.05fr_1fr] lg:gap-10">
         <div className="bg-black relative overflow-hidden rounded-[24px]">
@@ -112,10 +118,30 @@ export function WaveRow() {
             Index your data.
           </h2>
           <p className="text-fd-muted-foreground text-[15px] leading-[24px]">
-            Plugins pull from feeds, folders, and APIs into your collections —
-            each one a Deno script that runs only with the permissions you
-            grant. Write your own in ~20 lines of TypeScript.
+            Plugins pull from feeds, folders, and APIs into your collections.
+            Each is a Deno script that runs only with the permissions you
+            grant.
           </p>
+          <div className="mt-1 flex items-center justify-end gap-3">
+            <a
+              href={PLUGINS_GITHUB_URL}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Plugins on GitHub"
+              className="text-fd-muted-foreground hover:text-fd-foreground inline-flex h-8 w-8 items-center justify-center rounded-full"
+            >
+              <GithubIcon size={18} />
+            </a>
+            <a
+              href={DISCORD_URL}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Join the Discord"
+              className="text-fd-muted-foreground hover:text-fd-foreground inline-flex h-8 w-8 items-center justify-center rounded-full"
+            >
+              <DiscordIcon size={18} />
+            </a>
+          </div>
         </div>
       </div>
 
@@ -133,18 +159,20 @@ export function WaveRow() {
                 return (
                   <span
                     aria-hidden
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-[10px] text-white"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-white"
                     style={{ backgroundColor: p.color }}
                   >
                     {Icon ? <Icon size={16} /> : p.name[0]}
                   </span>
                 );
               })()}
-              <span className="text-fd-foreground text-[14px] font-semibold capitalize">
+              <span
+                className={`text-fd-foreground min-w-0 truncate text-[14px] font-semibold ${p.label ? "" : "capitalize"}`}
+              >
                 {p.label ?? p.name.replaceAll("-", " ")}
               </span>
               {p.status === "planned" && (
-                <span className="bg-fd-muted text-fd-muted-foreground border-fd-border ml-auto hidden items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase sm:inline-flex">
+                <span className="bg-fd-muted text-fd-muted-foreground border-fd-border ml-auto hidden shrink-0 whitespace-nowrap items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase sm:inline-flex">
                   Coming soon
                 </span>
               )}
@@ -156,7 +184,7 @@ export function WaveRow() {
         ))}
       </div>
 
-      <p className="text-fd-muted-foreground -mt-6 text-[13px] leading-[20px]">
+      <p className="text-fd-muted-foreground -mt-6 text-right text-[13px] leading-[20px]">
         Missing a source?{" "}
         <a
           href={REQUEST_PLUGIN_URL}
